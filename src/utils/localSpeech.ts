@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 let worker: Worker | null = null;
 const statusListeners = new Set<(status: string) => void>();
 const progressListeners = new Set<(progress: number) => void>();

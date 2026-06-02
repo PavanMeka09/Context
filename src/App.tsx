@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { Composer } from './components/Composer';
@@ -9,6 +9,7 @@ import { vectorDb } from './utils/vectorDb';
 import { PRESET_PROMPTS, Storage, reconstructActivePath, upgradeChatToTree } from './utils/storage';
 import type { Chat, Message, MessageNode, Settings, SystemPrompt, Attachment } from './utils/storage';
 import { streamChatCompletion } from './utils/api';
+import { searchSearxng, formatSearxngResults, classifyAndOptimizeSearchQuery } from './utils/searxng';
 import { AlertCircle, X } from 'lucide-react';
 
 function addMessageToTree(chat: Chat, message: Message, parentId: string | null): Chat {
@@ -48,11 +49,20 @@ function addMessageToTree(chat: Chat, message: Message, parentId: string | null)
 }
 
 function App() {
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [settings, setSettings] = useState<Settings>({ provider: 'mock', apiKey: '', model: 'mock-smart' });
-  const [customPrompts, setCustomPrompts] = useState<SystemPrompt[]>([]);
-  const [activePromptId, setActivePromptId] = useState<string>('preset-general');
+  const [chats, setChats] = useState<Chat[]>(() => Storage.getChats());
+  const [settings, setSettings] = useState<Settings>(() => Storage.getSettings());
+  const [customPrompts, setCustomPrompts] = useState<SystemPrompt[]>(() => Storage.getCustomPrompts());
+  const [activePromptId, setActivePromptId] = useState<string>(() => Storage.getActivePromptId());
+  const [activeChatId, setActiveChatId] = useState<string | null>(() => {
+    const savedChats = Storage.getChats();
+    const savedActiveChatId = Storage.getActiveChatId();
+    if (savedActiveChatId && savedChats.some(c => c.id === savedActiveChatId)) {
+      return savedActiveChatId;
+    } else if (savedChats.length > 0) {
+      return savedChats[0].id;
+    }
+    return null;
+  });
   
   // Composer states
   const [composerInput, setComposerInput] = useState('');
@@ -74,24 +84,11 @@ function App() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Initial load
+  // Sync active chat id in localStorage if it wasn't saved yet but defaulted
   useEffect(() => {
     const savedChats = Storage.getChats();
-    const savedSettings = Storage.getSettings();
-    const savedPrompts = Storage.getCustomPrompts();
     const savedActiveChatId = Storage.getActiveChatId();
-    const savedActivePromptId = Storage.getActivePromptId();
-
-    setChats(savedChats);
-    setSettings(savedSettings);
-    setCustomPrompts(savedPrompts);
-    setActivePromptId(savedActivePromptId);
-
-    // Validate active chat id in history
-    if (savedActiveChatId && savedChats.some(c => c.id === savedActiveChatId)) {
-      setActiveChatId(savedActiveChatId);
-    } else if (savedChats.length > 0) {
-      setActiveChatId(savedChats[0].id);
+    if (savedChats.length > 0 && (!savedActiveChatId || !savedChats.some(c => c.id === savedActiveChatId))) {
       Storage.saveActiveChatId(savedChats[0].id);
     }
   }, []);
@@ -118,6 +115,39 @@ function App() {
       return () => mediaQuery.removeEventListener('change', listener);
     }
   }, [theme]);
+
+  const handleNewChat = useCallback(() => {
+    // If an empty chat session already exists, select it instead of creating duplicates
+    const emptyChat = chats.find(c => !c.messages || c.messages.length === 0);
+    if (emptyChat) {
+      setActiveChatId(emptyChat.id);
+      Storage.saveActiveChatId(emptyChat.id);
+      setComposerInput('');
+      setTimeout(() => textareaRef.current?.focus(), 50);
+      return;
+    }
+
+    // Generate new chat session
+    const newChat: Chat = {
+      id: `chat-${Date.now()}`,
+      title: `New Conversation`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      messages: [],
+      messageTree: {},
+      activeLeafId: null
+    };
+
+    const updatedChats = [newChat, ...chats];
+    setChats(updatedChats);
+    setActiveChatId(newChat.id);
+    Storage.saveChatsImmediately(updatedChats);
+    Storage.saveActiveChatId(newChat.id);
+    setComposerInput('');
+    
+    // Focus composer
+    setTimeout(() => textareaRef.current?.focus(), 50);
+  }, [chats]);
 
   // Keyboard Shortcuts Listener
   useEffect(() => {
@@ -158,7 +188,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [chats]);
+  }, [handleNewChat]);
 
   const showToast = (message: React.ReactNode, type: 'error' | 'success' = 'error') => {
     if (toastTimerRef.current) {
@@ -184,39 +214,6 @@ function App() {
       }
     };
   }, []);
-
-  const handleNewChat = () => {
-    // If an empty chat session already exists, select it instead of creating duplicates
-    const emptyChat = chats.find(c => !c.messages || c.messages.length === 0);
-    if (emptyChat) {
-      setActiveChatId(emptyChat.id);
-      Storage.saveActiveChatId(emptyChat.id);
-      setComposerInput('');
-      setTimeout(() => textareaRef.current?.focus(), 50);
-      return;
-    }
-
-    // Generate new chat session
-    const newChat: Chat = {
-      id: `chat-${Date.now()}`,
-      title: `New Chat Session`,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      messages: [],
-      messageTree: {},
-      activeLeafId: null
-    };
-
-    const updatedChats = [newChat, ...chats];
-    setChats(updatedChats);
-    setActiveChatId(newChat.id);
-    Storage.saveChatsImmediately(updatedChats);
-    Storage.saveActiveChatId(newChat.id);
-    setComposerInput('');
-    
-    // Focus composer
-    setTimeout(() => textareaRef.current?.focus(), 50);
-  };
 
   const handleSelectChat = (id: string) => {
     setActiveChatId(id);
@@ -250,11 +247,6 @@ function App() {
     Storage.saveChatsImmediately(updatedChats);
   };
 
-  const handleSelectPrompt = (id: string) => {
-    setActivePromptId(id);
-    Storage.saveActivePromptId(id);
-  };
-
   const handleStopGenerating = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -279,7 +271,7 @@ function App() {
   };
 
   // Main streaming loop
-  const triggerStreamingResponse = async (chatList: Chat[], targetChatId: string, ragContext?: string) => {
+  const triggerStreamingResponse = async (chatList: Chat[], targetChatId: string) => {
     const activeChatIndex = chatList.findIndex(c => c.id === targetChatId);
     if (activeChatIndex === -1) return;
 
@@ -290,12 +282,32 @@ function App() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    // Retrieve the user query (the last message in the active path)
+    const userQuery = activeChat.messages[activeChat.messages.length - 1]?.content || '';
+
+    // Asynchronously gather contexts
+    let ragContext = '';
+    if (settings.isRagEnabled && userQuery) {
+      try {
+        const matches = await vectorDb.searchSimilarChunks(userQuery);
+        if (matches.length > 0) {
+          ragContext = matches.map(m => `--- [Document: ${m.chunk.docName} (Similarity: ${(m.score * 100).toFixed(0)}%)] ---\n${m.chunk.text}`).join('\n\n');
+        }
+      } catch (err) {
+        console.error('Failed to perform local RAG similarity search:', err);
+      }
+    }
+
     // Create stream message placeholder
     const streamMessageId = `msg-stream-${Date.now()}`;
+    const initialContent = settings.isWebSearchEnabled && userQuery
+      ? `<search_status query="${userQuery.replace(/"/g, '&quot;')}" status="searching" />`
+      : '';
+
     const placeholderMessage: Message = {
       id: streamMessageId,
       role: 'assistant',
-      content: '',
+      content: initialContent,
       timestamp: new Date().toISOString()
     };
 
@@ -308,10 +320,81 @@ function App() {
     );
     setChats(chatsWithPlaceholder);
 
+    let searchTagPrefix = '';
+    let webSearchContext = '';
+
+    if (settings.isWebSearchEnabled && userQuery) {
+      try {
+        // Run classification and query optimization
+        const { shouldSearch, searchQuery } = await classifyAndOptimizeSearchQuery(settings, activeChat.messages);
+
+        if (shouldSearch && searchQuery) {
+          // Update visual placeholder query in state
+          setChats(prevChats =>
+            prevChats.map(c => {
+              if (c.id === targetChatId) {
+                const upgraded = upgradeChatToTree(c);
+                const tree = { ...upgraded.messageTree };
+                if (tree[streamMessageId]) {
+                  tree[streamMessageId] = {
+                    ...tree[streamMessageId],
+                    content: `<search_status query="${searchQuery.replace(/"/g, '&quot;')}" status="searching" />`
+                  };
+                }
+                const messages = reconstructActivePath(tree, upgraded.activeLeafId);
+                return { ...upgraded, messageTree: tree, messages };
+              }
+              return c;
+            })
+          );
+
+          // Perform Search
+          const results = await searchSearxng(searchQuery, settings.searxngUrl);
+          webSearchContext = formatSearxngResults(results);
+
+          searchTagPrefix = `<search_status query="${searchQuery.replace(/"/g, '&quot;')}" status="done">${JSON.stringify(results)}</search_status>\n\n`;
+        } else {
+          // Bypassed search
+          searchTagPrefix = '';
+        }
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Search failed';
+        console.error('Failed to perform SearXNG web search:', err);
+        searchTagPrefix = `<search_status query="${userQuery.replace(/"/g, '&quot;')}" status="failed" error="${errorMsg}"></search_status>\n\n`;
+      }
+
+      // Update placeholder with final search tag prefix in tree
+      setChats(prevChats =>
+        prevChats.map(c => {
+          if (c.id === targetChatId) {
+            const upgraded = upgradeChatToTree(c);
+            const tree = { ...upgraded.messageTree };
+            if (tree[streamMessageId]) {
+              tree[streamMessageId] = {
+                ...tree[streamMessageId],
+                content: searchTagPrefix
+              };
+            }
+            const messages = reconstructActivePath(tree, upgraded.activeLeafId);
+            return { ...upgraded, messageTree: tree, messages };
+          }
+          return c;
+        })
+      );
+    }
+
     let systemInstruction = getSystemPromptText();
+    
+    // Inject web search context if available
+    if (webSearchContext) {
+      systemInstruction = `${systemInstruction}\n\n[REAL-TIME WEB SEARCH CONTEXT]\nUse the following real-time web search results from SearXNG to answer the user's prompt. Rely on these search results to provide accurate, up-to-date information:\n${webSearchContext}`;
+    }
+    
+    // Inject RAG context if available
     if (ragContext) {
       systemInstruction = `${systemInstruction}\n\n[RELEVANT LOCAL MEMORY CONTEXT]\nUse the following retrieved excerpts from the user's local documents to answer their prompt. Rely strictly on this context if it directly answers the question:\n${ragContext}`;
     }
+
     // Exclude system message and the stream message placeholder from API history
     const apiHistory = activeChat.messages;
 
@@ -332,7 +415,7 @@ function App() {
                 if (tree[streamMessageId]) {
                   tree[streamMessageId] = {
                     ...tree[streamMessageId],
-                    content: accumulatedContent
+                    content: searchTagPrefix + accumulatedContent
                   };
                 }
                 const messages = reconstructActivePath(tree, upgraded.activeLeafId);
@@ -356,7 +439,7 @@ function App() {
                 if (tree[streamMessageId]) {
                   tree[streamMessageId] = {
                     ...tree[streamMessageId],
-                    content: finalText,
+                    content: searchTagPrefix + finalText,
                     timestamp: new Date().toISOString()
                   };
                 }
@@ -454,7 +537,7 @@ function App() {
     const chatIndex = currentChats.findIndex(c => c.id === currentChatId);
     if (chatIndex !== -1) {
       const activeChat = currentChats[chatIndex];
-      if (activeChat.messages.length === 0 && activeChat.title.startsWith('New Chat Session')) {
+      if (activeChat.messages.length === 0 && activeChat.title.startsWith('New Conversation')) {
         const firstFewWords = text ? text.split(' ').slice(0, 4).join(' ') : 'New Conversation';
         activeChat.title = firstFewWords || 'New Conversation';
       }
@@ -469,21 +552,9 @@ function App() {
     Storage.saveChatsImmediately(currentChats);
     setComposerInput('');
 
-    let ragContext = '';
-    if (settings.isRagEnabled && text) {
-      try {
-        const matches = await vectorDb.searchSimilarChunks(text);
-        if (matches.length > 0) {
-          ragContext = matches.map(m => `--- [Document: ${m.chunk.docName} (Similarity: ${(m.score * 100).toFixed(0)}%)] ---\n${m.chunk.text}`).join('\n\n');
-        }
-      } catch (err) {
-        console.error('Failed to perform local RAG similarity search:', err);
-      }
-    }
-
     // Trigger completion stream
     if (currentChatId) {
-      await triggerStreamingResponse(currentChats, currentChatId, ragContext);
+      await triggerStreamingResponse(currentChats, currentChatId);
     }
   };
 
@@ -543,20 +614,81 @@ function App() {
     setChats(updatedChats);
     Storage.saveChatsImmediately(updatedChats);
 
-    let ragContext = '';
-    if (settings.isRagEnabled && newContent) {
-      try {
-        const matches = await vectorDb.searchSimilarChunks(newContent);
-        if (matches.length > 0) {
-          ragContext = matches.map(m => `--- [Document: ${m.chunk.docName} (Similarity: ${(m.score * 100).toFixed(0)}%)] ---\n${m.chunk.text}`).join('\n\n');
-        }
-      } catch (err) {
-        console.error('Failed to perform local RAG similarity search:', err);
+    // Re-trigger streaming response
+    await triggerStreamingResponse(updatedChats, activeChatId);
+  };
+
+  // Message Deletion: Remove message from tree, clean up subtrees, and update active path
+  const handleDeleteMessage = (messageId: string) => {
+    if (!activeChatId) return;
+
+    const chatIndex = chats.findIndex(c => c.id === activeChatId);
+    if (chatIndex === -1) return;
+
+    const activeChat = upgradeChatToTree(chats[chatIndex]);
+    const tree = { ...activeChat.messageTree };
+    
+    const nodeToDelete = tree[messageId];
+    if (!nodeToDelete) return;
+
+    // 1. Gather all descendants of this node to delete them as well (sub-branch deletion)
+    const idsToDelete = new Set<string>([messageId]);
+    const queue = [...(nodeToDelete.children || [])];
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      if (tree[currentId]) {
+        idsToDelete.add(currentId);
+        queue.push(...(tree[currentId].children || []));
       }
     }
 
-    // Re-trigger streaming response
-    await triggerStreamingResponse(updatedChats, activeChatId, ragContext);
+    // 2. Remove this node's reference from its parent's children list
+    const parentId = nodeToDelete.parentId;
+    if (parentId && tree[parentId]) {
+      const parentNode = { ...tree[parentId] };
+      parentNode.children = parentNode.children.filter(id => id !== messageId);
+      tree[parentId] = parentNode;
+    }
+
+    // 3. Delete all gathered nodes from the tree
+    idsToDelete.forEach(id => {
+      delete tree[id];
+    });
+
+    // 4. Update the activeLeafId if it or any of its children lay on the deleted subtree
+    let activeLeafId = activeChat.activeLeafId;
+    if (activeLeafId && idsToDelete.has(activeLeafId)) {
+      // Fallback active leaf to the parent of the deleted node
+      activeLeafId = parentId;
+    }
+
+    // If activeLeafId is null or missing, select any remaining leaf
+    if (!activeLeafId || !tree[activeLeafId]) {
+      const leaves = Object.values(tree).filter(n => !n.children || n.children.length === 0);
+      if (leaves.length > 0) {
+        activeLeafId = leaves[leaves.length - 1].id;
+      } else {
+        activeLeafId = null;
+      }
+    }
+
+    // 5. Reconstruct path
+    const messages = reconstructActivePath(tree, activeLeafId);
+
+    const updatedChat = {
+      ...activeChat,
+      messageTree: tree,
+      activeLeafId,
+      messages,
+      updatedAt: new Date().toISOString()
+    };
+
+    const updatedChats = chats.map(c =>
+      c.id === activeChatId ? updatedChat : c
+    );
+
+    setChats(updatedChats);
+    Storage.saveChatsImmediately(updatedChats);
   };
 
   // Message Regeneration: Truncate last assistant reply and retry
@@ -597,21 +729,8 @@ function App() {
     setChats(updatedChats);
     Storage.saveChatsImmediately(updatedChats);
 
-    const lastUserPrompt = parentId && tree[parentId] ? tree[parentId].content : '';
-    let ragContext = '';
-    if (settings.isRagEnabled && lastUserPrompt) {
-      try {
-        const matches = await vectorDb.searchSimilarChunks(lastUserPrompt);
-        if (matches.length > 0) {
-          ragContext = matches.map(m => `--- [Document: ${m.chunk.docName} (Similarity: ${(m.score * 100).toFixed(0)}%)] ---\n${m.chunk.text}`).join('\n\n');
-        }
-      } catch (err) {
-        console.error('Failed to perform local RAG similarity search:', err);
-      }
-    }
-
     // Now trigger completion under parentId
-    await triggerStreamingResponse(updatedChats, activeChatId, ragContext);
+    await triggerStreamingResponse(updatedChats, activeChatId);
   };
 
   // Helper to find the active leaf node under a given node
@@ -739,6 +858,7 @@ function App() {
         onSendMessage={handleSendMessage}
         isGenerating={isGenerating}
         onEditMessage={handleEditMessage}
+        onDeleteMessage={handleDeleteMessage}
         onRegenerateResponse={handleRegenerateResponse}
         isSidebarCollapsed={isSidebarCollapsed}
         onToggleSidebar={() => {
@@ -761,48 +881,59 @@ function App() {
           onError={(msg) => showToast(msg, 'error')}
           settings={settings}
           onSettingsChanged={setSettings}
+          activePromptId={activePromptId}
+          onSelectPromptId={(id) => {
+            setActivePromptId(id);
+            Storage.saveActivePromptId(id);
+          }}
+          customPrompts={customPrompts}
         />
       </ChatArea>
 
       {/* Settings Panel */}
-      <SettingsModal
-        isOpen={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        onSettingsSaved={handleSettingsSaved}
-        onPromptsChanged={handlePromptsChanged}
-        onBackupImported={handleBackupImported}
-        fontSize={fontSize}
-        onFontSizeChanged={(size) => {
-          setFontSize(size);
-          Storage.saveFontSize(size);
-        }}
-        theme={theme}
-        onThemeChanged={(newTheme) => {
-          setTheme(newTheme);
-          Storage.saveTheme(newTheme);
-        }}
-        activePromptId={activePromptId}
-        onSelectPrompt={handleSelectPrompt}
-      />
+      {settingsOpen && (
+        <SettingsModal
+          isOpen={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          activeChat={activeChat}
+          onSettingsSaved={handleSettingsSaved}
+          onPromptsChanged={handlePromptsChanged}
+          onBackupImported={handleBackupImported}
+          fontSize={fontSize}
+          onFontSizeChanged={(size) => {
+            setFontSize(size);
+            Storage.saveFontSize(size);
+          }}
+          theme={theme}
+          onThemeChanged={(newTheme) => {
+            setTheme(newTheme);
+            Storage.saveTheme(newTheme);
+          }}
+        />
+      )}
 
       {/* Keyboard Shortcuts Overlay */}
-      <ShortcutsModal
-        isOpen={shortcutsOpen}
-        onClose={() => setShortcutsOpen(false)}
-      />
+      {shortcutsOpen && (
+        <ShortcutsModal
+          isOpen={shortcutsOpen}
+          onClose={() => setShortcutsOpen(false)}
+        />
+      )}
 
       {/* RAG Memory Panel */}
-      <RAGPanel
-        isOpen={ragPanelOpen}
-        onClose={() => setRagPanelOpen(false)}
-        isRagEnabled={!!settings.isRagEnabled}
-        onToggleRag={(enabled) => {
-          const newSettings = { ...settings, isRagEnabled: enabled };
-          setSettings(newSettings);
-          Storage.saveSettings(newSettings);
-        }}
-        onError={(msg) => showToast(msg, 'error')}
-      />
+      {ragPanelOpen && (
+        <RAGPanel
+          isOpen={ragPanelOpen}
+          onClose={() => setRagPanelOpen(false)}
+          isRagEnabled={!!settings.isRagEnabled}
+          onToggleRag={(enabled) => {
+            const newSettings = { ...settings, isRagEnabled: enabled };
+            setSettings(newSettings);
+            Storage.saveSettings(newSettings);
+          }}
+          onError={(msg) => showToast(msg, 'error')}
+        />
+      )}
 
     </div>
   );

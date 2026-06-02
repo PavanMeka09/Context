@@ -35,13 +35,15 @@ export interface Chat {
 }
 
 export interface Settings {
-  provider: 'gemini' | 'openrouter' | 'mock' | 'ollama';
+  provider: 'gemini' | 'openrouter' | 'ollama';
   apiKey: string;
   model: string;
   thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
   speechToTextEngine?: 'native' | 'local';
   localUrl?: string;
   isRagEnabled?: boolean;
+  isWebSearchEnabled?: boolean;
+  searxngUrl?: string;
 }
 
 
@@ -113,9 +115,9 @@ const KEYS = {
 };
 
 // Debounce helper
-export function debounce<T extends (...args: any[]) => void>(func: T, wait: number): (...args: Parameters<T>) => void {
+export function debounce<A extends unknown[], R>(func: (...args: A) => R, wait: number): (...args: A) => void {
   let timeout: number | undefined;
-  return function executedFunction(...args: Parameters<T>) {
+  return function executedFunction(...args: A) {
     const later = () => {
       clearTimeout(timeout);
       func(...args);
@@ -197,9 +199,9 @@ export const Storage = {
       const data = localStorage.getItem(KEYS.SETTINGS);
       if (data) {
         const parsed = JSON.parse(data);
-        if (parsed && parsed.provider === 'anthropic') {
-          parsed.provider = 'mock';
-          parsed.model = 'mock-smart';
+        if (parsed && (parsed.provider as string === 'anthropic' || parsed.provider as string === 'mock')) {
+          parsed.provider = 'gemini';
+          parsed.model = 'gemini-2.5-flash';
         }
         if (parsed && !parsed.thinkingLevel) {
           parsed.thinkingLevel = 'off';
@@ -213,19 +215,27 @@ export const Storage = {
         if (parsed && parsed.isRagEnabled === undefined) {
           parsed.isRagEnabled = false;
         }
+        if (parsed && parsed.isWebSearchEnabled === undefined) {
+          parsed.isWebSearchEnabled = false;
+        }
+        if (parsed && parsed.searxngUrl === undefined) {
+          parsed.searxngUrl = '';
+        }
         return parsed;
       }
     } catch (e) {
       console.error('Error reading settings from localStorage', e);
     }
     return {
-      provider: 'mock',
+      provider: 'gemini',
       apiKey: '',
-      model: 'mock-smart',
+      model: 'gemini-2.5-flash',
       thinkingLevel: 'off',
       speechToTextEngine: 'native',
       localUrl: 'http://localhost:11434/v1',
-      isRagEnabled: false
+      isRagEnabled: false,
+      isWebSearchEnabled: false,
+      searxngUrl: ''
     };
   },
 

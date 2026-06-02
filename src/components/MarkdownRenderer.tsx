@@ -137,14 +137,14 @@ const HighlightCode: React.FC<{ code: string; language: string }> = ({ code, lan
   );
 };
 
-export function stripTypeScript(tsCode: string): string {
+function stripTypeScript(tsCode: string): string {
   let jsCode = tsCode;
   jsCode = jsCode.replace(/import\s+type\s+[^;]+;/g, '');
   jsCode = jsCode.replace(/interface\s+\w+\s*\{[\s\S]*?\}/g, '');
   jsCode = jsCode.replace(/type\s+\w+\s*=\s*[\s\S]*?;/g, '');
-  jsCode = jsCode.replace(/\s+as\s+[A-Za-z0-9_|\[\]<>]+/g, '');
-  jsCode = jsCode.replace(/\):\s*[A-Za-z0-9_|\[\]<>]+/g, ')');
-  jsCode = jsCode.replace(/:\s*[A-Za-z0-9_|\[\]<>]+\s*(?==)/g, '');
+  jsCode = jsCode.replace(/\s+as\s+[A-Za-z0-9_|[\]<>]+/g, '');
+  jsCode = jsCode.replace(/\):\s*[A-Za-z0-9_|[\]<>]+/g, ')');
+  jsCode = jsCode.replace(/:\s*[A-Za-z0-9_|[\]<>]+\s*(?==)/g, '');
   jsCode = jsCode.replace(/:\s*[A-Za-z_]\w*(?:\[\])?(?=\s*[,)=]|\s*$)/g, '');
   jsCode = jsCode.replace(/<[A-Za-z0-9_,\s]+>(?=\()/g, '');
   return jsCode;

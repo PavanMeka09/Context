@@ -1,14 +1,17 @@
-import React, { useState, useEffect } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import React, { useState, useEffect, useCallback } from 'react';
 import { PRESET_PROMPTS, Storage } from '../utils/storage';
-import type { Settings, SystemPrompt } from '../utils/storage';
+import type { Settings, SystemPrompt, Chat } from '../utils/storage';
 import { fetchModels } from '../utils/api';
 import { localSpeech } from '../utils/localSpeech';
 import type { ModelOption } from '../utils/api';
-import { X, Eye, EyeOff, Save, Plus, Trash2, Edit2, AlertCircle, Loader2, Download, CheckSquare, ChevronDown, Check, Sparkles } from 'lucide-react';
+import { X, Eye, EyeOff, Save, Plus, Trash2, Edit2, AlertCircle, Loader2, Download, CheckSquare, ChevronDown, Check, Globe, Search, Cpu, Sliders, Database, FileText, Terminal } from 'lucide-react';
+import { testSearxngConnection } from '../utils/searxng';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  activeChat: Chat | null;
   onSettingsSaved: (settings: Settings) => void;
   onPromptsChanged: () => void;
   onBackupImported: () => void;
@@ -16,31 +19,289 @@ interface SettingsModalProps {
   onFontSizeChanged: (size: 'sm' | 'base' | 'lg') => void;
   theme: 'dark' | 'light' | 'system';
   onThemeChanged: (theme: 'dark' | 'light' | 'system') => void;
-  activePromptId: string;
-  onSelectPrompt: (id: string) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
+  activeChat,
   onSettingsSaved,
   onPromptsChanged,
   onBackupImported,
   fontSize,
   onFontSizeChanged,
   theme,
-  onThemeChanged,
-  activePromptId,
-  onSelectPrompt
+  onThemeChanged
 }) => {
-  const [activeTab, setActiveTab] = useState<'provider' | 'prompts' | 'preferences' | 'backup'>('provider');
-  const [settings, setSettings] = useState<Settings>({ provider: 'mock', apiKey: '', model: '' });
+  const [activeTab, setActiveTab] = useState<'provider' | 'prompts' | 'websearch' | 'preferences' | 'backup'>('provider');
+  const [settings, setSettings] = useState<Settings>(() => Storage.getSettings());
   const [localSttStatus, setLocalSttStatus] = useState<string>('idle');
+
+  const slugify = (text: string) => {
+    return text
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  };
+
+  const triggerDownload = (content: string, fileName: string, contentType: string) => {
+    const blob = new Blob([content], { type: contentType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportToMarkdown = () => {
+    if (!activeChat) return;
+    let mdContent = `# ${activeChat.title}\n\n`;
+    mdContent += `*Created: ${new Date(activeChat.createdAt).toLocaleString()}*\n`;
+    mdContent += `*Last Updated: ${new Date(activeChat.updatedAt).toLocaleString()}*\n\n`;
+    mdContent += `---\n\n`;
+
+    activeChat.messages.forEach(msg => {
+      const roleLabel = msg.role === 'user' ? '### 👤 User' : '### 🤖 Assistant';
+      mdContent += `${roleLabel}\n\n${msg.content}\n\n---\n\n`;
+    });
+
+    triggerDownload(mdContent, `${slugify(activeChat.title)}.md`, 'text/markdown');
+  };
+
+  const exportToJSON = () => {
+    if (!activeChat) return;
+    const jsonString = JSON.stringify(activeChat, null, 2);
+    triggerDownload(jsonString, `${slugify(activeChat.title)}.json`, 'application/json');
+  };
+
+  const exportToPDF = () => {
+    if (!activeChat) return;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!doc) {
+      document.body.removeChild(iframe);
+      return;
+    }
+
+    let messagesHtml = '';
+    const cards = document.querySelectorAll('.message-card-body');
+    
+    activeChat.messages.forEach((msg, idx) => {
+      const isUser = msg.role === 'user';
+      const roleText = isUser ? 'User' : 'Assistant';
+      
+      let cardContent: string;
+      if (cards && cards[idx]) {
+        const clone = cards[idx].cloneNode(true) as HTMLElement;
+        const toRemove = clone.querySelectorAll('.hover-actions, button, textarea, .branching-pagination');
+        toRemove.forEach(el => el.remove());
+        cardContent = clone.innerHTML;
+      } else {
+        cardContent = `<p>${msg.content.replace(/\n/g, '<br />')}</p>`;
+      }
+
+      messagesHtml += `
+        <div class="message-row">
+          <div class="message-meta">${roleText} • ${new Date(msg.timestamp).toLocaleString()}</div>
+          <div class="message-content ${isUser ? 'user-content' : 'assistant-content'}">
+            ${cardContent}
+          </div>
+        </div>
+      `;
+    });
+
+    const printHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${activeChat.title}</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
+        <style>
+          body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: white;
+            color: #1e293b;
+            margin: 0;
+            padding: 40px;
+            line-height: 1.6;
+          }
+          .header {
+            border-bottom: 2px solid #f1f5f9;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+          }
+          .title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 26px;
+            font-weight: 700;
+            color: #0f172a;
+            margin: 0;
+          }
+          .meta {
+            font-size: 11px;
+            color: #64748b;
+            margin-top: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+          }
+          .message-row {
+            margin-bottom: 30px;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          .message-meta {
+            font-size: 10px;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 6px;
+          }
+          .message-content {
+            font-size: 14px;
+            color: #334155;
+          }
+          .user-content {
+            background: #f8fafc;
+            border-left: 3px solid #4f46e5;
+            padding: 12px 16px;
+            border-radius: 0 8px 8px 0;
+          }
+          .assistant-content {
+            padding: 4px 0;
+          }
+          pre {
+            background: #0f172a !important;
+            color: #cbd5e1 !important;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-family: Menlo, Monaco, Consolas, monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            margin: 16px 0;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+          code {
+            font-family: Menlo, Monaco, Consolas, monospace;
+            font-size: 12.5px;
+            background: #f1f5f9;
+            color: #e11d48;
+            padding: 2px 4px;
+            border-radius: 4px;
+          }
+          pre code {
+            background: transparent;
+            color: inherit;
+            padding: 0;
+            border-radius: 0;
+          }
+          .text-slate-500 { color: #64748b !important; font-style: italic; }
+          .text-emerald-400 { color: #059669 !important; font-weight: 500; }
+          .text-brand-500 { color: #4f46e5 !important; font-weight: bold; }
+          .text-sky-400 { color: #0284c7 !important; font-weight: 600; }
+          .text-blue-400 { color: #2563eb !important; }
+          .text-amber-400 { color: #d97706 !important; }
+          .text-slate-200 { color: #cbd5e1 !important; }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 13px;
+          }
+          th, td {
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            text-align: left;
+          }
+          th {
+            background: #f8fafc;
+            color: #0f172a;
+            font-weight: 600;
+          }
+          @media print {
+            body {
+              padding: 0;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1 class="title">${activeChat.title}</h1>
+          <div class="meta">Transcript exported from Context AI • ${activeChat.messages.length} turns</div>
+        </div>
+        ${messagesHtml}
+      </body>
+      </html>
+    `;
+
+    doc.open();
+    doc.write(printHtml);
+    doc.close();
+
+    setTimeout(() => {
+      if (iframe.contentWindow) {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 1000);
+      }
+    }, 500);
+  };
   const [localSttProgress, setLocalSttProgress] = useState<number>(0);
 
+  // SearXNG connection tester states
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionTestResult, setConnectionTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleTestConnection = async () => {
+    setTestingConnection(true);
+    setConnectionTestResult(null);
+    try {
+      const result = await testSearxngConnection(settings.searxngUrl);
+      setTestingConnection(false);
+      if (result.success) {
+        setConnectionTestResult({
+          success: true,
+          message: `Successfully connected! SearXNG search engines are active.`
+        });
+      } else {
+        setConnectionTestResult({
+          success: false,
+          message: `Connection failed: ${result.error || 'Check the URL and try again.'}`
+        });
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Check the URL and try again.';
+      setTestingConnection(false);
+      setConnectionTestResult({
+        success: false,
+        message: `Connection failed: ${errorMsg}`
+      });
+    }
+  };
+
   useEffect(() => {
-    const unsubStatus = localSpeech.subscribeStatus(setLocalSttStatus);
-    const unsubProgress = localSpeech.subscribeProgress(setLocalSttProgress);
+    const unsubStatus = localSpeech.subscribeStatus((status) => {
+      setTimeout(() => setLocalSttStatus(status), 0);
+    });
+    const unsubProgress = localSpeech.subscribeProgress((progress) => {
+      setTimeout(() => setLocalSttProgress(progress), 0);
+    });
     return () => {
       unsubStatus();
       unsubProgress();
@@ -54,14 +315,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [models, setModels] = useState<ModelOption[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [modelSearchQuery, setModelSearchQuery] = useState('');
 
   // Custom Dropdowns open states
   const [providerDropdownOpen, setProviderDropdownOpen] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
-  const [promptSelectorOpen, setPromptSelectorOpen] = useState(false);
 
   // System Prompts state
-  const [customPrompts, setCustomPrompts] = useState<SystemPrompt[]>([]);
+  const [customPrompts, setCustomPrompts] = useState<SystemPrompt[]>(() => Storage.getCustomPrompts());
   const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
   const [promptName, setPromptName] = useState('');
   const [promptContent, setPromptContent] = useState('');
@@ -133,15 +394,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     reader.readAsText(file);
   };
 
-  useEffect(() => {
-    if (isOpen) {
-      const savedSettings = Storage.getSettings();
-      setSettings(savedSettings);
-      setCustomPrompts(Storage.getCustomPrompts());
-      loadModelsForProvider(savedSettings.provider, savedSettings.apiKey, savedSettings.model, savedSettings.localUrl);
-      setConfirmDeleteAll(false);
+  const loadModelsForProvider = useCallback(async (provider: 'gemini' | 'openrouter' | 'ollama', key: string, activeModelId?: string, localUrl?: string) => {
+    setLoadingModels(true);
+    setModelError(null);
+    setModelSearchQuery('');
+    try {
+      const fetched = await fetchModels(provider, key, localUrl);
+      setModels(fetched);
+      
+      if (fetched.length > 0) {
+        const modelExists = fetched.some(m => m.id === activeModelId);
+        if (!modelExists) {
+          setSettings(prev => ({ ...prev, model: fetched[0].id }));
+        }
+      } else {
+        setSettings(prev => ({ ...prev, model: '' }));
+      }
+    } catch {
+      setModelError('Failed to load dynamic models for this provider.');
+    } finally {
+      setLoadingModels(false);
     }
-  }, [isOpen]);
+  }, []);
+
+  useEffect(() => {
+    setTimeout(() => {
+      loadModelsForProvider(settings.provider, settings.apiKey, settings.model, settings.localUrl);
+    }, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadModelsForProvider]);
 
   // Capture Escape key to close open dropdowns without dismissing settings modal
   useEffect(() => {
@@ -155,10 +436,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           e.preventDefault();
           e.stopPropagation();
           setModelDropdownOpen(false);
-        } else if (promptSelectorOpen) {
-          e.preventDefault();
-          e.stopPropagation();
-          setPromptSelectorOpen(false);
+          setModelSearchQuery('');
         }
       }
     };
@@ -169,37 +447,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   }, [providerDropdownOpen, modelDropdownOpen]);
 
-  const loadModelsForProvider = async (provider: 'gemini' | 'openrouter' | 'mock' | 'ollama', key: string, activeModelId?: string, localUrl?: string) => {
-    setLoadingModels(true);
-    setModelError(null);
-    try {
-      const fetched = await fetchModels(provider, key, localUrl);
-      setModels(fetched);
-      
-      if (fetched.length > 0) {
-        const modelExists = fetched.some(m => m.id === activeModelId);
-        if (!modelExists) {
-          setSettings(prev => ({ ...prev, model: fetched[0].id }));
-        }
-      } else {
-        setSettings(prev => ({ ...prev, model: '' }));
-      }
-    } catch (e) {
-      setModelError('Failed to load dynamic models for this provider.');
-    } finally {
-      setLoadingModels(false);
-    }
-  };
-
   const handleKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const apiKey = e.target.value;
     setSettings(prev => ({ ...prev, apiKey }));
   };
 
   const handleKeyBlur = () => {
-    if (settings.provider !== 'mock') {
-      loadModelsForProvider(settings.provider, settings.apiKey, settings.model, settings.localUrl);
-    }
+    loadModelsForProvider(settings.provider, settings.apiKey, settings.model, settings.localUrl);
   };
 
   const handleSaveSettings = () => {
@@ -217,7 +471,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       return;
     }
 
-    let updatedList: SystemPrompt[] = [];
+    let updatedList: SystemPrompt[];
     if (editingPromptId) {
       updatedList = customPrompts.map(p =>
         p.id === editingPromptId
@@ -288,21 +542,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Modal Tabs */}
         <div className="flex border-b border-white/[0.01] bg-slate-950/5 px-5 overflow-x-auto scrollbar-none">
           {[
-            { id: 'provider', name: 'AI Provider' },
-            { id: 'prompts', name: 'System Prompts' },
-            { id: 'preferences', name: 'Preferences' },
-            { id: 'backup', name: 'Backup & History' }
+            { id: 'provider', name: 'AI Provider', icon: <Cpu className="h-3.5 w-3.5" /> },
+            { id: 'prompts', name: 'System Prompts', icon: <FileText className="h-3.5 w-3.5" /> },
+            { id: 'websearch', name: 'Web Search', icon: <Globe className="h-3.5 w-3.5" /> },
+            { id: 'preferences', name: 'Preferences', icon: <Sliders className="h-3.5 w-3.5" /> },
+            { id: 'backup', name: 'Backup & History', icon: <Database className="h-3.5 w-3.5" /> }
           ].map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`border-b-2 px-3 py-2.5 text-xs font-medium transition shrink-0 cursor-pointer ${
+              className={`border-b-2 px-3 py-2.5 text-xs font-medium transition shrink-0 cursor-pointer flex items-center gap-1.5 ${
                 activeTab === tab.id
                   ? 'border-brand-500 text-white font-semibold'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
               }`}
             >
-              {tab.name}
+              {tab.icon}
+              <span>{tab.name}</span>
             </button>
           ))}
         </div>
@@ -329,7 +585,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="flex w-full items-center justify-between rounded-lg border border-white/[0.04] bg-slate-900 px-3.5 py-2 text-left text-xs text-white cursor-pointer hover:bg-slate-850/80 transition-all duration-300"
                 >
                   <span>
-                    {settings.provider === 'mock' && 'Simulated Mock Provider (No Key Required)'}
                     {settings.provider === 'gemini' && 'Google Gemini'}
                     {settings.provider === 'openrouter' && 'OpenRouter'}
                     {settings.provider === 'ollama' && 'Ollama (Local LLM)'}
@@ -346,7 +601,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       className="absolute left-0 right-0 mt-2 z-20 rounded-lg border border-white/[0.04] bg-slate-900 p-1 shadow-2xl backdrop-blur-xl animate-fade-in"
                     >
                       {[
-                        { id: 'mock', name: 'Simulated Mock Provider (No Key Required)' },
                         { id: 'gemini', name: 'Google Gemini' },
                         { id: 'openrouter', name: 'OpenRouter' },
                         { id: 'ollama', name: 'Ollama (Local LLM)' }
@@ -358,9 +612,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           aria-selected={settings.provider === p.id}
                           onClick={() => {
                             const newSettings = { ...settings, provider: p.id as any };
-                            if (p.id === 'mock') {
-                              newSettings.apiKey = '';
-                            }
                             if (p.id === 'ollama' && !newSettings.localUrl) {
                               newSettings.localUrl = 'http://localhost:11434/v1';
                             }
@@ -384,7 +635,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               {/* API Key */}
-              {settings.provider !== 'mock' && settings.provider !== 'ollama' && (
+              {settings.provider !== 'ollama' && (
                 <div className="space-y-1">
                   <label htmlFor="api-key-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
                     API Key
@@ -501,41 +752,74 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <span>
                     {models.find(m => m.id === settings.model)?.name || 
-                     (settings.provider === 'mock' 
-                        ? 'Select model...' 
-                        : 'Configure API key above to load models...')}
+                     'Configure API key above to load models...'}
                   </span>
                   <ChevronDown className="h-4 w-4 text-slate-500" />
                 </button>
 
                 {modelDropdownOpen && models.length > 0 && (
                   <>
-                    <div className="fixed inset-0 z-10" onClick={() => setModelDropdownOpen(false)} />
+                    <div className="fixed inset-0 z-10" onClick={() => {
+                      setModelDropdownOpen(false);
+                      setModelSearchQuery('');
+                    }} />
                     <div 
                       role="listbox" 
                       aria-labelledby="model-select-btn"
-                      className="absolute left-0 right-0 mt-2.5 z-20 max-h-52 overflow-y-auto rounded-lg border border-white/[0.04] bg-slate-900 p-1 shadow-2xl backdrop-blur-xl animate-fade-in"
+                      className="absolute left-0 right-0 mt-2.5 z-20 flex flex-col max-h-60 rounded-lg border border-white/[0.04] bg-slate-900 shadow-2xl backdrop-blur-xl animate-fade-in"
                     >
-                      {models.map(m => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          role="option"
-                          aria-selected={settings.model === m.id}
-                          onClick={() => {
-                            setSettings(prev => ({ ...prev, model: m.id }));
-                            setModelDropdownOpen(false);
-                          }}
-                          className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-xs transition cursor-pointer ${
-                            settings.model === m.id
-                              ? 'bg-brand-500/10 text-white font-semibold'
-                              : 'text-slate-400 hover:bg-white/[0.02] hover:text-slate-200'
-                          }`}
-                        >
-                          <span>{m.name}</span>
-                          {settings.model === m.id && <Check className="h-3.5 w-3.5 text-brand-500" />}
-                        </button>
-                      ))}
+                      {/* Search Bar */}
+                      <div className="p-2 border-b border-white/[0.03] shrink-0 relative select-none">
+                        <input
+                          type="text"
+                          value={modelSearchQuery}
+                          onChange={(e) => setModelSearchQuery(e.target.value)}
+                          placeholder="Search models..."
+                          autoFocus
+                          className="w-full bg-slate-950/40 border border-white/[0.04] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-brand-500/50 transition-all duration-300"
+                        />
+                        <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500 pointer-events-none" />
+                      </div>
+
+                      {/* Models List */}
+                      <div className="flex-1 overflow-y-auto p-1 max-h-40 scrollbar-thin">
+                        {(() => {
+                          const filtered = models.filter(m => 
+                            m.name.toLowerCase().includes(modelSearchQuery.toLowerCase()) || 
+                            m.id.toLowerCase().includes(modelSearchQuery.toLowerCase())
+                          );
+                          
+                          if (filtered.length === 0) {
+                            return (
+                              <div className="text-center py-4 text-xs text-slate-500 italic select-none">
+                                No models found
+                              </div>
+                            );
+                          }
+                          
+                          return filtered.map(m => (
+                            <button
+                              key={m.id}
+                              type="button"
+                              role="option"
+                              aria-selected={settings.model === m.id}
+                              onClick={() => {
+                                setSettings(prev => ({ ...prev, model: m.id }));
+                                setModelDropdownOpen(false);
+                                setModelSearchQuery('');
+                              }}
+                              className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-xs transition cursor-pointer ${
+                                settings.model === m.id
+                                  ? 'bg-brand-500/10 text-white font-semibold'
+                                  : 'text-slate-400 hover:bg-white/[0.02] hover:text-slate-200'
+                              }`}
+                            >
+                              <span>{m.name}</span>
+                              {settings.model === m.id && <Check className="h-3.5 w-3.5 text-brand-500" />}
+                            </button>
+                          ));
+                        })()}
+                      </div>
                     </div>
                   </>
                 )}
@@ -545,64 +829,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           ) : activeTab === 'prompts' ? (
             <div className="space-y-5">
               
-              {/* Active Prompt Selector */}
-              {(() => {
-                const allPrompts = [...PRESET_PROMPTS, ...customPrompts];
-                return (
-                  <div className="relative space-y-1.5 rounded-xl border border-white/[0.03] bg-white/[0.01] p-3 select-none">
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      Active System Prompt
-                    </label>
-                    <button
-                      type="button"
-                      id="modal-prompt-select-btn"
-                      aria-haspopup="listbox"
-                      aria-expanded={promptSelectorOpen}
-                      onClick={() => setPromptSelectorOpen(!promptSelectorOpen)}
-                      className="flex w-full items-center justify-between rounded-lg border border-white/[0.04] bg-slate-900 px-3.5 py-2 text-left text-xs text-white cursor-pointer hover:bg-slate-850/80 transition-all duration-300"
-                    >
-                      <span className="flex items-center gap-2">
-                        <Sparkles className="h-3.5 w-3.5 text-brand-500" />
-                        <span>{allPrompts.find(p => p.id === activePromptId)?.name || 'General Assistant'}</span>
-                      </span>
-                      <ChevronDown className="h-4 w-4 text-slate-500" />
-                    </button>
-
-                    {promptSelectorOpen && (
-                      <>
-                        <div className="fixed inset-0 z-10" onClick={() => setPromptSelectorOpen(false)} />
-                        <div 
-                          role="listbox" 
-                          aria-labelledby="modal-prompt-select-btn"
-                          className="absolute left-0 right-0 mt-2 z-20 max-h-52 overflow-y-auto rounded-lg border border-white/[0.04] bg-slate-900 p-1 shadow-2xl backdrop-blur-xl animate-fade-in"
-                        >
-                          {allPrompts.map(p => (
-                            <button
-                              key={p.id}
-                              type="button"
-                              role="option"
-                              aria-selected={activePromptId === p.id}
-                              onClick={() => {
-                                onSelectPrompt(p.id);
-                                setPromptSelectorOpen(false);
-                              }}
-                              className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-xs transition cursor-pointer ${
-                                activePromptId === p.id
-                                  ? 'bg-brand-500/10 text-white font-semibold'
-                                  : 'text-slate-400 hover:bg-white/[0.02] hover:text-slate-200'
-                              }`}
-                            >
-                              <span>{p.name}</span>
-                              {activePromptId === p.id && <Check className="h-3.5 w-3.5 text-brand-500" />}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                );
-              })()}
-
               {/* CRUD Custom Prompt Form */}
               <form onSubmit={handleSavePrompt} className="space-y-2 rounded-xl border border-white/[0.03] bg-white/[0.01] p-3">
                 <h3 className="font-display text-[10px] font-bold uppercase tracking-wider text-slate-400">
@@ -707,6 +933,95 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   )}
                 </div>
 
+              </div>
+
+            </div>
+          ) : activeTab === 'websearch' ? (
+            <div className="space-y-4 animate-fade-in select-none">
+              
+              {/* Enable Web Search Toggle */}
+              <div className="flex items-center justify-between rounded-xl border border-white/[0.03] bg-white/[0.01] p-3.5">
+                <div>
+                  <h3 className="font-display text-xs font-semibold text-white">Enable Web Search</h3>
+                  <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                    Give the AI assistant real-time web search capabilities using SearXNG.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSettings(prev => ({ ...prev, isWebSearchEnabled: !prev.isWebSearchEnabled }))}
+                  aria-checked={settings.isWebSearchEnabled}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    settings.isWebSearchEnabled ? 'bg-emerald-500' : 'bg-slate-800'
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      settings.isWebSearchEnabled ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* SearXNG Instance URL */}
+              <div className="space-y-1.5">
+                <label htmlFor="searxng-url-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  SearXNG Instance URL
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="searxng-url-input"
+                    type="text"
+                    value={settings.searxngUrl || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSettings(prev => ({ ...prev, searxngUrl: val }));
+                    }}
+                    placeholder="http://localhost:8080 (Leave blank for Docker proxy)"
+                    className="glass-input flex-1 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-mono text-white"
+                  />
+                  <button
+                    type="button"
+                    disabled={testingConnection}
+                    onClick={handleTestConnection}
+                    className="flex h-8 items-center justify-center rounded-lg border border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.06] text-[10px] font-semibold text-slate-300 hover:text-white px-3 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    {testingConnection ? (
+                      <span className="flex items-center gap-1">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>Testing...</span>
+                      </span>
+                    ) : (
+                      'Test Connection'
+                    )}
+                  </button>
+                </div>
+                
+                {connectionTestResult && (
+                  <div className={`mt-2 flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[10px] animate-fade-in ${
+                    connectionTestResult.success
+                      ? 'bg-emerald-950/20 border-emerald-900/30 text-emerald-400'
+                      : 'bg-red-950/20 border-red-900/30 text-red-400'
+                  }`}>
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    <span>{connectionTestResult.message}</span>
+                  </div>
+                )}
+                
+                <p className="text-[9px] text-slate-500 leading-relaxed mt-1 select-none">
+                  SearXNG is a privacy-respecting search engine. If you are using our Docker Compose setup, leave this blank (it defaults to the internal proxied route <code>/searxng</code>). For external custom instances, specify the full origin (e.g. <code>https://searx.be</code>).
+                </p>
+              </div>
+
+              {/* How it works */}
+              <div className="rounded-xl border border-white/[0.03] bg-white/[0.01] p-3.5 space-y-2">
+                <h4 className="font-display text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <Globe className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>How does Web Search work?</span>
+                </h4>
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  When Web Search is enabled, Context queries SearXNG before the LLM generation starts, retrieves the top search snippets, and automatically injects them into the model's context. This allows any model (local Ollama, Gemini, or OpenRouter) to answer with up-to-date information.
+                </p>
               </div>
 
             </div>
@@ -848,40 +1163,64 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              <div className="rounded-xl border border-white/[0.03] bg-white/[0.01] p-3.5 space-y-2">
-                <h3 className="font-display text-[10px] font-bold uppercase tracking-wider text-white">Privacy-First Guarantee</h3>
-                <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
-                  Context is a 100% serverless client-side application. Your API keys, chat history threads, custom prompts, and settings are preserved strictly inside your browser's LocalStorage. No data is ever transmitted to a central database.
-                </p>
-              </div>
-
             </div>
           ) : (
             <div className="space-y-4 animate-fade-in">
+
+              {activeChat && activeChat.messages && activeChat.messages.length > 0 && (
+                <div className="rounded-xl border border-white/[0.03] bg-white/[0.01] p-3.5 space-y-3">
+                  <div>
+                    <h3 className="font-display text-xs font-semibold text-white">Export Conversation</h3>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                      Download the transcript of your current conversation in different formats.
+                    </p>
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={exportToMarkdown}
+                      className="flex items-center gap-1.5 rounded-lg border border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.06] text-xs font-semibold text-slate-300 hover:text-white px-3.5 py-1.5 transition active:scale-95 cursor-pointer shadow-sm select-none"
+                    >
+                      <FileText className="h-3.5 w-3.5 text-brand-500" />
+                      <span>Markdown (.md)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={exportToJSON}
+                      className="flex items-center gap-1.5 rounded-lg border border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.06] text-xs font-semibold text-slate-300 hover:text-white px-3.5 py-1.5 transition active:scale-95 cursor-pointer shadow-sm select-none"
+                    >
+                      <Terminal className="h-3.5 w-3.5 text-emerald-500" />
+                      <span>JSON (.json)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={exportToPDF}
+                      className="flex items-center gap-1.5 rounded-lg border border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.06] text-xs font-semibold text-slate-300 hover:text-white px-3.5 py-1.5 transition active:scale-95 cursor-pointer shadow-sm select-none"
+                    >
+                      <FileText className="h-3.5 w-3.5 text-sky-500" />
+                      <span>Print / PDF</span>
+                    </button>
+                  </div>
+                </div>
+              )}
               
-              <div className="rounded-xl border border-white/[0.03] bg-white/[0.01] p-3.5 space-y-3">
+              <div className="rounded-xl border border-white/[0.03] bg-white/[0.01] p-3.5 space-y-3 flex items-center justify-between">
                 <div>
                   <h3 className="font-display text-xs font-semibold text-white">Export Global Backup</h3>
-                  <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
-                    Download a secure, complete backup of your conversation history, custom prompts, and settings in a single JSON file.
-                  </p>
                 </div>
                 <button
                   type="button"
                   onClick={handleExportBackup}
-                  className="flex items-center gap-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 px-3.5 py-1.5 text-xs font-medium text-white transition active:scale-95 cursor-pointer shadow-sm"
+                  className="flex items-center gap-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 px-3.5 py-1.5 text-xs font-medium text-white transition active:scale-95 cursor-pointer shadow-sm shrink-0"
                 >
                   <Download className="h-3.5 w-3.5" />
-                  <span>Download Backup JSON</span>
+                  <span>Download JSON</span>
                 </button>
               </div>
 
               <div className="rounded-xl border border-white/[0.03] bg-white/[0.01] p-3.5 space-y-3">
                 <div>
                   <h3 className="font-display text-xs font-semibold text-white">Import Global Backup</h3>
-                  <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
-                    Restore your conversation history and custom prompts from a previously saved Context backup JSON file.
-                  </p>
                 </div>
 
                 {importError && (
@@ -958,6 +1297,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Modal Footer */}
         <div className="flex items-center justify-end border-t border-white/[0.015] bg-slate-950/10 px-5 py-3.5 gap-2.5">
+          <span className="text-[10px] text-slate-500 font-medium select-none mr-auto">100% Serverless & Private</span>
           <button
             onClick={onClose}
             className="rounded-lg border border-white/[0.05] bg-white/[0.01] px-4 py-2 text-xs font-medium text-slate-400 hover:bg-white/5 hover:text-white"

@@ -1,0 +1,35 @@
+# SearXNG configuration settings for Context AI Chat
+
+use_default_settings: true
+
+server:
+  port: 8080
+  bind_address: "0.0.0.0"
+  secret_key: "context_ai_chat_secret_key_string"
+  limiter: false # Disable rate limiter for seamless local usage
+  image_proxy: true
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  # Enable JSON format for integration
+  formats:
+    - html
+    - json
+
+engines:
+  - name: google
+    disabled: true
+  - name: brave
+    disabled: true
+  - name: wikidata
+    disabled: true
+  - name: duckduckgo
+    active: true
+  - name: wikipedia
+    active: true
+  - name: qwant
+    active: true
+  - name: startpage
+    active: true

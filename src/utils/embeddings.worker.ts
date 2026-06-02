@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { pipeline, env } from '@huggingface/transformers';
 
 // Disable local models to fetch from HuggingFace Hub

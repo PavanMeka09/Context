@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { vectorDb } from '../utils/vectorDb';
 import type { VectorDocument } from '../utils/vectorDb';
 import { X, Trash2, Plus, Download, Loader2, FileText, Database } from 'lucide-react';
@@ -24,19 +24,7 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      loadDocuments();
-      const unsubStatus = vectorDb.subscribeStatus(setModelStatus);
-      const unsubProgress = vectorDb.subscribeProgress(setModelProgress);
-      return () => {
-        unsubStatus();
-        unsubProgress();
-      };
-    }
-  }, [isOpen]);
-
-  const loadDocuments = async () => {
+  const loadDocuments = useCallback(async () => {
     try {
       const docs = await vectorDb.getDocuments();
       setDocuments(docs);
@@ -44,7 +32,25 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
       console.error('Failed to load local docs', e);
       onError('Failed to load local document registry.');
     }
-  };
+  }, [onError]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => {
+        loadDocuments();
+      }, 0);
+      const unsubStatus = vectorDb.subscribeStatus((status) => {
+        setTimeout(() => setModelStatus(status), 0);
+      });
+      const unsubProgress = vectorDb.subscribeProgress((progress) => {
+        setTimeout(() => setModelProgress(progress), 0);
+      });
+      return () => {
+        unsubStatus();
+        unsubProgress();
+      };
+    }
+  }, [isOpen, loadDocuments]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -71,9 +77,10 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
       }
       
       await loadDocuments();
-    } catch (err: any) {
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to index target document.';
       console.error('File index failed', err);
-      onError(err.message || 'Failed to index target document.');
+      onError(errorMsg);
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) {
@@ -86,7 +93,7 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
     try {
       await vectorDb.deleteDocument(id);
       await loadDocuments();
-    } catch (e) {
+    } catch {
       onError('Failed to delete target document.');
     }
   };
@@ -96,7 +103,7 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
       try {
         await vectorDb.deleteAllData();
         await loadDocuments();
-      } catch (e) {
+      } catch {
         onError('Failed to clear database.');
       }
     }

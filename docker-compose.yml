@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  # The AI Chat Application (Context)
+  context:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: context-chat
+    ports:
+      - "3000:80"
+    depends_on:
+      - searxng
+    restart: unless-stopped
+    networks:
+      - context-network
+
+  # SearXNG Search Engine
+  searxng:
+    image: searxng/searxng:latest
+    container_name: context-searxng
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./searxng:/etc/searxng:ro
+    environment:
+      - SEARXNG_SETTINGS_PATH=/etc/searxng/settings.yml
+    restart: unless-stopped
+    networks:
+      - context-network
+
+networks:
+  context-network:
+    driver: bridge

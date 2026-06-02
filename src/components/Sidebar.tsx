@@ -59,8 +59,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const getProviderLabel = () => {
-    if (settings.provider === 'mock') return 'Mock';
     if (settings.provider === 'gemini') return 'Gemini';
+    if (settings.provider === 'ollama') return 'Ollama';
     return 'OpenRouter';
   };
 
@@ -230,7 +230,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Model info panel */}
         <div className="min-w-0 pr-2 select-none">
           <div className="flex items-center gap-1">
-            <div className={`h-1 w-1 rounded-full ${settings.provider === 'mock' ? 'bg-emerald-500/80' : 'bg-brand-500/80'}`} />
+            <div className="h-1 w-1 rounded-full bg-brand-500/80" />
             <span className="text-[9px] font-medium text-slate-600 uppercase tracking-widest truncate">{getProviderLabel()}</span>
           </div>
           <span className="text-[10px] font-medium text-slate-400 truncate block mt-[2px]" title={settings.model}>

@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Square, ArrowUp, Paperclip, Mic, MicOff, X, FileText, Loader2, Search, Brain, ChevronDown, Check } from 'lucide-react';
-import type { Attachment, Settings } from '../utils/storage';
-import { Storage } from '../utils/storage';
+import { Square, ArrowUp, Paperclip, Mic, MicOff, X, FileText, Loader2, Search, Brain, ChevronDown, Check, Globe, Sparkles } from 'lucide-react';
+import type { Attachment, Settings, SystemPrompt } from '../utils/storage';
+import { Storage, PRESET_PROMPTS } from '../utils/storage';
 import { localSpeech } from '../utils/localSpeech';
 
 interface ComposerProps {
@@ -16,6 +16,37 @@ interface ComposerProps {
   onError?: (message: React.ReactNode) => void;
   settings: Settings;
   onSettingsChanged?: (settings: Settings) => void;
+  activePromptId: string;
+  onSelectPromptId: (id: string) => void;
+  customPrompts: SystemPrompt[];
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: {
+      isFinal: boolean;
+      [index: number]: {
+        transcript: string;
+      };
+    };
+  };
+}
+
+interface ISpeechRecognition {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: SpeechRecognitionErrorEvent) => void;
+  onend: () => void;
+  start: () => void;
+  stop: () => void;
 }
 
 export const Composer: React.FC<ComposerProps> = ({
@@ -28,16 +59,18 @@ export const Composer: React.FC<ComposerProps> = ({
   userPrompts = [],
   onError,
   settings,
-  onSettingsChanged
+  onSettingsChanged,
+  activePromptId,
+  onSelectPromptId,
+  customPrompts
 }) => {
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [tempInput, setTempInput] = useState('');
 
   // Speech-to-Text and File Upload States
   const [isRecording, setIsRecording] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<ISpeechRecognition | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -45,10 +78,24 @@ export const Composer: React.FC<ComposerProps> = ({
   const [whisperProgress, setWhisperProgress] = useState(0);
 
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
+  const [promptDropdownOpen, setPromptDropdownOpen] = useState(false);
+
+  const getActivePromptName = () => {
+    const all = [...PRESET_PROMPTS, ...customPrompts];
+    const prompt = all.find(p => p.id === activePromptId);
+    return prompt ? prompt.name : 'General Assistant';
+  };
 
   const toggleSearch = () => {
     const nextSearch = !settings.isRagEnabled;
     const updatedSettings = { ...settings, isRagEnabled: nextSearch };
+    Storage.saveSettings(updatedSettings);
+    onSettingsChanged?.(updatedSettings);
+  };
+
+  const toggleWebSearch = () => {
+    const nextWebSearch = !settings.isWebSearchEnabled;
+    const updatedSettings = { ...settings, isWebSearchEnabled: nextWebSearch };
     Storage.saveSettings(updatedSettings);
     onSettingsChanged?.(updatedSettings);
   };
@@ -72,48 +119,32 @@ export const Composer: React.FC<ComposerProps> = ({
   const engine = settings.speechToTextEngine || 'native';
   const isSpeechSupported = engine === 'local'
     ? typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
-    : typeof window !== 'undefined' && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+    : typeof window !== 'undefined' && !!((window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition || (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).webkitSpeechRecognition);
 
   // Auto-grow heights
   useEffect(() => {
-    const textarea = textareaRef.current;
+    const textarea = inputRef.current;
     if (textarea) {
       textarea.style.height = 'auto';
       textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
     }
-  }, [input]);
-
-  // Sync ref and local ref
-  useEffect(() => {
-    if (inputRef) {
-      (inputRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = textareaRef.current;
-    }
-  }, [inputRef]);
-
-  // Reset index when prompt clears
-  useEffect(() => {
-    if (input === '') {
-      setHistoryIndex(null);
-    }
-  }, [input]);
+  }, [input, inputRef]);
 
   // Speech recognition API initial setup
   useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = (window as unknown as { SpeechRecognition?: new () => ISpeechRecognition; webkitSpeechRecognition?: new () => ISpeechRecognition }).SpeechRecognition || 
+                              (window as unknown as { SpeechRecognition?: new () => ISpeechRecognition; webkitSpeechRecognition?: new () => ISpeechRecognition }).webkitSpeechRecognition;
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
       rec.continuous = true;
       rec.interimResults = true;
       rec.lang = 'en-US';
 
-      rec.onresult = (event: any) => {
+      rec.onresult = (event: SpeechRecognitionEvent) => {
         let finalTranscript = '';
-        let interimTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
             finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
           }
         }
         
@@ -122,7 +153,7 @@ export const Composer: React.FC<ComposerProps> = ({
         }
       };
 
-      rec.onerror = (event: any) => {
+      rec.onerror = (event: SpeechRecognitionErrorEvent) => {
         console.error('Speech recognition error', event);
         setIsRecording(false);
         
@@ -165,7 +196,7 @@ export const Composer: React.FC<ComposerProps> = ({
 
       recognitionRef.current = rec;
     }
-  }, [input, onChangeInput, onError]);
+  }, [input, onChangeInput, onError, onSettingsChanged]);
 
   const toggleRecording = async () => {
     const engine = settings.speechToTextEngine || 'native';
@@ -180,9 +211,10 @@ export const Composer: React.FC<ComposerProps> = ({
           if (transcribedText.trim()) {
             onChangeInput(input ? `${input.trim()} ${transcribedText.trim()}` : transcribedText.trim());
           }
-        } catch (err: any) {
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : 'Local transcription failed.';
           console.error('Local speech-to-text error:', err);
-          onError?.(err.message || 'Local transcription failed.');
+          onError?.(errorMsg);
         } finally {
           setIsTranscribing(false);
         }
@@ -190,7 +222,7 @@ export const Composer: React.FC<ComposerProps> = ({
         try {
           await localSpeech.startRecording();
           setIsRecording(true);
-        } catch (err: any) {
+        } catch (err) {
           console.error('Microphone access error:', err);
           onError?.('Microphone access is blocked. Please enable microphone permissions in your browser settings.');
         }
@@ -297,6 +329,7 @@ export const Composer: React.FC<ComposerProps> = ({
     if ((input.trim() || attachments.length > 0) && !isGenerating) {
       onSend(attachments);
       setAttachments([]);
+      setHistoryIndex(null);
       if (isRecording) {
         recognitionRef.current?.stop();
         setIsRecording(false);
@@ -404,9 +437,14 @@ export const Composer: React.FC<ComposerProps> = ({
       {/* Input container */}
       <div className="relative rounded-xl border border-white/[0.035] bg-white/[0.015] p-1.5 backdrop-blur-xl transition-all duration-300 focus-within:border-white/[0.1] focus-within:shadow-[0_12px_32px_rgba(0,0,0,0.4)] flex flex-col gap-1.5">
         <textarea
-          ref={textareaRef}
+          ref={inputRef}
           value={input}
-          onChange={(e) => onChangeInput(e.target.value)}
+          onChange={(e) => {
+            onChangeInput(e.target.value);
+            if (e.target.value === '') {
+              setHistoryIndex(null);
+            }
+          }}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           placeholder={
@@ -424,19 +462,109 @@ export const Composer: React.FC<ComposerProps> = ({
         {/* Composer Bottom Toolbar */}
         <div className="border-t border-white/[0.03] pt-2 px-1.5 pb-0.5 flex items-center justify-between select-none">
           <div className="flex items-center gap-1.5">
-            {/* Search Toggle */}
+            {/* System Prompt Picker */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setPromptDropdownOpen(!promptDropdownOpen)}
+                title={`Active Persona: ${getActivePromptName()}`}
+                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-lg text-[10px] font-semibold tracking-wide border transition-all duration-300 active:scale-90 cursor-pointer ${
+                  activePromptId !== 'preset-general'
+                    ? 'bg-amber-500/10 border-amber-500/25 text-amber-400 hover:bg-amber-500/20'
+                    : 'border-white/[0.03] bg-white/[0.015] hover:bg-white/[0.05] text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                <span className="truncate max-w-[80px]">
+                  {getActivePromptName()}
+                </span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </button>
+
+              {promptDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setPromptDropdownOpen(false)} />
+                  <div className="absolute left-0 bottom-8.5 z-30 w-48 rounded-lg border border-white/[0.04] bg-slate-900/95 p-1 shadow-2xl backdrop-blur-xl animate-fade-in max-h-52 overflow-y-auto">
+                    <div className="px-2 py-1 text-[9px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/[0.03] mb-1">
+                      System Presets
+                    </div>
+                    {PRESET_PROMPTS.map((prompt) => (
+                      <button
+                        key={prompt.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectPromptId(prompt.id);
+                          setPromptDropdownOpen(false);
+                        }}
+                        className={`flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
+                          activePromptId === prompt.id
+                            ? 'bg-amber-500/10 text-white font-semibold'
+                            : 'text-slate-400 hover:bg-white/[0.02] hover:text-slate-200'
+                        }`}
+                      >
+                        <span className="truncate pr-2">{prompt.name}</span>
+                        {activePromptId === prompt.id && <Check className="h-3.5 w-3.5 text-amber-400" />}
+                      </button>
+                    ))}
+                    {customPrompts.length > 0 && (
+                      <>
+                        <div className="px-2 py-1 text-[9px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/[0.03] mt-2 mb-1">
+                          Custom Prompts
+                        </div>
+                        {customPrompts.map((prompt) => (
+                          <button
+                            key={prompt.id}
+                            type="button"
+                            onClick={() => {
+                              onSelectPromptId(prompt.id);
+                              setPromptDropdownOpen(false);
+                            }}
+                            className={`flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
+                              activePromptId === prompt.id
+                                ? 'bg-amber-500/10 text-white font-semibold'
+                                : 'text-slate-400 hover:bg-white/[0.02] hover:text-slate-200'
+                            }`}
+                          >
+                            <span className="truncate pr-2">{prompt.name}</span>
+                            {activePromptId === prompt.id && <Check className="h-3.5 w-3.5 text-amber-400" />}
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Separator line */}
+            <div className="w-[1px] h-4 bg-white/[0.06] mx-0.5" />
+
+            {/* Docs (RAG) Toggle */}
             <button
               type="button"
               onClick={toggleSearch}
-              title={settings.isRagEnabled ? "Disable Local Search context" : "Enable Local Search context"}
-              className={`flex h-7 px-2.5 items-center gap-1.5 rounded-lg text-[10px] font-semibold tracking-wide transition-all duration-300 active:scale-90 cursor-pointer ${
+              title={settings.isRagEnabled ? "Disable Local Docs context (RAG)" : "Enable Local Docs context (RAG)"}
+              className={`flex h-7 w-7 items-center justify-center rounded-lg transition-all duration-300 active:scale-90 cursor-pointer ${
                 settings.isRagEnabled
                   ? 'bg-brand-500/10 border border-brand-500/25 text-brand-400 hover:bg-brand-500/20'
                   : 'border border-white/[0.03] bg-white/[0.015] hover:bg-white/[0.05] text-slate-400 hover:text-slate-200'
               }`}
             >
               <Search className="h-3.5 w-3.5" />
-              <span>Search</span>
+            </button>
+
+            {/* Web Search (SearXNG) Toggle */}
+            <button
+              type="button"
+              onClick={toggleWebSearch}
+              title={settings.isWebSearchEnabled ? "Disable Web Search (SearXNG)" : "Enable Web Search (SearXNG)"}
+              className={`flex h-7 w-7 items-center justify-center rounded-lg transition-all duration-300 active:scale-90 cursor-pointer ${
+                settings.isWebSearchEnabled
+                  ? 'bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/20'
+                  : 'border border-white/[0.03] bg-white/[0.015] hover:bg-white/[0.05] text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Globe className="h-3.5 w-3.5" />
             </button>
 
             {/* Thinking Level Dropdown */}
@@ -444,18 +572,14 @@ export const Composer: React.FC<ComposerProps> = ({
               <button
                 type="button"
                 onClick={() => setThinkingDropdownOpen(!thinkingDropdownOpen)}
-                title="Set thinking depth"
-                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-lg text-[10px] font-semibold tracking-wide border transition-all duration-300 active:scale-90 cursor-pointer ${
+                title={`Thinking Depth: ${settings.thinkingLevel || 'off'}`}
+                className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-all duration-300 active:scale-90 cursor-pointer ${
                   settings.thinkingLevel && settings.thinkingLevel !== 'off'
                     ? 'bg-purple-500/10 border-purple-500/25 text-purple-400 hover:bg-purple-500/20'
                     : 'border-white/[0.03] bg-white/[0.015] hover:bg-white/[0.05] text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <Brain className="h-3.5 w-3.5" />
-                <span className="capitalize">
-                  Thinking: {settings.thinkingLevel || 'off'}
-                </span>
-                <ChevronDown className="h-3 w-3 opacity-60" />
               </button>
 
               {thinkingDropdownOpen && (
@@ -563,27 +687,26 @@ export const Composer: React.FC<ComposerProps> = ({
       </div>
 
       {/* Micro-telemetry display */}
-      <div className="mt-1.5 flex justify-between items-center px-2 text-[9px] font-medium tracking-wide select-none animate-fade-in min-h-[14px]">
-        <div>
+      {(isRecording || isTranscribing) && (
+        <div className="mt-1.5 flex items-center px-2 text-[9px] font-medium tracking-wide select-none animate-fade-in min-h-[14px]">
           {isRecording && (
-            <span className={`flex items-center gap-1 font-bold ${engine === 'local' ? 'text-emerald-500' : 'text-red-500'}`}>
+            <span className={`flex items-center gap-1 font-bold ${engine === 'local' ? 'text-emerald-500' : 'text-red-400'}`}>
               <span className={`h-1.5 w-1.5 rounded-full animate-ping ${engine === 'local' ? 'bg-emerald-500' : 'bg-red-500'}`} />
-              {engine === 'local' ? 'LOCAL TRANSCRIBER RECORDING (PRIVATE)' : 'SPEECH RECOGNITION ACTIVE'}
+              <span>{engine === 'local' ? 'recording offline' : 'listening...'}</span>
             </span>
           )}
           {isTranscribing && (
             <span className="flex items-center gap-1 text-brand-400 font-bold animate-pulse">
               <Loader2 className="h-2.5 w-2.5 animate-spin" />
-              {whisperStatus === 'loading' 
-                ? `DOWNLOADING WHISPER MODEL WEIGHTS (${whisperProgress.toFixed(0)}%)` 
-                : 'WHISPER TRANSCRIBING...'}
+              <span>
+                {whisperStatus === 'loading' 
+                  ? `downloading whisper model (${whisperProgress.toFixed(0)}%)` 
+                  : 'transcribing whisper audio...'}
+              </span>
             </span>
           )}
         </div>
-        {input.length > 0 && (
-          <span className="text-slate-500 font-semibold">{input.length} characters</span>
-        )}
-      </div>
+      )}
 
     </div>
   );

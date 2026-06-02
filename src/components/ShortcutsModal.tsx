@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Keyboard, MessageSquare, Search, Sparkles, HelpCircle } from 'lucide-react';
+import { X, Keyboard, MessageSquare, Search, HelpCircle } from 'lucide-react';
 
 interface ShortcutsModalProps {
   isOpen: boolean;
@@ -62,9 +62,6 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
 
         {/* Modal Body */}
         <div className="p-5 space-y-4">
-          <p className="text-[11px] text-slate-500 font-medium select-none">
-            Boost your productivity using these elegant, built-in keyboard navigation shortcuts:
-          </p>
 
           <div className="space-y-2">
             {shortcuts.map((shortcut, idx) => {
@@ -98,11 +95,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
         </div>
 
         {/* Modal Footer */}
-        <div className="border-t border-white/[0.015] bg-slate-950/20 px-5 py-3 flex items-center justify-between text-[9px] font-medium text-slate-600 select-none">
-          <span className="flex items-center gap-1">
-            <Sparkles className="h-2.5 w-2.5 text-brand-500/80" />
-            Designed for power-users
-          </span>
+        <div className="border-t border-white/[0.015] bg-slate-950/20 px-5 py-2.5 flex items-center justify-end text-[9px] font-medium text-slate-500 select-none">
           <span>Press Esc to close</span>
         </div>
       </div>
