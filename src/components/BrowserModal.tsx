@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, RotateCw, Globe, ArrowRight, MousePointer, Keyboard, 
   ChevronUp, ChevronDown, FileText, Loader2, Search, Compass, Power, 
-  AlertTriangle 
+  AlertTriangle, Eye, EyeOff
 } from 'lucide-react';
 
 interface InteractiveElement {
@@ -10,6 +10,16 @@ interface InteractiveElement {
   tagName: string;
   type: string;
   text: string;
+  rect?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    top: number;
+    left: number;
+    right: number;
+    bottom: number;
+  };
 }
 
 interface BrowserState {
@@ -48,6 +58,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
   const [selectedElement, setSelectedElement] = useState<InteractiveElement | null>(null);
   const [typeText, setTypeText] = useState('');
   const [clickIndicator, setClickIndicator] = useState<{ x: number; y: number } | null>(null);
+  const [showOverlays, setShowOverlays] = useState(true);
 
   // Sync initialSessionId state if the parent prop changes
   if (initialSessionId !== prevInitialSessionId) {
@@ -222,6 +233,10 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
     setSelectedElement(element);
   };
 
+  const handleOverlayDoubleClick = (element: InteractiveElement) => {
+    runAction('click', { targetId: element.id });
+  };
+
   const executeClickAction = () => {
     if (selectedElement) {
       runAction('click', { targetId: selectedElement.id });
@@ -337,6 +352,19 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
             </form>
             
             <button
+              onClick={() => setShowOverlays(!showOverlays)}
+              disabled={actionLoading}
+              className={`flex items-center justify-center p-2 rounded-lg border transition active:scale-95 cursor-pointer disabled:opacity-50 ${
+                showOverlays 
+                  ? 'border-brand-500/30 bg-brand-500/10 text-brand-400 hover:text-brand-350' 
+                  : 'border-white/[0.06] bg-slate-950/40 text-slate-400 hover:text-white'
+              }`}
+              title={showOverlays ? "Hide visual element overlays" : "Show visual element overlays"}
+            >
+              {showOverlays ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+            </button>
+
+            <button
               onClick={() => fetchBrowserState(false)}
               disabled={actionLoading}
               className="flex items-center justify-center p-2 rounded-lg border border-white/[0.06] bg-slate-950/40 text-slate-400 hover:text-white transition active:scale-95 cursor-pointer disabled:opacity-50"
@@ -404,7 +432,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                     {/* Click Indicator Ripple */}
                     {clickIndicator && (
                       <div 
-                        className="absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                        className="absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-45"
                         style={{ 
                           left: `${clickIndicator.x}%`, 
                           top: `${clickIndicator.y}%`
@@ -414,6 +442,49 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                         <div className="w-2.5 h-2.5 bg-brand-500 rounded-full border border-white/50 shadow-md absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
                       </div>
                     )}
+
+                    {/* Visual Interactive Element Overlays */}
+                    {showOverlays && browserState.elements && browserState.elements.map((el) => {
+                      if (!el.rect) return null;
+                      const isSelected = selectedElement?.id === el.id;
+                      const leftPct = (el.rect.left / 1280) * 100;
+                      const topPct = (el.rect.top / 800) * 100;
+                      const widthPct = (el.rect.width / 1280) * 100;
+                      const heightPct = (el.rect.height / 800) * 100;
+
+                      return (
+                        <div
+                          key={el.id}
+                          onClick={(e) => {
+                            e.stopPropagation(); // Avoid triggering general coordinate click
+                            handleElementClick(el);
+                          }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            handleOverlayDoubleClick(el);
+                          }}
+                          className={`absolute border rounded cursor-pointer transition-all duration-150 group/overlay ${
+                            isSelected
+                              ? 'bg-brand-500/15 border-brand-500 ring-2 ring-brand-500/30 z-30 shadow-[0_0_8px_rgba(6,182,212,0.3)]'
+                              : 'bg-cyan-500/[0.02] border-cyan-500/20 hover:bg-cyan-500/10 hover:border-cyan-400 z-10 hover:z-20'
+                          }`}
+                          style={{
+                            left: `${leftPct}%`,
+                            top: `${topPct}%`,
+                            width: `${widthPct}%`,
+                            height: `${heightPct}%`,
+                          }}
+                          title={`${el.text} (${el.tagName})`}
+                        >
+                          {/* Floating Badge (Vimium-style index / info) */}
+                          <span className={`absolute -top-5 left-0 px-1 py-0.5 rounded text-[8px] font-mono font-bold leading-none pointer-events-none scale-0 group-hover/overlay:scale-100 transition-transform origin-bottom-left whitespace-nowrap shadow-md z-50 ${
+                            isSelected ? 'bg-brand-500 text-slate-950' : 'bg-slate-900 border border-white/10 text-cyan-400'
+                          }`}>
+                            {el.text ? `${el.text.slice(0, 20)} [${el.id}]` : el.id}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 

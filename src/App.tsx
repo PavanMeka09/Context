@@ -801,6 +801,7 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
         currentUrl = browserState.url;
         currentTitle = browserState.title;
         const elements = browserState.elements || [];
+        const elementsForLlm = elements.map(({ rect, ...rest }: any) => rest);
 
         // Generate step history context for the LLM
         const formattedSteps = steps.map((s, idx) => {
@@ -814,7 +815,7 @@ Current URL: ${currentUrl || 'about:blank'}
 Page Title: ${currentTitle || 'No Title'}
 
 List of interactive elements on the current page:
-${JSON.stringify(elements, null, 2)}
+${JSON.stringify(elementsForLlm, null, 2)}
 
 ${extractedContext ? `Extracted Page Text Context:\n${extractedContext}\n` : ''}
 

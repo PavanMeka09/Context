@@ -899,6 +899,8 @@ async function executeBrowserAgent(settings, userGoal, runLog, sessionId) {
       const elements = await scrapeInteractiveElements(pageInstance);
       session.lastElements = elements; // Save in session for self-healing lookup
 
+      const elementsForLlm = elements.map(({ rect, ...rest }) => rest);
+
       // Generate step history context for the LLM
       const formattedSteps = steps.map((s, idx) => {
         return `- Step ${idx + 1}: Thought: "${s.thought}" -> Action: ${s.action}${s.targetId ? ` on element "${s.targetId}"` : ''}${s.text ? ` with "${s.text}"` : ''}${s.url ? ` to "${s.url}"` : ''} (${s.status === 'success' ? 'Success' : `Failed: ${s.logMessage || 'unknown error'}`})`;
@@ -910,7 +912,7 @@ Current URL: ${currentUrl || 'about:blank'}
 Page Title: ${currentTitle || 'No Title'}
 
 List of interactive elements on the current page:
-${JSON.stringify(elements, null, 2)}
+${JSON.stringify(elementsForLlm, null, 2)}
 
 ${extractedContext ? `Extracted Page Text Context:\n${extractedContext}\n` : ''}
 
