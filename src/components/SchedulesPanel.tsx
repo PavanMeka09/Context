@@ -92,7 +92,40 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
     }
   };
 
-  // Poll for runs log history when panel is open
+  // Listen for real-time run updates via custom SSE events
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleLiveEvent = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (!customEvent.detail) return;
+      const { type, data } = customEvent.detail;
+
+      if (type === 'run-update') {
+        const updatedRun = data.run;
+        setRuns(prevRuns => {
+          const idx = prevRuns.findIndex(r => r.id === updatedRun.id);
+          const nextRuns = [...prevRuns];
+          if (idx !== -1) {
+            nextRuns[idx] = updatedRun;
+          } else {
+            nextRuns.unshift(updatedRun);
+          }
+          return nextRuns;
+        });
+
+        // Also fetch schedules to update lastRun/nextRun fields
+        fetchSchedules();
+      }
+    };
+
+    window.addEventListener('context-live-event', handleLiveEvent);
+    return () => {
+      window.removeEventListener('context-live-event', handleLiveEvent);
+    };
+  }, [isOpen]);
+
+  // Poll for runs log history when panel is open (heartbeat fallback)
   useEffect(() => {
     if (isOpen) {
       const timer = setTimeout(() => {
@@ -102,7 +135,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
 
       const interval = setInterval(() => {
         fetchRuns();
-      }, 3000);
+      }, 15000); // 15 seconds heartbeat fallback
 
       return () => {
         clearTimeout(timer);

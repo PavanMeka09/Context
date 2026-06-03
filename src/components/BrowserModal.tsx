@@ -139,13 +139,52 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
     }
   }, [isOpen, fetchBrowserState]);
 
-  // Periodic polling for background execution / dynamic changes while open
+  // Listen for real-time browser updates via SSE custom events
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleLiveEvent = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (!customEvent.detail) return;
+      const { type, data } = customEvent.detail;
+
+      if (data && data.sessionId === sessionId) {
+        if (type === 'browser-state') {
+          setBrowserState(data);
+          setAddressInput(data.url || '');
+          setScreenshotTimestamp(Date.now());
+          // Fetch tabs in sync
+          fetchTabs();
+          fetchLogs();
+        } else if (type === 'browser-log') {
+          setLogs(prevLogs => {
+            // Avoid duplicate log lines if possible
+            if (prevLogs.some(l => l.timestamp === data.log.timestamp && l.text === data.log.text)) {
+              return prevLogs;
+            }
+            const updated = [...prevLogs, data.log];
+            if (updated.length > 100) updated.shift();
+            return updated;
+          });
+        } else if (type === 'browser-log-clear') {
+          setLogs([]);
+        }
+      }
+    };
+
+    window.addEventListener('context-live-event', handleLiveEvent);
+    return () => {
+      window.removeEventListener('context-live-event', handleLiveEvent);
+    };
+  }, [isOpen, sessionId, fetchTabs, fetchLogs]);
+
+  // Periodic polling for background execution / dynamic changes while open (heartbeat fallback)
   useEffect(() => {
     let intervalId: number | undefined;
     if (isOpen && browserState && !actionLoading) {
       intervalId = window.setInterval(() => {
         fetchBrowserState(false);
-      }, 3000);
+      }, 15000); // 15 seconds heartbeat fallback
     }
     return () => {
       if (intervalId) clearInterval(intervalId);

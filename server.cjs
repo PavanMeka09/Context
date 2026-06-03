@@ -18,6 +18,22 @@ const PATHS = {
   settings: path.join(DATA_DIR, 'settings.json')
 };
 
+// Active SSE clients for real-time updates
+const sseClients = new Set();
+
+// SSE Broadcast Helper
+function broadcastLiveEvent(type, data) {
+  const eventString = `data: ${JSON.stringify({ type, data })}\n\n`;
+  for (const client of sseClients) {
+    try {
+      client.write(eventString);
+    } catch (e) {
+      console.error('[SSE] Failed to write to client, removing client.', e);
+      sseClients.delete(client);
+    }
+  }
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -82,15 +98,17 @@ function setupPageListeners(sid, pageInstance, session) {
   session.logs = session.logs || [];
 
   const addLog = (type, text, url = '') => {
-    session.logs.push({
+    const newLog = {
       timestamp: new Date().toISOString(),
       type,
       text,
       url
-    });
+    };
+    session.logs.push(newLog);
     if (session.logs.length > 100) {
       session.logs.shift();
     }
+    broadcastLiveEvent('browser-log', { sessionId: sid, log: newLog });
   };
 
   pageInstance.on('console', msg => {
@@ -170,14 +188,29 @@ async function ensureSession(sessionId) {
   return session;
 }
 
-// Helper to take a screenshot and update buffer
 async function updateScreenshotForSession(sessionId) {
   const session = sessions.get(sessionId);
   if (session && session.page) {
     try {
       session.latestScreenshotBuffer = await session.page.screenshot({ type: 'png' });
+      
+      // Scrape new elements and state
+      const url = session.page.url();
+      const title = await session.page.title();
+      const elements = await scrapeInteractiveElements(session.page);
+      session.lastElements = elements;
+
+      const screenshotBase64 = `data:image/png;base64,${session.latestScreenshotBuffer.toString('base64')}`;
+
+      broadcastLiveEvent('browser-state', {
+        sessionId,
+        url,
+        title,
+        elements,
+        screenshot: screenshotBase64
+      });
     } catch (e) {
-      console.error(`Failed to take screenshot for session ${sessionId}`, e);
+      console.error(`Failed to take screenshot and broadcast state for session ${sessionId}`, e);
     }
   }
 }
@@ -891,6 +924,7 @@ app.post('/api/browser/logs/clear', async (req, res) => {
   try {
     const session = await ensureSession(sid);
     session.logs = [];
+    broadcastLiveEvent('browser-log-clear', { sessionId: sid });
     res.json({ success: true, message: 'Logs cleared' });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -975,7 +1009,9 @@ function readJSON(file, defaultVal = []) {
 // Helper: write JSON database
 function writeJSON(file, data) {
   try {
-    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+    const tempFile = file + '.tmp';
+    fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf8');
+    fs.renameSync(tempFile, file);
   } catch (e) {
     console.error(`Error writing database file: ${file}`, e);
   }
@@ -1452,6 +1488,28 @@ async function executeScheduledTask(schedule) {
   const runs = readJSON(PATHS.runs, []);
   runs.unshift(run);
   writeJSON(PATHS.runs, runs);
+  broadcastLiveEvent('run-update', { run });
+
+  // Proxy to auto-save and stream logs to front-end in real-time
+  const runLog = new Proxy(run.log, {
+    set(target, property, value, receiver) {
+      const result = Reflect.set(target, property, value, receiver);
+      if (!isNaN(property)) {
+        try {
+          const runsList = readJSON(PATHS.runs, []);
+          const rIdx = runsList.findIndex(r => r.id === run.id);
+          if (rIdx !== -1) {
+            runsList[rIdx].log = target;
+            writeJSON(PATHS.runs, runsList);
+          }
+        } catch (e) {
+          console.error('Failed to auto-save run log update', e);
+        }
+        broadcastLiveEvent('run-update', { run });
+      }
+      return result;
+    }
+  });
 
   try {
     if (!settings) {
@@ -1474,8 +1532,8 @@ async function executeScheduledTask(schedule) {
     }
 
     if (schedule.agentMode === 'browser') {
-      run.log.push('Executing background Browser Agent task...');
-      const res = await executeBrowserAgent(settings, schedule.prompt, run.log);
+      runLog.push('Executing background Browser Agent task...');
+      const res = await executeBrowserAgent(settings, schedule.prompt, runLog, run.id);
       resultText = res.text;
       
       browserSessionData = {
@@ -1485,19 +1543,19 @@ async function executeScheduledTask(schedule) {
         steps: res.steps,
         screenshotTimestamp: Date.now()
       };
-      run.log.push('Headless browser operations completed.');
+      runLog.push('Headless browser operations completed.');
     } else {
-      run.log.push('Executing standard LLM completion task...');
+      runLog.push('Executing standard LLM completion task...');
       let systemPrompt = `You are Context's Task Scheduling Agent. Provide a comprehensive summary answering the user's prompt.
 Current Time: ${new Date().toLocaleString()}
 Scheduled Job: "${schedule.title}"`;
 
       if (schedule.isWebSearchEnabled) {
-        run.log.push('Web Search is enabled. Querying SearXNG...');
+        runLog.push('Web Search is enabled. Querying SearXNG...');
         try {
           const results = await searchSearxng(schedule.prompt, settings.searxngUrl);
           if (results && results.length > 0) {
-            run.log.push(`Web search completed. Found ${results.length} results.`);
+            runLog.push(`Web search completed. Found ${results.length} results.`);
             const webSearchContext = results.map((r, idx) => {
               return `[Web Result #${idx + 1}]
 Title: ${r.title}
@@ -1506,16 +1564,16 @@ Excerpt: ${r.content}`;
             }).join('\n\n');
             systemPrompt += `\n\n[REAL-TIME WEB SEARCH CONTEXT]\nUse the following real-time web search results from SearXNG to answer the user's prompt. Rely on these search results to provide accurate, up-to-date information:\n${webSearchContext}`;
           } else {
-            run.log.push('Web search returned no results.');
+            runLog.push('Web search returned no results.');
           }
         } catch (searchErr) {
-          run.log.push(`Web search error: ${searchErr.message}`);
+          runLog.push(`Web search error: ${searchErr.message}`);
           console.error(`Scheduled task search error for job ${schedule.id}:`, searchErr);
         }
       }
 
       resultText = await callLLM(settings, systemPrompt, schedule.prompt);
-      run.log.push('API completion call successful.');
+      runLog.push('API completion call successful.');
     }
 
     run.status = 'success';
@@ -1548,7 +1606,7 @@ Excerpt: ${r.content}`;
     };
 
     const syncQueue = readJSON(PATHS.syncQueue, []);
-    syncQueue.push({
+    const syncEvent = {
       id: `sync-${Date.now()}`,
       chatId,
       isNewChat,
@@ -1556,16 +1614,18 @@ Excerpt: ${r.content}`;
       userMsg,
       assistantMsg,
       timestamp: new Date().toISOString()
-    });
+    };
+    syncQueue.push(syncEvent);
     writeJSON(PATHS.syncQueue, syncQueue);
+    broadcastLiveEvent('schedule-sync', syncEvent);
 
-    run.log.push('Run completed. Message queued for front-end sync.');
+    runLog.push('Run completed. Message queued for front-end sync.');
   } catch (e) {
     console.error(`[Scheduler] Task execution failed: ${schedule.title}`, e);
     run.status = 'failed';
     run.endTime = new Date().toISOString();
     run.output = `Execution Failed: ${e.message}`;
-    run.log.push(`ERROR: ${e.message}`);
+    runLog.push(`ERROR: ${e.message}`);
   }
 
   // Update lastRun & nextRun estimates
@@ -1593,6 +1653,7 @@ Excerpt: ${r.content}`;
     runsList[runIdx] = run;
     writeJSON(PATHS.runs, runsList);
   }
+  broadcastLiveEvent('run-update', { run });
 }
 
 const activeCronJobs = new Map();
@@ -1659,6 +1720,25 @@ function initScheduler() {
 app.post('/api/schedules/settings', (req, res) => {
   writeJSON(PATHS.settings, req.body);
   res.json({ success: true });
+});
+
+// SSE Events Endpoint for real-time updates
+app.get('/api/schedules/events', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no'
+  });
+  
+  res.write('\n'); // spacer
+  sseClients.add(res);
+  console.log(`[SSE] Client connected. Total clients: ${sseClients.size}`);
+
+  req.on('close', () => {
+    sseClients.delete(res);
+    console.log(`[SSE] Client disconnected. Total clients: ${sseClients.size}`);
+  });
 });
 
 app.get('/api/schedules', (req, res) => {

@@ -241,9 +241,9 @@ interface SyncEvent {
   timestamp: string;
 }
 
-  // Background polling to sync schedules execution results
+  // Background EventSource connection for real-time schedules sync and logs
   useEffect(() => {
-    const pollSchedulesSync = async () => {
+    const fetchSchedulesSyncOnce = async () => {
       try {
         const res = await fetch('/api/schedules/sync');
         if (!res.ok) return;
@@ -257,7 +257,6 @@ interface SyncEvent {
             const chatIndex = updatedChats.findIndex(c => c.id === event.chatId);
             
             if (chatIndex !== -1) {
-              // Append to existing chat
               const existingChat = updatedChats[chatIndex];
               let chat = upgradeChatToTree(existingChat);
               const parentId = chat.activeLeafId || null;
@@ -265,7 +264,6 @@ interface SyncEvent {
               chat = addMessageToTree(chat, event.assistantMsg, event.userMsg.id);
               updatedChats[chatIndex] = chat;
             } else {
-              // Create new chat
               const emptyChat: Chat = {
                 id: event.chatId,
                 title: event.chatTitle || 'Scheduled Task',
@@ -292,10 +290,74 @@ interface SyncEvent {
       }
     };
 
-    // Run immediately, then poll every 10 seconds
-    pollSchedulesSync();
-    const interval = setInterval(pollSchedulesSync, 10000);
-    return () => clearInterval(interval);
+    // Run initial catch-up poll immediately on mount
+    fetchSchedulesSyncOnce();
+
+    // Establish Server-Sent Events connection
+    const eventSource = new EventSource('/api/schedules/events');
+
+    eventSource.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        const { type, data } = payload;
+
+        if (type === 'schedule-sync') {
+          const syncEvent = data as SyncEvent;
+          setChats(prevChats => {
+            let updatedChats = [...prevChats];
+            const chatIndex = updatedChats.findIndex(c => c.id === syncEvent.chatId);
+            
+            if (chatIndex !== -1) {
+              const existingChat = updatedChats[chatIndex];
+              let chat = upgradeChatToTree(existingChat);
+              const parentId = chat.activeLeafId || null;
+              chat = addMessageToTree(chat, syncEvent.userMsg, parentId);
+              chat = addMessageToTree(chat, syncEvent.assistantMsg, syncEvent.userMsg.id);
+              updatedChats[chatIndex] = chat;
+            } else {
+              const emptyChat: Chat = {
+                id: syncEvent.chatId,
+                title: syncEvent.chatTitle || 'Scheduled Task',
+                createdAt: syncEvent.timestamp || new Date().toISOString(),
+                updatedAt: syncEvent.timestamp || new Date().toISOString(),
+                messages: [],
+                messageTree: {},
+                activeLeafId: null
+              };
+              let chat = upgradeChatToTree(emptyChat);
+              chat = addMessageToTree(chat, syncEvent.userMsg, null);
+              chat = addMessageToTree(chat, syncEvent.assistantMsg, syncEvent.userMsg.id);
+              updatedChats = [chat, ...updatedChats];
+            }
+
+            Storage.saveChatsImmediately(updatedChats);
+            return updatedChats;
+          });
+
+          showToast(`Synced background task execution results!`, 'success');
+        }
+
+        // Dispatch events globally so other components (e.g. BrowserModal, SchedulesPanel) can listen in
+        const customEvent = new CustomEvent('context-live-event', {
+          detail: { type, data }
+        });
+        window.dispatchEvent(customEvent);
+      } catch (err) {
+        console.error('Failed to parse SSE payload:', err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.warn('SSE stream disconnected or failed. Browser EventSource will auto-reconnect.', err);
+    };
+
+    // 30 seconds slow fallback sync interval
+    const interval = setInterval(fetchSchedulesSyncOnce, 30000);
+
+    return () => {
+      eventSource.close();
+      clearInterval(interval);
+    };
   }, []);
 
   const handleSelectChat = (id: string) => {
