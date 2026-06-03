@@ -333,6 +333,20 @@ async function scrapeInteractiveElements(pageInstance) {
 
       const style = window.getComputedStyle(el);
       if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+
+      // Filter out elements that are completely outside the visible viewport (with a 50px buffer margin)
+      const margin = 50;
+      const vHeight = window.innerHeight || 800;
+      const vWidth = window.innerWidth || 1280;
+      if (
+        rect.top >= vHeight + margin ||
+        rect.bottom <= -margin ||
+        rect.left >= vWidth + margin ||
+        rect.right <= -margin
+      ) {
+        return false;
+      }
+
       return true;
     };
 
@@ -647,6 +661,7 @@ app.post('/api/browser/action', async (req, res) => {
           await pageInstance.evaluate((sel) => {
             const item = document.querySelector(sel);
             if (item) {
+              item.dispatchEvent(new Event('input', { bubbles: true }));
               item.dispatchEvent(new Event('change', { bubbles: true }));
               item.blur();
             }
@@ -1290,6 +1305,7 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
               await pageInstance.evaluate((sel) => {
                 const item = document.querySelector(sel);
                 if (item) {
+                  item.dispatchEvent(new Event('input', { bubbles: true }));
                   item.dispatchEvent(new Event('change', { bubbles: true }));
                   item.blur();
                 }

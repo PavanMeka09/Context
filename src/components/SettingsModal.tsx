@@ -5,6 +5,7 @@ import type { Settings, SystemPrompt, Chat, MemoryItem } from '../utils/storage'
 import { fetchModels, type ModelOption } from '../utils/api';
 import { X, Eye, EyeOff, Save, Plus, Trash2, Edit2, AlertCircle, Loader2, Download, CheckSquare, ChevronDown, Check, Globe, Search, Cpu, Database, FileText, Terminal, Brain } from 'lucide-react';
 import { testSearxngConnection } from '../utils/searxng';
+import { vectorDb } from '../utils/vectorDb';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -1213,6 +1214,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           await fetch('/api/schedules/clear-all', { method: 'POST' });
                         } catch (err) {
                           console.error('Failed to clear scheduling database on server', err);
+                        }
+                        try {
+                          await vectorDb.deleteAllData();
+                        } catch (err) {
+                          console.error('Failed to clear local vector database', err);
                         }
                         localStorage.clear();
                         window.location.reload();
