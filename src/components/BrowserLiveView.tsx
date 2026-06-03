@@ -21,6 +21,7 @@ interface BrowserLiveViewProps {
   screenshotUrl: string;
   screenshotTimestamp: number;
   sessionId?: string;
+  onInteract?: (sessionId: string) => void;
 }
 
 export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
@@ -30,7 +31,8 @@ export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
   steps,
   screenshotUrl,
   screenshotTimestamp,
-  sessionId
+  sessionId,
+  onInteract
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
@@ -92,17 +94,28 @@ export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
       {/* Title bar */}
       <div className="bg-slate-950/20 px-4 py-1.5 flex items-center justify-between border-b border-white/[0.015] text-[10.5px] text-slate-400">
         <span className="truncate font-semibold text-slate-350">{title || 'Loading Page...'}</span>
-        {url && (
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 hover:text-white transition cursor-pointer font-bold text-[9px] uppercase tracking-wider text-slate-500"
-          >
-            <span>Open Link</span>
-            <ExternalLink className="h-2.5 w-2.5" />
-          </a>
-        )}
+        <div className="flex items-center gap-3 select-none">
+          {url && sessionId && onInteract && (
+            <button
+              onClick={() => onInteract(sessionId)}
+              className="flex items-center gap-1 text-brand-400 hover:text-brand-300 font-bold text-[9.5px] uppercase tracking-wider transition cursor-pointer border border-brand-500/20 bg-brand-500/5 hover:bg-brand-500/10 px-2 py-0.5 rounded"
+            >
+              <span>Interact & Control</span>
+              <Terminal className="h-2.5 w-2.5" />
+            </button>
+          )}
+          {url && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 hover:text-white transition cursor-pointer font-bold text-[9px] uppercase tracking-wider text-slate-500"
+            >
+              <span>Open Link</span>
+              <ExternalLink className="h-2.5 w-2.5" />
+            </a>
+          )}
+        </div>
       </div>
 
       {/* Viewport Area */}

@@ -495,7 +495,7 @@ interface ChatAreaProps {
   isSidebarCollapsed: boolean;
   onToggleSidebar: () => void;
   onSwitchBranch?: (messageId: string) => void;
-  onOpenBrowserModal?: () => void;
+  onOpenBrowserModal?: (sessionId?: string) => void;
   children?: React.ReactNode;
 }
 
@@ -624,7 +624,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         <div className="flex items-center gap-2">
           {onOpenBrowserModal && (
             <button
-              onClick={onOpenBrowserModal}
+              onClick={() => onOpenBrowserModal(chat?.id || undefined)}
               className="flex items-center gap-1.5 rounded-lg border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground px-3 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm"
               title="Open Sandbox Browser Live View"
             >
@@ -916,6 +916,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                                       screenshotUrl="/api/browser/screenshot"
                                       screenshotTimestamp={msg.browserSession.screenshotTimestamp}
                                       sessionId={chat?.id}
+                                      onInteract={onOpenBrowserModal}
                                     />
                                   )}
                                   

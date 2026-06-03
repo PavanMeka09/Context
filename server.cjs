@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const puppeteer = require('puppeteer');
-const bodyParser = require('body-parser');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
@@ -21,7 +20,7 @@ const PATHS = {
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
 let browser = null;
 const sessions = new Map(); // sessionId -> { context, page, latestScreenshotBuffer }
@@ -301,12 +300,24 @@ async function scrapeInteractiveElements(pageInstance) {
       
       let rawText = getSemanticLabel(el);
       let text = rawText.trim().replace(/\s+/g, ' ').slice(0, 80);
+      
+      const rect = el.getBoundingClientRect();
 
       result.push({
         id,
         tagName: el.tagName.toLowerCase(),
         type: el.type || el.getAttribute('role') || '',
-        text: text || `[Unnamed ${el.tagName.toLowerCase()}]`
+        text: text || `[Unnamed ${el.tagName.toLowerCase()}]`,
+        rect: {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+          top: rect.top,
+          left: rect.left,
+          right: rect.right,
+          bottom: rect.bottom
+        }
       });
     });
     return result;

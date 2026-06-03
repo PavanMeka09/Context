@@ -76,6 +76,7 @@ function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [schedulesOpen, setSchedulesOpen] = useState(false);
   const [browserModalOpen, setBrowserModalOpen] = useState(false);
+  const [browserModalSessionId, setBrowserModalSessionId] = useState<string>('interactive');
 
   // Preference and accessibility states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => Storage.getSidebarCollapsed());
@@ -1417,7 +1418,10 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
           Storage.saveSidebarCollapsed(next);
         }}
         onSwitchBranch={handleSwitchBranch}
-        onOpenBrowserModal={() => setBrowserModalOpen(true)}
+        onOpenBrowserModal={(sid) => {
+          setBrowserModalSessionId(sid || 'interactive');
+          setBrowserModalOpen(true);
+        }}
       >
         <Composer
           input={composerInput}
@@ -1522,6 +1526,10 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
         <BrowserModal
           isOpen={browserModalOpen}
           onClose={() => setBrowserModalOpen(false)}
+          activeChatId={activeChatId}
+          activeChatTitle={activeChat?.title}
+          initialSessionId={browserModalSessionId}
+          isBrowserAgentRunning={isGenerating && !!activeChat?.messages.some(m => m.browserSession && m.browserSession.status === 'running')}
         />
       )}
 

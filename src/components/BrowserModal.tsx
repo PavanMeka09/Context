@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, RotateCw, Globe, ArrowRight, MousePointer, Keyboard, 
   ChevronUp, ChevronDown, FileText, Loader2, Search, Compass, Power, 
@@ -22,9 +22,22 @@ interface BrowserState {
 interface BrowserModalProps {
   isOpen: boolean;
   onClose: () => void;
+  activeChatId?: string | null;
+  activeChatTitle?: string;
+  initialSessionId?: string;
+  isBrowserAgentRunning?: boolean;
 }
 
-export const BrowserModal: React.FC<BrowserModalProps> = ({ isOpen, onClose }) => {
+export const BrowserModal: React.FC<BrowserModalProps> = ({ 
+  isOpen, 
+  onClose,
+  activeChatId,
+  activeChatTitle,
+  initialSessionId,
+  isBrowserAgentRunning
+}) => {
+  const [sessionId, setSessionId] = useState<string>(initialSessionId || 'interactive');
+  const [prevInitialSessionId, setPrevInitialSessionId] = useState(initialSessionId);
   const [browserState, setBrowserState] = useState<BrowserState | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -36,15 +49,21 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({ isOpen, onClose }) =
   const [typeText, setTypeText] = useState('');
   const [clickIndicator, setClickIndicator] = useState<{ x: number; y: number } | null>(null);
 
+  // Sync initialSessionId state if the parent prop changes
+  if (initialSessionId !== prevInitialSessionId) {
+    setPrevInitialSessionId(initialSessionId);
+    setSessionId(initialSessionId || 'interactive');
+  }
+
   // Fetch current browser state
-  const fetchBrowserState = async (showMainLoader = false) => {
+  const fetchBrowserState = useCallback(async (showMainLoader = false) => {
     if (showMainLoader) {
       await Promise.resolve();
       setLoading(true);
     }
     setError(null);
     try {
-      const res = await fetch('/api/browser/state?sessionId=interactive');
+      const res = await fetch(`/api/browser/state?sessionId=${encodeURIComponent(sessionId)}`);
       if (!res.ok) {
         throw new Error('No active browser session or companion server not running.');
       }
@@ -61,9 +80,9 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({ isOpen, onClose }) =
     } finally {
       if (showMainLoader) setLoading(false);
     }
-  };
+  }, [sessionId]);
 
-  // Run initial load
+  // Run load on open or when sessionId changes
   useEffect(() => {
     if (isOpen) {
       const timer = setTimeout(() => {
@@ -71,7 +90,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({ isOpen, onClose }) =
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [isOpen]);
+  }, [isOpen, fetchBrowserState]);
 
   // Handle browser session launch
   const handleLaunchSession = async () => {
@@ -85,7 +104,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({ isOpen, onClose }) =
         body: JSON.stringify({
           action: 'navigate',
           url: 'https://www.google.com',
-          sessionId: 'interactive'
+          sessionId: sessionId
         })
       });
       if (!res.ok) throw new Error('Launch failed');
@@ -104,7 +123,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({ isOpen, onClose }) =
       await fetch('/api/browser/close', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: 'interactive' })
+        body: JSON.stringify({ sessionId: sessionId })
       });
       setBrowserState(null);
       setError('Browser session closed.');
@@ -122,7 +141,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({ isOpen, onClose }) =
       const res = await fetch('/api/browser/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, ...params, sessionId: 'interactive' })
+        body: JSON.stringify({ action, ...params, sessionId: sessionId })
       });
       if (!res.ok) {
         const errData = await res.json();
@@ -162,7 +181,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({ isOpen, onClose }) =
           action: 'click',
           x: Math.round(x),
           y: Math.round(y),
-          sessionId: 'interactive'
+          sessionId: sessionId
         })
       });
 
@@ -239,7 +258,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({ isOpen, onClose }) =
       <div className="relative w-full max-w-6xl h-[85vh] rounded-2xl border border-white/[0.08] bg-slate-900/90 shadow-2xl z-10 flex flex-col overflow-hidden animate-scale-in">
         
         {/* Modal Header */}
-        <div className="flex h-14 shrink-0 items-center justify-between px-6 border-b border-white/[0.08] bg-slate-950/40 select-none">
+        <div className="flex h-14 shrink-0 items-center justify-between px-6 border-b border-white/[0.08] bg-slate-900/90 select-none">
           <div className="flex items-center gap-2.5">
             <div className="p-1 bg-brand-500/10 rounded-lg text-brand-400 border border-brand-500/20">
               <Compass className="h-4 w-4" />
@@ -248,6 +267,29 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({ isOpen, onClose }) =
               <h2 className="text-sm font-semibold text-slate-100 leading-none">Browser Sandbox</h2>
               <span className="text-[10px] text-slate-500 mt-1 block">Live headless Puppeteer session</span>
             </div>
+            
+            {activeChatId && (
+              <div className="ml-6 flex items-center gap-2 bg-slate-950/60 border border-white/[0.06] rounded-lg px-2.5 py-1 text-xs">
+                <span className="text-slate-400 font-medium">Session:</span>
+                <select
+                  value={sessionId}
+                  onChange={(e) => setSessionId(e.target.value)}
+                  className="bg-transparent text-slate-200 border-0 focus:ring-0 text-xs py-0 pl-1 pr-6 font-semibold cursor-pointer outline-none"
+                >
+                  <option value="interactive" className="bg-slate-900 text-slate-200">Interactive Sandbox</option>
+                  <option value={activeChatId} className="bg-slate-900 text-slate-200">
+                    Chat Agent ({activeChatTitle || 'Active Chat'})
+                  </option>
+                </select>
+              </div>
+            )}
+
+            {sessionId === activeChatId && isBrowserAgentRunning && (
+              <div className="ml-2 bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 animate-pulse">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                <span>Agent is active on this session</span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -354,7 +396,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({ isOpen, onClose }) =
                     className="relative border border-white/[0.06] shadow-2xl rounded-lg overflow-hidden w-full max-w-full aspect-[16/10] select-none bg-slate-900 cursor-crosshair group/viewport"
                   >
                     <img
-                      src={browserState.screenshot || `/api/browser/screenshot?sessionId=interactive&t=${screenshotTimestamp}`}
+                      src={browserState.screenshot || `/api/browser/screenshot?sessionId=${encodeURIComponent(sessionId)}&t=${screenshotTimestamp}`}
                       alt="Sandbox Live Viewport"
                       className="w-full h-full select-none pointer-events-none"
                     />
