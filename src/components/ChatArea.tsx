@@ -25,7 +25,7 @@ function parseThinkingAndContent(content: string): { thinking: string | null; co
 interface SearchStatus {
   hasSearch: boolean;
   query: string;
-  status: 'searching' | 'done' | 'failed';
+  status: 'searching' | 'scraping' | 'done' | 'failed';
   error: string | null;
   results: SearxngResult[];
   cleanContent: string;
@@ -48,7 +48,7 @@ function parseSearchStatus(content: string): SearchStatus {
     return {
       hasSearch: true,
       query: match[1],
-      status: match[2] as 'searching' | 'done' | 'failed',
+      status: match[2] as 'searching' | 'scraping' | 'done' | 'failed',
       error: match[3] || null,
       results,
       cleanContent: content.replace(tagRegex, '').trim()
@@ -61,7 +61,7 @@ function parseSearchStatus(content: string): SearchStatus {
     return {
       hasSearch: true,
       query: match[1],
-      status: match[2] as 'searching' | 'done' | 'failed',
+      status: match[2] as 'searching' | 'scraping' | 'done' | 'failed',
       error: match[3] || null,
       results: [],
       cleanContent: content.replace(selfClosingRegex, '').trim()
@@ -339,7 +339,7 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
 
 interface SearchStatusBadgeProps {
   query: string;
-  status: 'searching' | 'done' | 'failed';
+  status: 'searching' | 'scraping' | 'done' | 'failed';
   error: string | null;
   results: SearxngResult[];
 }
@@ -370,7 +370,8 @@ export const SearchStatusBadge: React.FC<SearchStatusBadgeProps> = ({
     }
   };
 
-  if (status === 'searching') {
+  if (status === 'searching' || status === 'scraping') {
+    const isScraping = status === 'scraping';
     return (
       <div className="mb-4 rounded-md border border-border bg-muted/40 p-3.5 animate-fade-in select-none">
         <div className="flex items-center gap-3">
@@ -378,9 +379,13 @@ export const SearchStatusBadge: React.FC<SearchStatusBadgeProps> = ({
             <Globe className="h-3.5 w-3.5 animate-spin" style={{ animationDuration: '3s' }} />
           </div>
           <div className="flex flex-col">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Web Search Active</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              {isScraping ? 'Web RAG Integration' : 'Web Search Active'}
+            </span>
             <span className="text-xs font-medium text-foreground leading-snug">
-              Searching the web for <span className="font-semibold font-mono">"{query}"</span>...
+              {isScraping
+                ? `Scraping & analyzing top search results for "${query}"...`
+                : `Searching the web for "${query}"...`}
             </span>
           </div>
         </div>

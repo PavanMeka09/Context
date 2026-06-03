@@ -513,6 +513,63 @@ app.post('/api/browser/close', async (req, res) => {
   }
 });
 
+// Endpoint: Scrape page text content using headless Puppeteer
+app.post('/api/scrape', async (req, res) => {
+  const { url } = req.body;
+  if (!url) {
+    return res.status(400).json({ error: 'URL is required' });
+  }
+
+  let pageInstance = null;
+  try {
+    await ensureBrowser();
+    pageInstance = await browser.newPage();
+    await pageInstance.setViewport({ width: 1280, height: 800 });
+
+    // Enable request interception to block images/css/fonts/media
+    await pageInstance.setRequestInterception(true);
+    pageInstance.on('request', (request) => {
+      const type = request.resourceType();
+      if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
+        request.abort();
+      } else {
+        request.continue();
+      }
+    });
+
+    // Go to page
+    await pageInstance.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+
+    const title = await pageInstance.title();
+    const content = await pageInstance.evaluate(() => {
+      // Remove noise elements
+      const noise = document.querySelectorAll('script, style, noscript, iframe, head, footer, nav, header, [role="banner"], [role="navigation"], [role="contentinfo"]');
+      noise.forEach(el => el.remove());
+      return document.body.innerText;
+    });
+
+    // Clean extra whitespace and truncate to prevent context window bloating
+    const cleanContent = content
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 5000);
+
+    res.json({ success: true, title, content: cleanContent });
+  } catch (err) {
+    console.error(`Failed to scrape URL ${url}:`, err);
+    res.status(500).json({ error: err.message || 'Scraping failed' });
+  } finally {
+    if (pageInstance) {
+      try {
+        await pageInstance.close();
+      } catch (closeErr) {
+        console.error('Failed to close scraper page', closeErr);
+      }
+    }
+  }
+});
+
+
 // ==========================================
 // TASK SCHEDULING SYSTEM IMPLEMENTATION
 // ==========================================
@@ -858,6 +915,55 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
   }
 }
 
+// Server-side SearXNG Search Helper for Scheduled Tasks
+async function searchSearxng(query, customUrl) {
+  let baseUrl = customUrl?.trim() || '';
+  if (!baseUrl) {
+    baseUrl = 'http://localhost:8082';
+  } else {
+    baseUrl = baseUrl.replace(/\/+$/, '');
+  }
+
+  const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(query)}&format=json`;
+  try {
+    const response = await fetch(searchUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`SearXNG request failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    if (data && Array.isArray(data.results)) {
+      const seenUrls = new Set();
+      const uniqueResults = [];
+      for (const r of data.results) {
+        if (!r.url) continue;
+        const cleanUrl = r.url.replace(/\/+$/, '').split('#')[0];
+        if (seenUrls.has(cleanUrl)) continue;
+        seenUrls.add(cleanUrl);
+
+        uniqueResults.push({
+          title: r.title || 'Untitled Page',
+          url: r.url,
+          content: (r.content || r.snippet || '').replace(/<[^>]*>/g, '').trim()
+        });
+
+        if (uniqueResults.length >= 5) break;
+      }
+      return uniqueResults;
+    }
+  } catch (error) {
+    console.error('Error fetching from SearXNG on server:', error);
+    throw error;
+  }
+  return [];
+}
+
 // Main Scheduled Task Trigger
 async function executeScheduledTask(schedule) {
   console.log(`[Scheduler] Triggering task: ${schedule.title} (${schedule.id})`);
@@ -911,9 +1017,31 @@ async function executeScheduledTask(schedule) {
       run.log.push('Headless browser operations completed.');
     } else {
       run.log.push('Executing standard LLM completion task...');
-      const systemPrompt = `You are Context's Task Scheduling Agent. Provide a comprehensive summary answering the user's prompt.
+      let systemPrompt = `You are Context's Task Scheduling Agent. Provide a comprehensive summary answering the user's prompt.
 Current Time: ${new Date().toLocaleString()}
 Scheduled Job: "${schedule.title}"`;
+
+      if (schedule.isWebSearchEnabled) {
+        run.log.push('Web Search is enabled. Querying SearXNG...');
+        try {
+          const results = await searchSearxng(schedule.prompt, settings.searxngUrl);
+          if (results && results.length > 0) {
+            run.log.push(`Web search completed. Found ${results.length} results.`);
+            const webSearchContext = results.map((r, idx) => {
+              return `[Web Result #${idx + 1}]
+Title: ${r.title}
+URL: ${r.url}
+Excerpt: ${r.content}`;
+            }).join('\n\n');
+            systemPrompt += `\n\n[REAL-TIME WEB SEARCH CONTEXT]\nUse the following real-time web search results from SearXNG to answer the user's prompt. Rely on these search results to provide accurate, up-to-date information:\n${webSearchContext}`;
+          } else {
+            run.log.push('Web search returned no results.');
+          }
+        } catch (searchErr) {
+          run.log.push(`Web search error: ${searchErr.message}`);
+          console.error(`Scheduled task search error for job ${schedule.id}:`, searchErr);
+        }
+      }
 
       resultText = await callLLM(settings, systemPrompt, schedule.prompt);
       run.log.push('API completion call successful.');
@@ -1134,6 +1262,20 @@ app.post('/api/schedules/:id/toggle', (req, res) => {
   }
 
   res.json({ success: true, schedule });
+});
+
+app.post('/api/schedules/:id/run', async (req, res) => {
+  const { id } = req.params;
+  const schedules = readJSON(PATHS.schedules, []);
+  const schedule = schedules.find(s => s.id === id);
+  if (!schedule) return res.status(404).json({ error: 'Schedule not found' });
+
+  // Execute asynchronously to not block the response
+  executeScheduledTask(schedule).catch(err => {
+    console.error(`Error executing scheduled task manually: ${id}`, err);
+  });
+
+  res.json({ success: true, message: 'Task execution started in the background.' });
 });
 
 app.delete('/api/schedules/:id', (req, res) => {

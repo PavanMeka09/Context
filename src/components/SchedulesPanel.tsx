@@ -17,6 +17,7 @@ export interface TaskSchedule {
   dateTime?: string;
   isActive: boolean;
   agentMode: 'standard' | 'browser';
+  isWebSearchEnabled?: boolean;
   lastRun?: string;
   nextRun?: string;
   createdAt: string;
@@ -62,6 +63,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
   const [intervalMinutes, setIntervalMinutes] = useState(10);
   const [dateTime, setDateTime] = useState('');
   const [agentMode, setAgentMode] = useState<'standard' | 'browser'>('standard');
+  const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
 
   // Expanded runs logs state
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
@@ -90,12 +92,22 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
     }
   };
 
+  // Poll for runs log history when panel is open
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         fetchSchedules();
         fetchRuns();
       }, 0);
+
+      const interval = setInterval(() => {
+        fetchRuns();
+      }, 3000);
+
+      return () => {
+        clearTimeout(timer);
+        clearInterval(interval);
+      };
     }
   }, [isOpen]);
 
@@ -114,6 +126,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
       scheduleType,
       isActive: true,
       agentMode,
+      isWebSearchEnabled,
       cronExpression: scheduleType === 'cron' ? cronExpression : undefined,
       intervalMinutes: scheduleType === 'interval' ? Number(intervalMinutes) : undefined,
       dateTime: scheduleType === 'once' ? dateTime : undefined
@@ -153,6 +166,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
     setIntervalMinutes(10);
     setDateTime('');
     setAgentMode('standard');
+    setIsWebSearchEnabled(false);
     setIsFormOpen(false);
   };
 
@@ -166,6 +180,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
     setIntervalMinutes(sched.intervalMinutes || 10);
     setDateTime(sched.dateTime || '');
     setAgentMode(sched.agentMode || 'standard');
+    setIsWebSearchEnabled(sched.isWebSearchEnabled || false);
     setIsFormOpen(true);
   };
 
@@ -179,6 +194,21 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
     } catch (e) {
       console.error(e);
       onShowToast('Failed to toggle schedule.', 'error');
+    }
+  };
+
+  const handleRunNow = async (id: string) => {
+    try {
+      const res = await fetch(`/api/schedules/${id}/run`, { method: 'POST' });
+      if (res.ok) {
+        onShowToast('Task execution started in the background.', 'success');
+        fetchRuns();
+      } else {
+        onShowToast('Failed to start task.', 'error');
+      }
+    } catch (e) {
+      console.error(e);
+      onShowToast('Connection error failed to start task.', 'error');
     }
   };
 
@@ -359,6 +389,28 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                   </div>
                 )}
 
+                <div className="flex items-center justify-between rounded-lg border border-border bg-muted/10 p-3 select-none">
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-semibold text-foreground">Web Search Integration</span>
+                    <p className="text-[10px] text-muted-foreground font-medium">Perform a real-time web search for the prompt and inject context.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsWebSearchEnabled(!isWebSearchEnabled)}
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      isWebSearchEnabled ? 'bg-primary' : 'bg-muted'
+                    }`}
+                    role="switch"
+                    aria-checked={isWebSearchEnabled}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        isWebSearchEnabled ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+
                 {/* Form Buttons */}
                 <div className="flex gap-3 pt-2">
                   <button
@@ -416,7 +468,12 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                             <span className="text-[8.5px] uppercase font-bold px-1.5 py-0.5 rounded border border-border text-foreground bg-muted/40">
                               {sched.agentMode || 'standard'}
                             </span>
-                            <span className="text-[8.5px] text-muted-foreground">
+                            {sched.isWebSearchEnabled && (
+                              <span className="text-[8.5px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-500/20 text-blue-400 bg-blue-500/10">
+                                Web Search
+                              </span>
+                            )}
+                            <span className="text-[8.5px] text-muted-foreground font-semibold">
                               {sched.scheduleType === 'interval' ? `Every ${sched.intervalMinutes}m` : sched.scheduleType === 'cron' ? `Cron: ${sched.cronExpression}` : 'One-time'}
                             </span>
                           </div>
@@ -434,6 +491,13 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                             ) : (
                               <ToggleLeft className="h-7 w-7 text-muted-foreground/60" />
                             )}
+                          </button>
+                          <button
+                            onClick={() => handleRunNow(sched.id)}
+                            className="p-1.5 hover:bg-accent rounded text-muted-foreground hover:text-primary transition cursor-pointer"
+                            title="Run Now"
+                          >
+                            <Play className="h-4 w-4" />
                           </button>
                           <button
                             onClick={() => handleEdit(sched)}

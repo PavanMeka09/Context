@@ -12,7 +12,7 @@ import { vectorDb } from './utils/vectorDb';
 import { PRESET_PROMPTS, Storage, reconstructActivePath, upgradeChatToTree } from './utils/storage';
 import type { Chat, Message, MessageNode, Settings, SystemPrompt, Attachment, BrowserSessionData } from './utils/storage';
 import { streamChatCompletion, generateTextCompletion } from './utils/api';
-import { searchSearxng, formatSearxngResults, classifySearchHeuristically } from './utils/searxng';
+import { searchSearxng, classifySearchHeuristically } from './utils/searxng';
 import { AlertCircle, X } from 'lucide-react';
 
 function addMessageToTree(chat: Chat, message: Message, parentId: string | null): Chat {
@@ -458,7 +458,64 @@ interface SyncEvent {
 
           // Perform Search
           const results = await searchSearxng(searchQuery, settings.searxngUrl);
-          webSearchContext = formatSearxngResults(results);
+          
+          let scrapedPages: { url: string; content: string }[] = [];
+          if (results.length > 0) {
+            try {
+              // Update visual placeholder status to scraping
+              setChats(prevChats =>
+                prevChats.map(c => {
+                  if (c.id === targetChatId) {
+                    const upgraded = upgradeChatToTree(c);
+                    const tree = { ...upgraded.messageTree };
+                    if (tree[streamMessageId]) {
+                      tree[streamMessageId] = {
+                        ...tree[streamMessageId],
+                        content: `<search_status query="${searchQuery.replace(/"/g, '&quot;')}" status="scraping" />`
+                      };
+                    }
+                    const messages = reconstructActivePath(tree, upgraded.activeLeafId);
+                    return { ...upgraded, messageTree: tree, messages };
+                  }
+                  return c;
+                })
+              );
+
+              // Concurrently scrape the top 2 search results to build rich context
+              const scrapePromises = results.slice(0, 2).map(async (r) => {
+                try {
+                  const res = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: r.url }),
+                  });
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && data.content) {
+                      return { url: r.url, content: data.content };
+                    }
+                  }
+                } catch (e) {
+                  console.error(`Failed to scrape ${r.url}:`, e);
+                }
+                return null;
+              });
+
+              const scrapeResults = await Promise.all(scrapePromises);
+              scrapedPages = scrapeResults.filter((p): p is { url: string; content: string } => p !== null);
+            } catch (e) {
+              console.error('Failed to perform page scraping:', e);
+            }
+          }
+
+          // Format search results with full scraped content when available
+          webSearchContext = results.map((r, idx) => {
+            const scraped = scrapedPages.find(p => p.url === r.url);
+            return `[Web Result #${idx + 1}]
+Title: ${r.title}
+URL: ${r.url}
+${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.content}`}`;
+          }).join('\n\n');
 
           searchTagPrefix = `<search_status query="${searchQuery.replace(/"/g, '&quot;')}" status="done">${JSON.stringify(results)}</search_status>\n\n`;
         } else {
