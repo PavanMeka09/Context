@@ -1943,6 +1943,68 @@ app.post('/api/schedules/:id/run', async (req, res) => {
   res.json({ success: true, message: 'Task execution started in the background.' });
 });
 
+app.post('/api/execute', (req, res) => {
+  const { language, code } = req.body;
+  if (!language || !code) {
+    return res.status(400).json({ error: 'Missing language or code parameter.' });
+  }
+
+  const { exec } = require('child_process');
+  const tempDir = path.join(os.tmpdir(), 'context-exec');
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+
+  const fileExt = language === 'python' ? 'py' : 'js';
+  const tempFile = path.join(tempDir, `exec-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${fileExt}`);
+
+  fs.writeFileSync(tempFile, code);
+
+  const start = performance.now();
+  let cmd = '';
+  if (language === 'python') {
+    cmd = `python "${tempFile}"`;
+  } else {
+    cmd = `node "${tempFile}"`;
+  }
+
+  exec(cmd, { timeout: 10000, cwd: DATA_DIR }, (error, stdout, stderr) => {
+    const end = performance.now();
+    
+    // Clean up temp file
+    try {
+      if (fs.existsSync(tempFile)) {
+        fs.unlinkSync(tempFile);
+      }
+    } catch (e) {
+      console.error('Failed to delete temp file', e);
+    }
+
+    const duration = end - start;
+    const logs = [];
+
+    if (stdout) {
+      logs.push({ type: 'log', text: stdout.trim() });
+    }
+    if (stderr) {
+      logs.push({ type: 'error', text: stderr.trim() });
+    }
+
+    if (error) {
+      if (error.killed) {
+        logs.push({ type: 'error', text: 'Execution Timeout: Script took longer than 10000ms.' });
+      } else if (!stderr) {
+        logs.push({ type: 'error', text: error.message || 'Execution error.' });
+      }
+    }
+
+    res.json({
+      duration,
+      logs
+    });
+  });
+});
+
 app.delete('/api/schedules/:id', (req, res) => {
   const { id } = req.params;
   const schedules = readJSON(PATHS.schedules, []);

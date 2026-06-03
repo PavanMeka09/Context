@@ -317,16 +317,40 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [execTime, setExecTime] = useState<number | null>(null);
   const [runTrigger, setRunTrigger] = useState(0);
+  const [runTarget, setRunTarget] = useState<'sandbox' | 'system'>('sandbox');
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const supportsRun = language === 'javascript' || language === 'typescript' || language === 'python';
 
-  const handleRun = () => {
+  const handleRun = async () => {
     setLogs([]);
     setExecTime(null);
     setIsRunning(true);
     setConsoleOpen(true);
-    setRunTrigger(prev => prev + 1);
+
+    if (runTarget === 'sandbox') {
+      setRunTrigger(prev => prev + 1);
+    } else {
+      try {
+        const strippedCode = language === 'typescript' ? stripTypeScript(code) : code;
+        const res = await fetch('/api/execute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ language, code: strippedCode }),
+        });
+        if (!res.ok) {
+          throw new Error(`Companion server error: ${res.statusText}`);
+        }
+        const data = await res.json();
+        setLogs(data.logs || []);
+        setExecTime(data.duration || 0);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to connect to companion server.';
+        setLogs([{ type: 'error', text: errorMsg }]);
+      } finally {
+        setIsRunning(false);
+      }
+    }
   };
 
   const handleAutoFix = () => {
@@ -342,7 +366,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
   const hasError = logs.some(l => l.type === 'error');
 
   useEffect(() => {
-    if (!isRunning) return;
+    if (!isRunning || runTarget !== 'sandbox') return;
     
     const handleMessage = (e: MessageEvent) => {
       if (e.data && typeof e.data === 'object') {
@@ -357,10 +381,10 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
     
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [isRunning]);
+  }, [isRunning, runTarget]);
 
   useEffect(() => {
-    if (!isRunning) return;
+    if (!isRunning || runTarget !== 'sandbox') return;
     
     const timeoutDuration = language === 'python' ? 30000 : 4000;
     
@@ -371,7 +395,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
     }, timeoutDuration);
     
     return () => clearTimeout(timer);
-  }, [isRunning, language]);
+  }, [isRunning, runTarget, language]);
 
   const executeInIframe = useCallback((iframe: HTMLIFrameElement) => {
     const isPython = language === 'python';
@@ -563,27 +587,40 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
         <div className="flex items-center gap-2">
           {/* Run Button (for JS/TS) */}
           {supportsRun && (
-            <button
-              onClick={handleRun}
-              disabled={isRunning}
-              className={`flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-950/40 px-2.5 py-1 transition cursor-pointer hover:bg-slate-800 hover:text-white ${
-                isRunning ? 'text-brand-500' : 'text-slate-400'
-              }`}
-              title="Run code block"
-              aria-label="Run code block"
-            >
-              {isRunning ? (
-                <>
-                  <span className="h-3 w-3 rounded-full border-2 border-brand-500 border-t-transparent animate-spin shrink-0" />
-                  <span>Running...</span>
-                </>
-              ) : (
-                <>
-                  <Play className="h-3.5 w-3.5 fill-current text-brand-500 shrink-0" />
-                  <span>Run</span>
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-1 bg-slate-950/40 border border-slate-800 rounded-md p-0.5">
+              <button
+                type="button"
+                onClick={handleRun}
+                disabled={isRunning}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition cursor-pointer hover:bg-slate-800 hover:text-white ${
+                  isRunning ? 'text-brand-500' : 'text-slate-400'
+                }`}
+                title={`Run code block in ${runTarget}`}
+                aria-label="Run code block"
+              >
+                {isRunning ? (
+                  <>
+                    <span className="h-3 w-3 rounded-full border-2 border-brand-500 border-t-transparent animate-spin shrink-0" />
+                    <span>Running...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-3.5 w-3.5 fill-current text-brand-500 shrink-0" />
+                    <span>Run</span>
+                  </>
+                )}
+              </button>
+              <div className="h-4 w-[1px] bg-slate-800" />
+              <select
+                value={runTarget}
+                onChange={(e) => setRunTarget(e.target.value as 'sandbox' | 'system')}
+                className="bg-transparent text-[10px] text-slate-400 hover:text-white font-medium border-0 focus:ring-0 cursor-pointer pr-1 pl-1"
+                title="Select execution target"
+              >
+                <option value="sandbox" className="bg-slate-900 text-slate-350">Sandbox</option>
+                <option value="system" className="bg-slate-900 text-slate-350">System</option>
+              </select>
+            </div>
           )}
 
           <button
@@ -633,7 +670,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
           ref={iframeRef}
           key={runTrigger}
           style={{ display: 'none' }}
-          sandbox="allow-scripts allow-same-origin"
+          sandbox="allow-scripts"
         />
       )}
 
