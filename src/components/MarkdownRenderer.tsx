@@ -339,8 +339,8 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
   const [execTime, setExecTime] = useState<number | null>(null);
   const [runTrigger, setRunTrigger] = useState(0);
   const [runTarget, setRunTarget] = useState<'sandbox' | 'system'>('sandbox');
+  const transpiledCodeRef = useRef<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-
   const supportsRun = language === 'javascript' || language === 'typescript' || language === 'python';
 
   const handleRun = async () => {
@@ -348,12 +348,34 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
     setExecTime(null);
     setIsRunning(true);
     setConsoleOpen(true);
+    transpiledCodeRef.current = null;
+
+    let activeCode = code;
+
+    if (language === 'typescript') {
+      try {
+        const transpileRes = await fetch('/api/transpile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code })
+        });
+        if (transpileRes.ok) {
+          const transpileData = await transpileRes.json();
+          if (transpileData.success && transpileData.code) {
+            activeCode = transpileData.code;
+            transpiledCodeRef.current = transpileData.code;
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to transpile TypeScript via server, falling back to regex parser.', err);
+      }
+    }
 
     if (runTarget === 'sandbox') {
       setRunTrigger(prev => prev + 1);
     } else {
       try {
-        const strippedCode = language === 'typescript' ? stripTypeScript(code) : code;
+        const strippedCode = language === 'typescript' ? (activeCode === code ? stripTypeScript(code) : activeCode) : code;
         const res = await fetch('/api/execute', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -420,10 +442,12 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
 
   const executeInIframe = useCallback((iframe: HTMLIFrameElement) => {
     const isPython = language === 'python';
-    const rawJs = language === 'typescript' ? stripTypeScript(code) : code;
+    const codeToRun = transpiledCodeRef.current || (language === 'typescript' ? stripTypeScript(code) : code);
+    const rawJs = language === 'typescript' ? codeToRun : code;
     
     // Extract bare/dynamic imports for generating the ES Import Map
     const imports: Record<string, string> = {};
+
     if (!isPython) {
       // Matches static imports: import ... from 'package' or import 'package'
       const staticImportRegex = /import\s+[\s\S]*?\s+from\s+['"]([^'"]+)['"]|import\s+['"]([^'"]+)['"]/g;

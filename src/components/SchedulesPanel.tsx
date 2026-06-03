@@ -39,13 +39,15 @@ interface SchedulesPanelProps {
   onClose: () => void;
   chats: Chat[];
   onShowToast: (msg: string, type: 'success' | 'error') => void;
+  onOpenBrowserModal?: (sessionId: string) => void;
 }
 
 export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
   isOpen,
   onClose,
   chats,
-  onShowToast
+  onShowToast,
+  onOpenBrowserModal
 }) => {
   const [schedules, setSchedules] = useState<TaskSchedule[]>([]);
   const [runs, setRuns] = useState<ExecutionRun[]>([]);
@@ -622,30 +624,58 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                       </div>
 
                       {/* Expanded View for logs and details */}
-                      {isExpanded && (
-                        <div className="mt-3.5 pt-3.5 border-t border-white/[0.03] space-y-3 font-mono text-[10px] leading-relaxed text-slate-300">
-                          {run.output && (
+                      {isExpanded && (() => {
+                        const schedule = schedules.find(s => s.id === run.scheduleId);
+                        const isBrowserTask = schedule ? schedule.agentMode === 'browser' : false;
+                        
+                        return (
+                          <div className="mt-3.5 pt-3.5 border-t border-white/[0.03] space-y-3 font-mono text-[10px] leading-relaxed text-slate-300">
+                            {isBrowserTask && onOpenBrowserModal && (
+                              <div className="flex justify-end select-none">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenBrowserModal(run.id);
+                                  }}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-brand-500/20 bg-brand-500/10 hover:bg-brand-500 text-brand-400 hover:text-slate-950 font-bold font-sans text-xs transition active:scale-95 cursor-pointer"
+                                >
+                                  {run.status === 'running' ? (
+                                    <>
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      <span>Monitor Live Browser Session</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span>Inspect Browser Session / History</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            )}
+
+                            {run.output && (
                             <div className="bg-slate-950/40 border border-white/[0.03] rounded-lg p-2.5">
                               <div className="font-bold text-[8.5px] uppercase text-muted-foreground mb-1 leading-none select-none">Output / Summary</div>
                               <pre className="whitespace-pre-wrap max-h-36 overflow-y-auto scrollbar-thin select-text text-foreground">{run.output}</pre>
                             </div>
                           )}
                           
-                          {run.log && run.log.length > 0 && (
-                            <div className="bg-slate-950/20 border border-white/[0.015] rounded-lg p-2.5">
-                              <div className="font-bold text-[8.5px] uppercase text-muted-foreground mb-1 leading-none select-none flex items-center gap-1">
-                                <ClipboardList className="h-3 w-3" />
-                                <span>Execution Logs</span>
+                            {run.log && run.log.length > 0 && (
+                              <div className="bg-slate-950/20 border border-white/[0.015] rounded-lg p-2.5">
+                                <div className="font-bold text-[8.5px] uppercase text-muted-foreground mb-1 leading-none select-none flex items-center gap-1">
+                                  <ClipboardList className="h-3 w-3" />
+                                  <span>Execution Logs</span>
+                                </div>
+                                <div className="space-y-1 max-h-32 overflow-y-auto scrollbar-thin text-slate-400">
+                                  {run.log.map((logMsg, lIdx) => (
+                                    <div key={lIdx}>&gt; {logMsg}</div>
+                                  ))}
+                                </div>
                               </div>
-                              <div className="space-y-1 max-h-32 overflow-y-auto scrollbar-thin text-slate-400">
-                                {run.log.map((logMsg, lIdx) => (
-                                  <div key={lIdx}>&gt; {logMsg}</div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })

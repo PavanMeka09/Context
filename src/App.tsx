@@ -1643,6 +1643,10 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
           onClose={() => setSchedulesOpen(false)}
           chats={chats}
           onShowToast={(msg, type) => showToast(msg, type)}
+          onOpenBrowserModal={(sid) => {
+            setBrowserModalSessionId(sid || 'interactive');
+            setBrowserModalOpen(true);
+          }}
         />
       )}
 

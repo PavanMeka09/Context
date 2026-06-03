@@ -2065,8 +2065,56 @@ app.post('/api/schedules/clear-all', (req, res) => {
   }
 });
 
+// Endpoint: Transpile TypeScript to clean JavaScript
+app.post('/api/transpile', (req, res) => {
+  const { code } = req.body;
+  if (!code) {
+    return res.status(400).json({ error: 'Missing code parameter.' });
+  }
+  try {
+    const ts = require('typescript');
+    const result = ts.transpileModule(code, {
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.ESNext,
+        removeComments: false
+      }
+    });
+    res.json({ success: true, code: result.outputText });
+  } catch (err) {
+    console.error('TypeScript transpilation failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint: Get list of all active browser sessions
+app.get('/api/browser/sessions', async (req, res) => {
+  try {
+    const activeSessions = [];
+    for (const [id, session] of sessions.entries()) {
+      let pageUrl = 'about:blank';
+      let pageTitle = 'Blank Page';
+      try {
+        if (session.page && !session.page.isClosed()) {
+          pageUrl = session.page.url();
+          pageTitle = await session.page.title();
+        }
+      } catch (err) {}
+      activeSessions.push({
+        id,
+        url: pageUrl,
+        title: pageTitle || 'Untitled'
+      });
+    }
+    res.json({ success: true, sessions: activeSessions });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Boot the scheduler engine
 initScheduler();
+
 
 const PORT = 3001;
 app.listen(PORT, () => {

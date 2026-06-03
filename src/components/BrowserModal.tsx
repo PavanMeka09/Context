@@ -64,6 +64,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
   const [tabs, setTabs] = useState<{ id: string; title: string; url: string; isActive: boolean }[]>([]);
   const [logs, setLogs] = useState<{ timestamp: string; type: string; text: string; url: string }[]>([]);
   const [showConsoleDrawer, setShowConsoleDrawer] = useState(false);
+  const [activeSessions, setActiveSessions] = useState<{ id: string; url: string; title: string }[]>([]);
 
   // Sync initialSessionId state if the parent prop changes
   if (initialSessionId !== prevInitialSessionId) {
@@ -97,6 +98,19 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
     }
   }, [sessionId]);
 
+  // Fetch all active browser sessions from companion server
+  const fetchActiveSessions = useCallback(async () => {
+    try {
+      const res = await fetch('/api/browser/sessions');
+      if (res.ok) {
+        const data = await res.json();
+        setActiveSessions(data.sessions || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch active browser sessions:', err);
+    }
+  }, []);
+
   // Fetch current browser state
   const fetchBrowserState = useCallback(async (showMainLoader = false) => {
     if (showMainLoader) {
@@ -117,6 +131,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       // Async refresh tabs and logs
       fetchTabs();
       fetchLogs();
+      fetchActiveSessions();
 
       return data;
     } catch (err: unknown) {
@@ -127,7 +142,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
     } finally {
       if (showMainLoader) setLoading(false);
     }
-  }, [sessionId, fetchTabs, fetchLogs]);
+  }, [sessionId, fetchTabs, fetchLogs, fetchActiveSessions]);
 
   // Run load on open or when sessionId changes
   useEffect(() => {
@@ -446,14 +461,27 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                 className="bg-transparent text-slate-200 border-0 focus:ring-0 text-xs py-0 pl-1 pr-6 font-semibold cursor-pointer outline-none"
               >
                 <option value="interactive" className="bg-slate-900 text-slate-200">Interactive Sandbox</option>
-                {activeChatId && (
-                  <option value={activeChatId} className="bg-slate-900 text-slate-200">
-                    Chat Agent ({activeChatTitle || 'Active Chat'})
-                  </option>
-                )}
-                {sessionId && sessionId !== 'interactive' && sessionId !== activeChatId && (
+                
+                {/* Dynamically list active sessions on the server */}
+                {activeSessions.filter(s => s.id !== 'interactive').map((s) => {
+                  let label = `Session (${s.id.slice(0, 8)}...)`;
+                  if (s.id === activeChatId) {
+                    label = `Active Chat Agent (${activeChatTitle || 'Active Chat'})`;
+                  } else if (s.id.startsWith('run-') || s.id.startsWith('sched-') || s.id.startsWith('chat-sched-')) {
+                    label = `Task Run [${s.id}]`;
+                  }
+                  
+                  return (
+                    <option key={s.id} value={s.id} className="bg-slate-900 text-slate-200">
+                      {label}
+                    </option>
+                  );
+                })}
+
+                {/* Fallback for selected sessionId if not in activeSessions list */}
+                {sessionId && sessionId !== 'interactive' && !activeSessions.some(s => s.id === sessionId) && (
                   <option value={sessionId} className="bg-slate-900 text-slate-200">
-                    Target Session ({sessionId.startsWith('sched-') ? 'Task Schedule' : 'Older Chat'})
+                    Session (${sessionId.startsWith('run-') || sessionId.startsWith('sched-') || sessionId.startsWith('chat-sched-') ? 'Task Run' : 'Chat Agent'})
                   </option>
                 )}
               </select>
