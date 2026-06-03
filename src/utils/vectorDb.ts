@@ -189,28 +189,33 @@ export const vectorDb = {
       tx.onerror = () => reject(tx.error);
     });
 
-    // 2. Generate embeddings & save chunks
-    for (let i = 0; i < chunks.length; i++) {
-      const chunkText = chunks[i];
-      try {
-        const embedding = await this.embedText(chunkText);
-        const chunk: VectorChunk = {
-          id: `${docId}-chunk-${i}`,
-          docId,
-          docName: name,
-          text: chunkText,
-          embedding
-        };
+    // 2. Generate embeddings & save chunks in parallel batches
+    const batchSize = 5;
+    for (let i = 0; i < chunks.length; i += batchSize) {
+      const batch = chunks.slice(i, i + batchSize);
+      const promises = batch.map(async (chunkText, index) => {
+        const chunkIndex = i + index;
+        try {
+          const embedding = await this.embedText(chunkText);
+          const chunk: VectorChunk = {
+            id: `${docId}-chunk-${chunkIndex}`,
+            docId,
+            docName: name,
+            text: chunkText,
+            embedding
+          };
 
-        await new Promise<void>((resolve, reject) => {
-          const tx = db.transaction('chunks', 'readwrite');
-          tx.objectStore('chunks').put(chunk);
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error);
-        });
-      } catch (err) {
-        console.error(`Failed to index chunk ${i} of document ${name}:`, err);
-      }
+          await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction('chunks', 'readwrite');
+            tx.objectStore('chunks').put(chunk);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+        } catch (err) {
+          console.error(`Failed to index chunk ${chunkIndex} of document ${name}:`, err);
+        }
+      });
+      await Promise.all(promises);
     }
   },
 

@@ -400,6 +400,29 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
   const executeInIframe = useCallback((iframe: HTMLIFrameElement) => {
     const isPython = language === 'python';
     const rawJs = language === 'typescript' ? stripTypeScript(code) : code;
+    
+    // Extract bare/dynamic imports for generating the ES Import Map
+    const imports: Record<string, string> = {};
+    if (!isPython) {
+      // Matches static imports: import ... from 'package' or import 'package'
+      const staticImportRegex = /import\s+[\s\S]*?\s+from\s+['"]([^'"]+)['"]|import\s+['"]([^'"]+)['"]/g;
+      let match;
+      while ((match = staticImportRegex.exec(rawJs)) !== null) {
+        const pkg = match[1] || match[2];
+        if (pkg && !pkg.startsWith('.') && !pkg.startsWith('/') && !pkg.startsWith('http') && !pkg.endsWith('.css')) {
+          imports[pkg] = `https://esm.sh/${pkg}`;
+        }
+      }
+      // Matches dynamic imports: import('package')
+      const dynamicImportRegex = /import\(\s*['"]([^'"]+)['"]\s*\)/g;
+      while ((match = dynamicImportRegex.exec(rawJs)) !== null) {
+        const pkg = match[1];
+        if (pkg && !pkg.startsWith('.') && !pkg.startsWith('/') && !pkg.startsWith('http')) {
+          imports[pkg] = `https://esm.sh/${pkg}`;
+        }
+      }
+    }
+
     const iframeHtml = isPython ? `
       <!DOCTYPE html>
       <html>
@@ -444,7 +467,9 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
                 stdout: (text) => sendLog('log', [text]),
                 stderr: (text) => sendLog('error', [text])
               });
-              sendLog('log', ['[System] Python runtime ready. Executing script...']);
+              sendLog('log', ['[System] Python runtime ready. Parsing imports...']);
+              await pyodide.loadPackagesFromImports(${JSON.stringify(code)});
+              sendLog('log', ['[System] Executing script...']);
               
               const result = await pyodide.runPythonAsync(${JSON.stringify(code)});
               const end = performance.now();
@@ -466,50 +491,54 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
       <html>
       <head>
         <meta charset="utf-8">
+        <script type="importmap">
+          {
+            "imports": ${JSON.stringify(imports)}
+          }
+        </script>
       </head>
       <body>
         <script>
-          (function() {
-            function sendLog(type, args) {
-              const text = args.map(arg => {
-                if (arg === null) return 'null';
-                if (arg === undefined) return 'undefined';
-                if (typeof arg === 'object') {
-                  try {
-                    return JSON.stringify(arg, null, 2);
-                  } catch(e) {
-                    return Object.prototype.toString.call(arg);
-                  }
+          window.__start_time = performance.now();
+          
+          function sendLog(type, args) {
+            const text = args.map(arg => {
+              if (arg === null) return 'null';
+              if (arg === undefined) return 'undefined';
+              if (typeof arg === 'object') {
+                try {
+                  return JSON.stringify(arg, null, 2);
+                } catch(e) {
+                  return Object.prototype.toString.call(arg);
                 }
-                return arg.toString();
-              }).join(' ');
-              
-              window.parent.postMessage({ type: 'CONSOLE_LOG', logType: type, text }, '*');
-            }
-            
-            console.log = function(...args) { sendLog('log', args); };
-            console.info = function(...args) { sendLog('log', args); };
-            console.warn = function(...args) { sendLog('warn', args); };
-            console.error = function(...args) { sendLog('error', args); };
-            
-            window.addEventListener('error', function(e) {
-              window.parent.postMessage({ type: 'CONSOLE_LOG', logType: 'error', text: e.message }, '*');
-            });
-            
-            try {
-              const start = performance.now();
-              const result = eval(${JSON.stringify(rawJs)});
-              const end = performance.now();
-              
-              if (result !== undefined) {
-                sendLog('return', [result]);
               }
-              
-              window.parent.postMessage({ type: 'EXECUTION_DONE', duration: end - start }, '*');
-            } catch(err) {
-              window.parent.postMessage({ type: 'CONSOLE_LOG', logType: 'error', text: err.message }, '*');
-              window.parent.postMessage({ type: 'EXECUTION_DONE', duration: 0 }, '*');
-            }
+              return arg.toString();
+            }).join(' ');
+            
+            window.parent.postMessage({ type: 'CONSOLE_LOG', logType: type, text }, '*');
+          }
+          
+          console.log = function(...args) { sendLog('log', args); };
+          console.info = function(...args) { sendLog('log', args); };
+          console.warn = function(...args) { sendLog('warn', args); };
+          console.error = function(...args) { sendLog('error', args); };
+          
+          window.addEventListener('error', function(e) {
+            window.parent.postMessage({ type: 'CONSOLE_LOG', logType: 'error', text: e.message }, '*');
+            window.parent.postMessage({ type: 'EXECUTION_DONE', duration: 0 }, '*');
+          });
+          
+          window.addEventListener('unhandledrejection', function(e) {
+            const msg = e.reason ? (e.reason.message || String(e.reason)) : 'Unhandled Promise Rejection';
+            window.parent.postMessage({ type: 'CONSOLE_LOG', logType: 'error', text: msg }, '*');
+            window.parent.postMessage({ type: 'EXECUTION_DONE', duration: 0 }, '*');
+          });
+        </script>
+        <script type="module">
+          ${rawJs}
+          ;(() => {
+            const duration = performance.now() - window.__start_time;
+            window.parent.postMessage({ type: 'EXECUTION_DONE', duration }, '*');
           })();
         </script>
       </body>
