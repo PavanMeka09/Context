@@ -15,6 +15,49 @@ import { streamChatCompletion, generateTextCompletion } from './utils/api';
 import { searchSearxng, classifySearchHeuristically } from './utils/searxng';
 import { AlertCircle, X } from 'lucide-react';
 
+// Robust JSON Parser helper to recover from conversational LLM outputs, markdown code blocks, or minor syntax issues
+function safeJsonParse(text: string): unknown {
+  if (!text) throw new Error('Empty response');
+  let cleaned = text.trim();
+
+  // Strip markdown code block markers
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '');
+  cleaned = cleaned.replace(/\s*```$/, '');
+  cleaned = cleaned.trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    // If standard parse fails, try to extract first outer curly brace pair
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      const candidate = cleaned.slice(firstBrace, lastBrace + 1);
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        // Try cleaning common issues like trailing commas or single quotes around keys/values
+        const dynamicJson = candidate
+          // Replace single quotes with double quotes around property keys and values
+          .replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, '"$1"')
+          // Remove trailing commas before closing braces/brackets
+          .replace(/,\s*([\]}])/g, '$1');
+        
+        try {
+          return JSON.parse(dynamicJson);
+        } catch (deepErr) {
+          throw new Error(`Failed to parse LLM JSON: ${(e as Error).message}. Dynamic cleanup failed: ${(deepErr as Error).message}. Raw text: ${text}`, {
+            cause: deepErr
+          });
+        }
+      }
+    }
+    throw new Error(`Failed to parse LLM JSON: ${(e as Error).message}. Raw text: ${text}`, {
+      cause: e
+    });
+  }
+}
+
 function addMessageToTree(chat: Chat, message: Message, parentId: string | null): Chat {
   const upgradedChat = upgradeChatToTree(chat);
   const tree = { ...upgradedChat.messageTree };
@@ -940,18 +983,13 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
 
         if (!llmResponse) throw new Error('Empty response from LLM');
 
-        let cleanLlm = llmResponse.trim();
-        if (cleanLlm.startsWith('```json')) {
-          cleanLlm = cleanLlm.slice(7);
-        } else if (cleanLlm.startsWith('```')) {
-          cleanLlm = cleanLlm.slice(3);
-        }
-        if (cleanLlm.endsWith('```')) {
-          cleanLlm = cleanLlm.slice(0, -3);
-        }
-        cleanLlm = cleanLlm.trim();
-
-        const decision = JSON.parse(cleanLlm);
+        const decision = safeJsonParse(llmResponse) as {
+          thought?: string;
+          action: string;
+          targetId?: string;
+          text?: string;
+          url?: string;
+        };
         if (!decision || !decision.action) throw new Error('Invalid JSON decision format from LLM');
 
         // 3. Add step to list as pending

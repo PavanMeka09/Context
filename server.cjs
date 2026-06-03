@@ -38,6 +38,45 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Robust JSON Parser helper to recover from conversational LLM outputs, markdown code blocks, or minor syntax issues
+function safeJsonParse(text) {
+  if (!text) throw new Error('Empty response');
+  let cleaned = text.trim();
+
+  // Strip markdown code block markers
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '');
+  cleaned = cleaned.replace(/\s*```$/, '');
+  cleaned = cleaned.trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    // If standard parse fails, try to extract first outer curly brace pair
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      const candidate = cleaned.slice(firstBrace, lastBrace + 1);
+      try {
+        return JSON.parse(candidate);
+      } catch (innerErr) {
+        // Try cleaning common issues like trailing commas or single quotes around keys/values
+        let dynamicJson = candidate
+          // Replace single quotes with double quotes around property keys and values
+          .replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, '"$1"')
+          // Remove trailing commas before closing braces/brackets
+          .replace(/,\s*([\]}])/g, '$1');
+        
+        try {
+          return JSON.parse(dynamicJson);
+        } catch (deepErr) {
+          throw new Error(`Failed to parse LLM JSON: ${e.message}. Dynamic cleanup failed: ${deepErr.message}. Raw text: ${text}`);
+        }
+      }
+    }
+    throw e;
+  }
+}
+
 let browser = null;
 const sessions = new Map(); // sessionId -> { context, page, latestScreenshotBuffer }
 
@@ -350,6 +389,27 @@ async function scrapeInteractiveElements(pageInstance) {
       return true;
     };
 
+    const hasInteractiveAncestor = (el) => {
+      let parent = el.parentElement;
+      while (parent) {
+        const tag = parent.tagName.toLowerCase();
+        if (
+          tag === 'a' || 
+          tag === 'button' || 
+          tag === 'select' || 
+          tag === 'label' ||
+          parent.getAttribute('role') === 'button' ||
+          parent.getAttribute('role') === 'link'
+        ) {
+          if (isVisible(parent)) {
+            return true;
+          }
+        }
+        parent = parent.parentElement;
+      }
+      return false;
+    };
+
     const getSemanticLabel = (el) => {
       let label = el.getAttribute('aria-label');
       if (label && label.trim()) return label.trim();
@@ -410,6 +470,8 @@ async function scrapeInteractiveElements(pageInstance) {
     
     els.forEach(el => {
       if (!isVisible(el)) return;
+      if (hasInteractiveAncestor(el)) return; // Exclude redundant nested interactive children
+      
       const id = `context-el-${counter++}`;
       el.setAttribute('data-context-id', id);
       
@@ -417,12 +479,24 @@ async function scrapeInteractiveElements(pageInstance) {
       let text = rawText.trim().replace(/\s+/g, ' ').slice(0, 80);
       
       const rect = el.getBoundingClientRect();
+      
+      const attributes = {
+        id: el.getAttribute('id') || '',
+        name: el.getAttribute('name') || '',
+        placeholder: el.getAttribute('placeholder') || '',
+        ariaLabel: el.getAttribute('aria-label') || '',
+        title: el.getAttribute('title') || '',
+        href: el.getAttribute('href') || '',
+        className: el.className || '',
+        role: el.getAttribute('role') || ''
+      };
 
       result.push({
         id,
         tagName: el.tagName.toLowerCase(),
         type: el.type || el.getAttribute('role') || '',
         text: text || `[Unnamed ${el.tagName.toLowerCase()}]`,
+        attributes,
         rect: {
           x: rect.x,
           y: rect.y,
@@ -471,55 +545,85 @@ async function getInteractiveElementOrHeal(session, targetId, runLog) {
 
   // 3. Match using element details
   if (targetElement) {
-    const matched = newElements.find(item => 
-      item.tagName === targetElement.tagName && 
-      item.type === targetElement.type && 
-      item.text === targetElement.text &&
-      item.text !== `[Unnamed ${item.tagName}]`
-    );
+    let bestMatch = null;
+    let highestScore = 0;
 
-    if (matched) {
-      const healSelector = `[data-context-id="${matched.id}"]`;
+    for (const candidate of newElements) {
+      let score = 0;
+
+      // 1. Tag name match
+      if (candidate.tagName === targetElement.tagName) {
+        score += 2;
+      }
+
+      // 2. Type match
+      if (candidate.type === targetElement.type) {
+        score += 1;
+      }
+
+      // 3. Text match
+      if (candidate.text === targetElement.text && targetElement.text && !targetElement.text.startsWith('[Unnamed')) {
+        score += 4;
+      } else if (targetElement.text && candidate.text && !targetElement.text.startsWith('[Unnamed')) {
+        // Partial text similarity (check if one is substring of other)
+        const t1 = targetElement.text.toLowerCase();
+        const t2 = candidate.text.toLowerCase();
+        if (t1.includes(t2) || t2.includes(t1)) {
+          score += 2;
+        }
+      }
+
+      // 4. Attributes match (comparing original DOM attributes)
+      if (targetElement.attributes && candidate.attributes) {
+        const attr1 = targetElement.attributes;
+        const attr2 = candidate.attributes;
+
+        if (attr1.id && attr1.id === attr2.id) score += 4;
+        if (attr1.name && attr1.name === attr2.name) score += 3;
+        if (attr1.placeholder && attr1.placeholder === attr2.placeholder) score += 3;
+        if (attr1.ariaLabel && attr1.ariaLabel === attr2.ariaLabel) score += 3;
+        if (attr1.title && attr1.title === attr2.title) score += 3;
+        if (attr1.href && attr1.href === attr2.href) score += 3;
+        if (attr1.role && attr1.role === attr2.role) score += 2;
+        
+        // Class overlap
+        if (attr1.className && attr2.className) {
+          const classes1 = attr1.className.split(/\s+/).filter(Boolean);
+          const classes2 = attr2.className.split(/\s+/).filter(Boolean);
+          const intersection = classes1.filter(c => classes2.includes(c));
+          if (intersection.length > 0) {
+            score += Math.min(2, intersection.length * 0.5);
+          }
+        }
+      }
+
+      // 5. Position match (coordinates within 100px delta)
+      if (targetElement.rect && candidate.rect) {
+        const dx = Math.abs(candidate.rect.x - targetElement.rect.x);
+        const dy = Math.abs(candidate.rect.y - targetElement.rect.y);
+        if (dx < 100 && dy < 100) {
+          score += 2;
+          if (dx < 20 && dy < 20) {
+            score += 1;
+          }
+        }
+      }
+
+      if (score > highestScore) {
+        highestScore = score;
+        bestMatch = candidate;
+      }
+    }
+
+    // A threshold of 5 ensures we don't heal to a completely random element
+    if (bestMatch && highestScore >= 5) {
+      const healSelector = `[data-context-id="${bestMatch.id}"]`;
       const healedEl = await pageInstance.$(healSelector);
       if (healedEl) {
-        const healMsg = `Self-healed: matched mutated element "${targetId}" to new element "${matched.id}" (tag: ${matched.tagName}, text: "${matched.text}").`;
+        const healMsg = `Self-healed: matched mutated element "${targetId}" to new element "${bestMatch.id}" (score: ${highestScore}, tag: ${bestMatch.tagName}, text: "${bestMatch.text}").`;
         console.log(`[Browser Server] ${healMsg}`);
         if (runLog) runLog.push(healMsg);
-        return { el: healedEl, actualId: matched.id, healed: true };
-      }
-    }
-
-    // Fallback: match by tagName and text (if text is meaningful)
-    if (targetElement.text && !targetElement.text.startsWith('[Unnamed')) {
-      const matchedByText = newElements.find(item => 
-        item.tagName === targetElement.tagName && 
-        item.text === targetElement.text
-      );
-      if (matchedByText) {
-        const healSelector = `[data-context-id="${matchedByText.id}"]`;
-        const healedEl = await pageInstance.$(healSelector);
-        if (healedEl) {
-          const healMsg = `Self-healed (text-match): matched element "${targetId}" to "${matchedByText.id}" (tag: ${matchedByText.tagName}, text: "${matchedByText.text}").`;
-          console.log(`[Browser Server] ${healMsg}`);
-          if (runLog) runLog.push(healMsg);
-          return { el: healedEl, actualId: matchedByText.id, healed: true };
-        }
-      }
-    }
-
-    // Fallback: match by index
-    const oldIndex = previousElements.findIndex(item => item.id === targetId);
-    if (oldIndex !== -1 && oldIndex < newElements.length) {
-      const candidate = newElements[oldIndex];
-      if (candidate && candidate.tagName === targetElement.tagName && candidate.type === targetElement.type) {
-        const healSelector = `[data-context-id="${candidate.id}"]`;
-        const healedEl = await pageInstance.$(healSelector);
-        if (healedEl) {
-          const healMsg = `Self-healed (index-match): matched element "${targetId}" to "${candidate.id}" at index ${oldIndex} (tag: ${candidate.tagName}).`;
-          console.log(`[Browser Server] ${healMsg}`);
-          if (runLog) runLog.push(healMsg);
-          return { el: healedEl, actualId: candidate.id, healed: true };
-        }
+        return { el: healedEl, actualId: bestMatch.id, healed: true };
       }
     }
   }
@@ -1206,13 +1310,7 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
       }
 
       const llmResponse = await callLLM(settings, systemPrompt, "What is the next action to take to achieve my goal?", screenshotBase64);
-      let cleanLlm = llmResponse.trim();
-      if (cleanLlm.startsWith('```json')) cleanLlm = cleanLlm.slice(7);
-      else if (cleanLlm.startsWith('```')) cleanLlm = cleanLlm.slice(3);
-      if (cleanLlm.endsWith('```')) cleanLlm = cleanLlm.slice(0, -3);
-      cleanLlm = cleanLlm.trim();
-
-      const decision = JSON.parse(cleanLlm);
+      const decision = safeJsonParse(llmResponse);
       runLog.push(`Thought: "${decision.thought}" | Action: ${decision.action}`);
 
       const currentStep = {
