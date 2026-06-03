@@ -122,7 +122,26 @@ function getErrorMessage(status: number, defaultMsg: string): string {
   }
   return defaultMsg;
 }
+// Helper to inject thinking level instructions into system instruction
+function getWrappedSystemInstruction(systemInstruction: string, thinkingLevel?: 'off' | 'low' | 'medium' | 'high'): string {
+  if (!thinkingLevel || thinkingLevel === 'off') {
+    return systemInstruction;
+  }
 
+  const instructions = {
+    low: 'Wrap your brief, initial thought process inside <thinking> tags before answering. Be extremely concise and focus only on the core solution path.',
+    medium: 'Before answering, outline your step-by-step thinking process inside <thinking> tags. Analyze the question, verify assumptions, and structure your approach.',
+    high: 'Conduct an exhaustive, deep step-by-step reasoning process inside <thinking> tags before answering. Explore alternative perspectives, potential pitfalls, and edge cases, and rigorously verify your logical flow before delivering the final response.'
+  };
+
+  const instructionText = instructions[thinkingLevel];
+  
+  if (systemInstruction) {
+    return `${systemInstruction}\n\n[REASONING ENGINE COMPONENT]\n${instructionText}`;
+  }
+  
+  return `[REASONING ENGINE COMPONENT]\n${instructionText}`;
+}
 
 // Main streaming entrypoint using Vercel AI SDK
 export async function streamChatCompletion(
@@ -134,8 +153,6 @@ export async function streamChatCompletion(
 ): Promise<void> {
   const { provider, apiKey, model } = settings;
 
-
-
   if (!apiKey && provider !== 'ollama') {
     callbacks.onError('API key required. Please configure it in Settings.');
     return;
@@ -143,6 +160,7 @@ export async function streamChatCompletion(
 
   try {
     let result;
+    const effectiveSystemInstruction = getWrappedSystemInstruction(systemInstruction, settings.thinkingLevel);
 
     if (provider === 'ollama') {
       const ollama = createOpenAI({
@@ -181,7 +199,7 @@ export async function streamChatCompletion(
       result = streamText({
         model: ollama(model),
         messages: formattedMessages,
-        system: systemInstruction || undefined,
+        system: effectiveSystemInstruction || undefined,
         abortSignal: signal,
       });
     } else if (provider === 'gemini') {
@@ -218,11 +236,28 @@ export async function streamChatCompletion(
           return { role, content: m.content };
         });
 
+      let providerOptions: any = undefined;
+      if (settings.thinkingLevel && settings.thinkingLevel !== 'off' && model.includes('gemini')) {
+        const budgetMap = {
+          low: 1024,
+          medium: 2048,
+          high: 4096
+        };
+        providerOptions = {
+          google: {
+            thinkingConfig: {
+              thinkingBudget: budgetMap[settings.thinkingLevel as 'low' | 'medium' | 'high'] || 2048
+            }
+          }
+        };
+      }
+
       result = streamText({
         model: google(model),
         messages: formattedMessages,
-        system: systemInstruction || undefined,
+        system: effectiveSystemInstruction || undefined,
         abortSignal: signal,
+        providerOptions,
       });
     } else if (provider === 'openrouter') {
       const openrouter = createOpenAI({
@@ -265,7 +300,7 @@ export async function streamChatCompletion(
       result = streamText({
         model: openrouter(model),
         messages: formattedMessages,
-        system: systemInstruction || undefined,
+        system: effectiveSystemInstruction || undefined,
         abortSignal: signal,
       });
     }
@@ -304,12 +339,42 @@ export async function generateTextCompletion(
     throw new Error('API key required. Please configure it in Settings.');
   }
 
+  const effectiveSystemInstruction = getWrappedSystemInstruction(systemInstruction, settings.thinkingLevel);
   let result;
 
   const formattedMessages: ModelMessage[] = messages
     .filter(m => m.role !== 'system')
     .map(m => {
       const role = m.role === 'assistant' ? 'assistant' : 'user';
+
+      if (m.attachments && m.attachments.length > 0) {
+        const contentParts: any[] = [{ type: 'text', text: m.content }];
+        for (const att of m.attachments) {
+          if (att.type.startsWith('image/')) {
+            if (provider === 'gemini') {
+              const base64Data = att.data.split(',')[1] || att.data;
+              contentParts.push({
+                type: 'image',
+                image: base64Data,
+                mimeType: att.type
+              });
+            } else {
+              contentParts.push({
+                type: 'image',
+                image: att.data,
+                mimeType: att.type
+              });
+            }
+          } else {
+            contentParts.push({
+              type: 'text',
+              text: `\n\n[File Attachment: ${att.name}]\n\`\`\`\n${att.data}\n\`\`\``
+            });
+          }
+        }
+        return { role, content: contentParts };
+      }
+
       return { role, content: m.content };
     });
 
@@ -322,17 +387,34 @@ export async function generateTextCompletion(
     result = await generateText({
       model: ollama(model),
       messages: formattedMessages,
-      system: systemInstruction || undefined,
+      system: effectiveSystemInstruction || undefined,
     });
   } else if (provider === 'gemini') {
     const google = createGoogleGenerativeAI({
       apiKey,
     });
 
+    let providerOptions: any = undefined;
+    if (settings.thinkingLevel && settings.thinkingLevel !== 'off' && model.includes('gemini')) {
+      const budgetMap = {
+        low: 1024,
+        medium: 2048,
+        high: 4096
+      };
+      providerOptions = {
+        google: {
+          thinkingConfig: {
+            thinkingBudget: budgetMap[settings.thinkingLevel as 'low' | 'medium' | 'high'] || 2048
+          }
+        }
+      };
+    }
+
     result = await generateText({
       model: google(model),
       messages: formattedMessages,
-      system: systemInstruction || undefined,
+      system: effectiveSystemInstruction || undefined,
+      providerOptions,
     });
   } else if (provider === 'openrouter') {
     const openrouter = createOpenAI({
@@ -347,7 +429,7 @@ export async function generateTextCompletion(
     result = await generateText({
       model: openrouter(model),
       messages: formattedMessages,
-      system: systemInstruction || undefined,
+      system: effectiveSystemInstruction || undefined,
     });
   }
 

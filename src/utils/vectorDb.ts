@@ -245,16 +245,19 @@ export const vectorDb = {
       request.onerror = () => reject(request.error);
     });
 
+    // Open a single readwrite transaction to batch delete matching chunks
+    const tx = db.transaction('chunks', 'readwrite');
+    const store = tx.objectStore('chunks');
     for (const chunk of chunks) {
       if (chunk.docId === docId) {
-        await new Promise<void>((resolve, reject) => {
-          const tx = db.transaction('chunks', 'readwrite');
-          tx.objectStore('chunks').delete(chunk.id);
-          tx.oncomplete = () => resolve();
-          tx.onerror = () => reject(tx.error);
-        });
+        store.delete(chunk.id);
       }
     }
+
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
   },
 
   async deleteAllData(): Promise<void> {

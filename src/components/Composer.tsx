@@ -1,8 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Square, ArrowUp, Paperclip, Mic, MicOff, X, FileText, Loader2, Search, Brain, ChevronDown, Check, Globe, Sparkles } from 'lucide-react';
+import { Square, ArrowUp, Paperclip, Mic, MicOff, X, FileText, Search, ChevronDown, Check, Globe, Sparkles, Brain, Compass } from 'lucide-react';
 import type { Attachment, Settings, SystemPrompt } from '../utils/storage';
 import { Storage, PRESET_PROMPTS } from '../utils/storage';
-import { localSpeech } from '../utils/localSpeech';
 
 interface ComposerProps {
   input: string;
@@ -12,7 +11,7 @@ interface ComposerProps {
   onStop: () => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   userPrompts?: string[];
-  fontSize?: 'sm' | 'base' | 'lg';
+
   onError?: (message: React.ReactNode) => void;
   settings: Settings;
   onSettingsChanged?: (settings: Settings) => void;
@@ -73,12 +72,8 @@ export const Composer: React.FC<ComposerProps> = ({
   const recognitionRef = useRef<ISpeechRecognition | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [whisperStatus, setWhisperStatus] = useState('idle');
-  const [whisperProgress, setWhisperProgress] = useState(0);
-
-  const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
   const [promptDropdownOpen, setPromptDropdownOpen] = useState(false);
+  const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
 
   const getActivePromptName = () => {
     const all = [...PRESET_PROMPTS, ...customPrompts];
@@ -100,26 +95,12 @@ export const Composer: React.FC<ComposerProps> = ({
     onSettingsChanged?.(updatedSettings);
   };
 
-  const handleSelectThinking = (level: 'off' | 'low' | 'medium' | 'high') => {
-    const updatedSettings = { ...settings, thinkingLevel: level };
+  const toggleBrowserAgent = () => {
+    const nextBrowserAgent = !settings.isBrowserAgentEnabled;
+    const updatedSettings = { ...settings, isBrowserAgentEnabled: nextBrowserAgent };
     Storage.saveSettings(updatedSettings);
     onSettingsChanged?.(updatedSettings);
-    setThinkingDropdownOpen(false);
   };
-
-  useEffect(() => {
-    const unsubStatus = localSpeech.subscribeStatus(setWhisperStatus);
-    const unsubProgress = localSpeech.subscribeProgress(setWhisperProgress);
-    return () => {
-      unsubStatus();
-      unsubProgress();
-    };
-  }, []);
-
-  const engine = settings.speechToTextEngine || 'native';
-  const isSpeechSupported = engine === 'local'
-    ? typeof window !== 'undefined' && !!navigator.mediaDevices?.getUserMedia
-    : typeof window !== 'undefined' && !!((window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).SpeechRecognition || (window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown }).webkitSpeechRecognition);
 
   // Auto-grow heights
   useEffect(() => {
@@ -163,26 +144,7 @@ export const Composer: React.FC<ComposerProps> = ({
         } else if (event.error === 'no-speech') {
           errorDetail = 'No speech was detected. Please check your mic and try again.';
         } else if (event.error === 'network') {
-          errorDetail = (
-            <span className="flex items-center gap-1.5 flex-wrap">
-              <span>A network error occurred. Native speech recognition requires an internet connection.</span>
-              <button
-                onClick={() => {
-                  const updatedSettings: Settings = { ...Storage.getSettings(), speechToTextEngine: 'local' };
-                  Storage.saveSettings(updatedSettings);
-                  onSettingsChanged?.(updatedSettings);
-                  onError?.(
-                    <span className="flex items-center gap-1.5 font-bold text-emerald-400">
-                      Switched to Local Whisper Speech-to-Text! Click the mic icon again to record locally.
-                    </span>
-                  );
-                }}
-                className="underline font-bold text-brand-400 hover:text-brand-300 cursor-pointer bg-transparent border-none p-0 inline-block transition active:scale-95 ml-1"
-              >
-                Switch to Local Whisper (Offline & Private)
-              </button>
-            </span>
-          );
+          errorDetail = 'A network error occurred. Native speech recognition requires an internet connection.';
         } else if (event.error === 'aborted') {
           return; // Ignore manual abort
         }
@@ -198,48 +160,21 @@ export const Composer: React.FC<ComposerProps> = ({
     }
   }, [input, onChangeInput, onError, onSettingsChanged]);
 
+  const isSpeechSupported = typeof window !== 'undefined' && 
+                            ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
+
   const toggleRecording = async () => {
-    const engine = settings.speechToTextEngine || 'native';
+    if (!recognitionRef.current) {
+      alert('Speech Recognition is not supported or permitted in this browser.');
+      return;
+    }
 
-    if (engine === 'local') {
-      if (isRecording) {
-        setIsRecording(false);
-        setIsTranscribing(true);
-        try {
-          const audioData = await localSpeech.stopRecording();
-          const transcribedText = await localSpeech.transcribe(audioData);
-          if (transcribedText.trim()) {
-            onChangeInput(input ? `${input.trim()} ${transcribedText.trim()}` : transcribedText.trim());
-          }
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : 'Local transcription failed.';
-          console.error('Local speech-to-text error:', err);
-          onError?.(errorMsg);
-        } finally {
-          setIsTranscribing(false);
-        }
-      } else {
-        try {
-          await localSpeech.startRecording();
-          setIsRecording(true);
-        } catch (err) {
-          console.error('Microphone access error:', err);
-          onError?.('Microphone access is blocked. Please enable microphone permissions in your browser settings.');
-        }
-      }
+    if (isRecording) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
     } else {
-      if (!recognitionRef.current) {
-        alert('Speech Recognition is not supported or permitted in this browser.');
-        return;
-      }
-
-      if (isRecording) {
-        recognitionRef.current.stop();
-        setIsRecording(false);
-      } else {
-        setIsRecording(true);
-        recognitionRef.current.start();
-      }
+      setIsRecording(true);
+      recognitionRef.current.start();
     }
   };
 
@@ -385,9 +320,9 @@ export const Composer: React.FC<ComposerProps> = ({
         <div className="absolute -top-11 left-1/2 -translate-x-1/2 animate-fade-in">
           <button
             onClick={onStop}
-            className="flex items-center gap-1.5 rounded-full border border-white/[0.05] bg-slate-900/90 hover:bg-slate-800 px-3.5 py-1 text-[10px] font-medium text-slate-300 shadow-xl backdrop-blur-md transition-all active:scale-95 cursor-pointer"
+            className="flex items-center gap-1.5 rounded-full border border-border bg-background hover:bg-accent px-3.5 py-1 text-[10px] font-medium text-foreground shadow-sm transition-all active:scale-95 cursor-pointer"
           >
-            <Square className="h-2.5 w-2.5 fill-current text-red-500" />
+            <Square className="h-2.5 w-2.5 fill-current text-destructive" />
             <span>Stop generating</span>
           </button>
         </div>
@@ -401,29 +336,29 @@ export const Composer: React.FC<ComposerProps> = ({
             return (
               <div
                 key={att.id}
-                className="group relative flex items-center gap-1.5 rounded-lg border border-white/[0.04] bg-slate-900/60 p-1.5 text-[10px] text-slate-300 backdrop-blur-md"
+                className="group relative flex items-center gap-1.5 rounded-md border border-border bg-muted/50 p-1.5 text-[10px] text-foreground"
               >
                 {isImage ? (
                   <img
                     src={att.data}
                     alt={att.name}
-                    className="h-7 w-7 rounded object-cover border border-white/[0.08]"
+                    className="h-7 w-7 rounded object-cover border border-border"
                   />
                 ) : (
-                  <div className="flex h-7 w-7 items-center justify-center rounded bg-brand-500/10 text-brand-400 border border-brand-500/20">
+                  <div className="flex h-7 w-7 items-center justify-center rounded bg-secondary text-secondary-foreground border border-border">
                     <FileText className="h-4 w-4" />
                   </div>
                 )}
                 
                 <div className="flex flex-col min-w-0 pr-5">
-                  <span className="truncate max-w-[120px] font-semibold text-slate-200 leading-tight">{att.name}</span>
-                  <span className="text-[8px] text-slate-500 mt-0.5">{(att.size / 1024).toFixed(1)} KB</span>
+                  <span className="truncate max-w-[120px] font-semibold text-foreground leading-tight">{att.name}</span>
+                  <span className="text-[8px] text-muted-foreground mt-0.5">{(att.size / 1024).toFixed(1)} KB</span>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => removeAttachment(att.id)}
-                  className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-slate-950/80 hover:bg-red-500 text-slate-400 hover:text-white border border-white/[0.05] transition-all cursor-pointer opacity-0 group-hover:opacity-100"
+                  className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-background hover:bg-destructive text-muted-foreground hover:text-destructive-foreground border border-border transition-all cursor-pointer opacity-0 group-hover:opacity-100"
                   aria-label="Remove attachment"
                 >
                   <X className="h-2.5 w-2.5" />
@@ -435,7 +370,7 @@ export const Composer: React.FC<ComposerProps> = ({
       )}
 
       {/* Input container */}
-      <div className="relative rounded-xl border border-white/[0.035] bg-white/[0.015] p-1.5 backdrop-blur-xl transition-all duration-300 focus-within:border-white/[0.1] focus-within:shadow-[0_12px_32px_rgba(0,0,0,0.4)] flex flex-col gap-1.5">
+      <div className="relative rounded-lg border border-input bg-card p-1.5 transition-all flex flex-col gap-1.5 focus-within:ring-1 focus-within:ring-ring">
         <textarea
           ref={inputRef}
           value={input}
@@ -449,18 +384,16 @@ export const Composer: React.FC<ComposerProps> = ({
           onPaste={handlePaste}
           placeholder={
             isRecording 
-              ? (engine === 'local' ? "Recording locally... Speak now, then click Mic to finish." : "Listening... Speak clearly now.") 
-              : isTranscribing
-                ? "Transcribing locally (Whisper)..."
-                : "Ask anything..."
+              ? "Listening... Speak clearly now." 
+              : "Ask anything..."
           }
           rows={1}
-          style={{ resize: 'none', fontSize: 'var(--chat-font-size-user)' }}
-          className="w-full bg-transparent px-3 py-2 text-slate-200 placeholder-slate-600 focus:outline-none scrollbar-none leading-relaxed"
+          style={{ resize: 'none' }}
+          className="w-full bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none scrollbar-none leading-relaxed"
         />
 
         {/* Composer Bottom Toolbar */}
-        <div className="border-t border-white/[0.03] pt-2 px-1.5 pb-0.5 flex items-center justify-between select-none">
+        <div className="border-t border-border pt-2 px-1.5 pb-0.5 flex items-center justify-between select-none">
           <div className="flex items-center gap-1.5">
             {/* System Prompt Picker */}
             <div className="relative">
@@ -468,10 +401,10 @@ export const Composer: React.FC<ComposerProps> = ({
                 type="button"
                 onClick={() => setPromptDropdownOpen(!promptDropdownOpen)}
                 title={`Active Persona: ${getActivePromptName()}`}
-                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-lg text-[10px] font-semibold tracking-wide border transition-all duration-300 active:scale-90 cursor-pointer ${
+                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer ${
                   activePromptId !== 'preset-general'
-                    ? 'bg-amber-500/10 border-amber-500/25 text-amber-400 hover:bg-amber-500/20'
-                    : 'border-white/[0.03] bg-white/[0.015] hover:bg-white/[0.05] text-slate-400 hover:text-slate-200'
+                    ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/95'
+                    : 'border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
                 }`}
               >
                 <Sparkles className="h-3.5 w-3.5" />
@@ -484,8 +417,8 @@ export const Composer: React.FC<ComposerProps> = ({
               {promptDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-20" onClick={() => setPromptDropdownOpen(false)} />
-                  <div className="absolute left-0 bottom-8.5 z-30 w-48 rounded-lg border border-white/[0.04] bg-slate-900/95 p-1 shadow-2xl backdrop-blur-xl animate-fade-in max-h-52 overflow-y-auto">
-                    <div className="px-2 py-1 text-[9px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/[0.03] mb-1">
+                  <div className="absolute left-0 bottom-8.5 z-30 w-48 rounded-md border border-border bg-popover p-1 shadow-md animate-fade-in max-h-52 overflow-y-auto">
+                    <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border mb-1">
                       System Presets
                     </div>
                     {PRESET_PROMPTS.map((prompt) => (
@@ -498,17 +431,17 @@ export const Composer: React.FC<ComposerProps> = ({
                         }}
                         className={`flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
                           activePromptId === prompt.id
-                            ? 'bg-amber-500/10 text-white font-semibold'
-                            : 'text-slate-400 hover:bg-white/[0.02] hover:text-slate-200'
+                            ? 'bg-accent text-accent-foreground font-semibold'
+                            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                         }`}
                       >
                         <span className="truncate pr-2">{prompt.name}</span>
-                        {activePromptId === prompt.id && <Check className="h-3.5 w-3.5 text-amber-400" />}
+                        {activePromptId === prompt.id && <Check className="h-3.5 w-3.5 text-primary" />}
                       </button>
                     ))}
                     {customPrompts.length > 0 && (
                       <>
-                        <div className="px-2 py-1 text-[9px] font-bold text-slate-500 uppercase tracking-widest border-b border-white/[0.03] mt-2 mb-1">
+                        <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border mt-2 mb-1">
                           Custom Prompts
                         </div>
                         {customPrompts.map((prompt) => (
@@ -521,12 +454,12 @@ export const Composer: React.FC<ComposerProps> = ({
                             }}
                             className={`flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
                               activePromptId === prompt.id
-                                ? 'bg-amber-500/10 text-white font-semibold'
-                                : 'text-slate-400 hover:bg-white/[0.02] hover:text-slate-200'
+                                ? 'bg-accent text-accent-foreground font-semibold'
+                                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                             }`}
                           >
                             <span className="truncate pr-2">{prompt.name}</span>
-                            {activePromptId === prompt.id && <Check className="h-3.5 w-3.5 text-amber-400" />}
+                            {activePromptId === prompt.id && <Check className="h-3.5 w-3.5 text-primary" />}
                           </button>
                         ))}
                       </>
@@ -537,17 +470,17 @@ export const Composer: React.FC<ComposerProps> = ({
             </div>
 
             {/* Separator line */}
-            <div className="w-[1px] h-4 bg-white/[0.06] mx-0.5" />
+            <div className="w-[1px] h-4 bg-border mx-0.5" />
 
             {/* Docs (RAG) Toggle */}
             <button
               type="button"
               onClick={toggleSearch}
               title={settings.isRagEnabled ? "Disable Local Docs context (RAG)" : "Enable Local Docs context (RAG)"}
-              className={`flex h-7 w-7 items-center justify-center rounded-lg transition-all duration-300 active:scale-90 cursor-pointer ${
+              className={`flex h-7 w-7 items-center justify-center rounded-md transition-all cursor-pointer ${
                 settings.isRagEnabled
-                  ? 'bg-brand-500/10 border border-brand-500/25 text-brand-400 hover:bg-brand-500/20'
-                  : 'border border-white/[0.03] bg-white/[0.015] hover:bg-white/[0.05] text-slate-400 hover:text-slate-200'
+                  ? 'border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
+                  : 'border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
               }`}
             >
               <Search className="h-3.5 w-3.5" />
@@ -558,52 +491,76 @@ export const Composer: React.FC<ComposerProps> = ({
               type="button"
               onClick={toggleWebSearch}
               title={settings.isWebSearchEnabled ? "Disable Web Search (SearXNG)" : "Enable Web Search (SearXNG)"}
-              className={`flex h-7 w-7 items-center justify-center rounded-lg transition-all duration-300 active:scale-90 cursor-pointer ${
+              className={`flex h-7 w-7 items-center justify-center rounded-md transition-all cursor-pointer ${
                 settings.isWebSearchEnabled
-                  ? 'bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/20'
-                  : 'border border-white/[0.03] bg-white/[0.015] hover:bg-white/[0.05] text-slate-400 hover:text-slate-200'
+                  ? 'border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
+                  : 'border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
               }`}
             >
               <Globe className="h-3.5 w-3.5" />
             </button>
 
-            {/* Thinking Level Dropdown */}
+            {/* Browser Agent Toggle */}
+            <button
+              type="button"
+              onClick={toggleBrowserAgent}
+              title={settings.isBrowserAgentEnabled ? "Disable Browser Agent" : "Enable Browser Agent (Automate browser tasks)"}
+              className={`flex h-7 w-7 items-center justify-center rounded-md transition-all cursor-pointer ${
+                settings.isBrowserAgentEnabled
+                  ? 'border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
+                  : 'border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
+              }`}
+            >
+              <Compass className="h-3.5 w-3.5" />
+            </button>
+
+            {/* Separator line */}
+            <div className="w-[1px] h-4 bg-border mx-0.5" />
+
+            {/* Thinking Level Picker */}
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setThinkingDropdownOpen(!thinkingDropdownOpen)}
-                title={`Thinking Depth: ${settings.thinkingLevel || 'off'}`}
-                className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-all duration-300 active:scale-90 cursor-pointer ${
+                title={`Thinking Level: ${settings.thinkingLevel || 'off'}`}
+                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer ${
                   settings.thinkingLevel && settings.thinkingLevel !== 'off'
-                    ? 'bg-purple-500/10 border-purple-500/25 text-purple-400 hover:bg-purple-500/20'
-                    : 'border-white/[0.03] bg-white/[0.015] hover:bg-white/[0.05] text-slate-400 hover:text-slate-200'
+                    ? 'border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
+                    : 'border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
                 }`}
               >
                 <Brain className="h-3.5 w-3.5" />
+                <span className="truncate max-w-[50px] capitalize">
+                  {settings.thinkingLevel && settings.thinkingLevel !== 'off' ? settings.thinkingLevel : 'Off'}
+                </span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
               </button>
 
               {thinkingDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-20" onClick={() => setThinkingDropdownOpen(false)} />
-                  <div className="absolute left-0 bottom-8.5 z-30 w-36 rounded-lg border border-white/[0.04] bg-slate-900/95 p-1 shadow-2xl backdrop-blur-xl animate-fade-in">
-                    {([
-                      { id: 'off', label: 'Thinking Off' },
-                      { id: 'low', label: 'Low Depth' },
-                      { id: 'medium', label: 'Medium Depth' },
-                      { id: 'high', label: 'High Depth' }
-                    ] as const).map((opt) => (
+                  <div className="absolute left-0 bottom-8.5 z-30 w-36 rounded-md border border-border bg-popover p-1 shadow-md animate-fade-in">
+                    <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border mb-1">
+                      Thinking Level
+                    </div>
+                    {(['off', 'low', 'medium', 'high'] as const).map((level) => (
                       <button
-                        key={opt.id}
+                        key={level}
                         type="button"
-                        onClick={() => handleSelectThinking(opt.id)}
-                        className={`flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
-                          (settings.thinkingLevel || 'off') === opt.id
-                            ? 'bg-purple-500/10 text-white font-semibold'
-                            : 'text-slate-400 hover:bg-white/[0.02] hover:text-slate-200'
+                        onClick={() => {
+                          const updatedSettings = { ...settings, thinkingLevel: level };
+                          Storage.saveSettings(updatedSettings);
+                          onSettingsChanged?.(updatedSettings);
+                          setThinkingDropdownOpen(false);
+                        }}
+                        className={`flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer capitalize ${
+                          (settings.thinkingLevel || 'off') === level
+                            ? 'bg-accent text-accent-foreground font-semibold'
+                            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                         }`}
                       >
-                        <span>{opt.label}</span>
-                        {(settings.thinkingLevel || 'off') === opt.id && <Check className="h-3.5 w-3.5 text-purple-400" />}
+                        <span>{level}</span>
+                        {(settings.thinkingLevel || 'off') === level && <Check className="h-3.5 w-3.5 text-primary" />}
                       </button>
                     ))}
                   </div>
@@ -612,7 +569,7 @@ export const Composer: React.FC<ComposerProps> = ({
             </div>
 
             {/* Separator line */}
-            <div className="w-[1px] h-4 bg-white/[0.06] mx-0.5" />
+            <div className="w-[1px] h-4 bg-border mx-0.5" />
 
             {/* File Input */}
             <input
@@ -627,7 +584,7 @@ export const Composer: React.FC<ComposerProps> = ({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               title="Attach files (text/images)"
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.03] bg-white/[0.015] hover:bg-white/[0.05] hover:text-slate-200 text-slate-400 transition-all duration-300 active:scale-90 cursor-pointer"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground transition-all cursor-pointer"
             >
               <Paperclip className="h-3.5 w-3.5" />
             </button>
@@ -636,31 +593,23 @@ export const Composer: React.FC<ComposerProps> = ({
             <button
               type="button"
               onClick={toggleRecording}
-              disabled={!isSpeechSupported || isTranscribing}
+              disabled={!isSpeechSupported}
               title={
                 !isSpeechSupported 
                   ? "Speech recognition is not supported in this browser" 
-                  : isTranscribing
-                    ? "Transcribing audio..."
-                    : isRecording 
-                      ? "Stop voice typing" 
-                      : "Voice typing"
+                  : isRecording 
+                    ? "Stop voice typing" 
+                    : "Voice typing"
               }
-              className={`flex h-7 w-7 items-center justify-center rounded-lg transition-all duration-300 active:scale-90 ${
+              className={`flex h-7 w-7 items-center justify-center rounded-md transition-all ${
                 !isSpeechSupported
-                  ? 'opacity-30 cursor-not-allowed border border-white/[0.02] text-slate-600 bg-transparent'
-                  : isTranscribing
-                    ? 'bg-brand-500/10 border border-brand-500/20 text-brand-400 animate-pulse cursor-wait'
-                    : isRecording
-                      ? engine === 'local'
-                        ? 'bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/40 animate-pulse cursor-pointer'
-                        : 'bg-red-500/25 border border-red-500/30 text-red-400 hover:bg-red-500/40 animate-pulse cursor-pointer'
-                      : 'border border-white/[0.03] bg-white/[0.015] hover:bg-white/[0.05] text-slate-400 hover:text-slate-200 cursor-pointer'
+                  ? 'opacity-35 cursor-not-allowed border border-input text-muted-foreground bg-transparent'
+                  : isRecording
+                    ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90 animate-pulse cursor-pointer'
+                    : 'border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground cursor-pointer'
               }`}
             >
-              {isTranscribing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : isRecording ? (
+              {isRecording ? (
                 <MicOff className="h-3.5 w-3.5" />
               ) : (
                 <Mic className="h-3.5 w-3.5" />
@@ -674,10 +623,10 @@ export const Composer: React.FC<ComposerProps> = ({
               onClick={handleSend}
               disabled={(!input.trim() && attachments.length === 0) || isGenerating}
               aria-label="Send message"
-              className={`flex h-7 w-7 items-center justify-center rounded-lg transition-all duration-300 active:scale-90 ${
+              className={`flex h-7 w-7 items-center justify-center rounded-md transition-all ${
                 (input.trim() || attachments.length > 0) && !isGenerating
-                  ? 'bg-brand-600 hover:bg-brand-500 text-white shadow-md cursor-pointer'
-                  : 'bg-white/[0.01] text-slate-700'
+                  ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm cursor-pointer'
+                  : 'bg-muted text-muted-foreground'
               }`}
             >
               <ArrowUp className="h-3.5 w-3.5 stroke-[2.5]" />
@@ -687,24 +636,12 @@ export const Composer: React.FC<ComposerProps> = ({
       </div>
 
       {/* Micro-telemetry display */}
-      {(isRecording || isTranscribing) && (
-        <div className="mt-1.5 flex items-center px-2 text-[9px] font-medium tracking-wide select-none animate-fade-in min-h-[14px]">
-          {isRecording && (
-            <span className={`flex items-center gap-1 font-bold ${engine === 'local' ? 'text-emerald-500' : 'text-red-400'}`}>
-              <span className={`h-1.5 w-1.5 rounded-full animate-ping ${engine === 'local' ? 'bg-emerald-500' : 'bg-red-500'}`} />
-              <span>{engine === 'local' ? 'recording offline' : 'listening...'}</span>
-            </span>
-          )}
-          {isTranscribing && (
-            <span className="flex items-center gap-1 text-brand-400 font-bold animate-pulse">
-              <Loader2 className="h-2.5 w-2.5 animate-spin" />
-              <span>
-                {whisperStatus === 'loading' 
-                  ? `downloading whisper model (${whisperProgress.toFixed(0)}%)` 
-                  : 'transcribing whisper audio...'}
-              </span>
-            </span>
-          )}
+      {isRecording && (
+        <div className="mt-1.5 flex items-center px-2 text-[9px] font-bold tracking-wide select-none animate-fade-in min-h-[14px]">
+          <span className="flex items-center gap-1 text-destructive">
+            <span className="h-1.5 w-1.5 rounded-full bg-destructive animate-ping" />
+            <span>listening...</span>
+          </span>
         </div>
       )}
 

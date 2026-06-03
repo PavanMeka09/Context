@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { Chat, Settings } from '../utils/storage';
-import { MessageSquare, Plus, Settings as SettingsIcon, Trash2, Edit2, Check, X, PanelLeftClose, Search, BookOpen } from 'lucide-react';
+import { MessageSquare, Plus, Settings as SettingsIcon, Trash2, Edit2, Check, X, PanelLeftClose, Search, Sun, Moon, Clock } from 'lucide-react';
 
 interface SidebarProps {
   chats: Chat[];
@@ -11,9 +11,11 @@ interface SidebarProps {
   onDeleteChat: (id: string) => void;
   onRenameChat: (id: string, newTitle: string) => void;
   onOpenSettings: () => void;
-  onOpenRagPanel: () => void;
+  onOpenSchedules: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  theme: 'dark' | 'light';
+  onThemeChanged: (theme: 'dark' | 'light') => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -25,9 +27,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteChat,
   onRenameChat,
   onOpenSettings,
-  onOpenRagPanel,
+  onOpenSchedules,
   isCollapsed,
-  onToggleCollapse
+  onToggleCollapse,
+  theme,
+  onThemeChanged
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tempTitle, setTempTitle] = useState('');
@@ -43,11 +47,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     e.stopPropagation();
     setEditingId(chat.id);
     setTempTitle(chat.title);
-  };
-
-  const cancelEditing = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingId(null);
   };
 
   const saveRename = (id: string, e: React.FormEvent) => {
@@ -75,7 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   );
 
   return (
-    <aside className={`glass-panel flex h-full flex-col border-r border-white/[0.02] bg-slate-950/60 ${
+    <aside className={`flex h-full flex-col border-r border-border bg-card text-card-foreground ${
       mounted ? 'transition-all duration-300 ease-in-out' : ''
     } ${
       isCollapsed ? 'w-0 border-r-0 opacity-0 overflow-hidden' : 'w-64 opacity-100'
@@ -84,16 +83,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Sidebar Header */}
       <div className="flex h-14 shrink-0 items-center justify-between px-5">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/5">
-            <span className="font-display font-black text-[10px] text-brand-500 uppercase tracking-tighter">c</span>
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-border bg-muted">
+            <span className="font-sans font-bold text-xs text-foreground uppercase tracking-tighter">c</span>
           </div>
           <div className="truncate">
-            <h1 className="font-display text-sm font-semibold tracking-tight text-white/95 leading-none">context</h1>
+            <h1 className="font-sans text-sm font-semibold tracking-tight text-foreground leading-none">context</h1>
           </div>
         </div>
         <button
           onClick={onToggleCollapse}
-          className="rounded-lg p-1.5 text-slate-500 hover:bg-white/5 hover:text-white transition active:scale-95 cursor-pointer shrink-0"
+          className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition active:scale-95 cursor-pointer shrink-0"
           title="Collapse sidebar"
           aria-label="Collapse sidebar button"
         >
@@ -101,22 +100,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
-      {/* Action Area: New Chat Button (Ghost Style) */}
+      {/* Action Area: New Chat Button (Outline Style) */}
       <div className="px-4 py-2 flex gap-1.5">
         <button
           onClick={onNewChat}
-          className="flex-1 flex items-center justify-center gap-1.5 rounded-lg border border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.08] hover:text-white py-2 text-xs font-medium text-slate-300 transition-all duration-300 active:scale-98 cursor-pointer shadow-sm"
+          className="w-full flex items-center justify-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground py-2 text-xs font-medium text-foreground transition-all duration-200 active:scale-98 cursor-pointer shadow-sm"
         >
           <Plus className="h-3.5 w-3.5" />
           <span>New Chat</span>
-        </button>
-        <button
-          onClick={onOpenRagPanel}
-          className="flex items-center justify-center rounded-lg border border-white/[0.04] bg-white/[0.02] p-2 text-slate-400 hover:bg-white/5 hover:text-white active:scale-95 transition-all duration-300 cursor-pointer shrink-0"
-          title="Manage Local RAG Documents"
-          aria-label="Manage Local RAG Documents"
-        >
-          <BookOpen className="h-3.5 w-3.5" />
         </button>
       </div>
 
@@ -127,17 +118,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search chats..."
-          className="w-full bg-slate-950/40 border border-white/[0.04] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-brand-500/50 transition-all duration-300"
+          className="w-full bg-background border border-input rounded-md pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-all duration-200"
         />
-        <Search className="absolute left-7 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500 pointer-events-none" />
+        <Search className="absolute left-7 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
       </div>
 
       {/* Chat History List */}
       <div className="flex-1 overflow-y-auto px-2 py-3 space-y-[2px]">
         {filteredChats.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
-            <MessageSquare className="h-6 w-6 text-slate-700 mb-2" />
-            <p className="text-[10px] text-slate-600 italic">
+            <MessageSquare className="h-6 w-6 text-muted-foreground/60 mb-2" />
+            <p className="text-[10px] text-muted-foreground italic">
               {searchQuery ? 'No results found' : 'No history'}
             </p>
           </div>
@@ -150,15 +141,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div
                 key={chat.id}
                 onClick={() => !isEditing && onSelectChat(chat.id)}
-                className={`group relative flex items-center justify-between rounded-md px-3 py-2 text-xs transition-all duration-300 cursor-pointer ${
+                className={`group relative flex items-center justify-between rounded-md px-3 py-2 text-xs transition-colors duration-200 cursor-pointer ${
                   isActive
-                    ? 'bg-white/[0.03] text-white'
-                    : 'text-slate-400 hover:bg-white/[0.015] hover:text-slate-200'
+                    ? 'bg-accent text-accent-foreground font-medium'
+                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
                 }`}
               >
                 {/* Active Indicator Line */}
                 {isActive && (
-                  <div className="absolute left-[2px] top-2 bottom-2 w-[2px] rounded-full bg-brand-500" />
+                  <div className="absolute left-[2px] top-2 bottom-2 w-[2px] rounded-full bg-primary" />
                 )}
 
                 {isEditing ? (
@@ -178,27 +169,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         }
                         setEditingId(null);
                       }}
-                      className="w-full bg-slate-900 px-2 py-0.5 rounded text-[10px] border border-brand-500/50 focus:outline-none text-white font-medium"
+                      className="w-full bg-background px-2 py-0.5 rounded text-[10px] border border-input focus:outline-none focus-visible:ring-1 focus-visible:ring-ring text-foreground font-medium"
                     />
-                    <button type="submit" className="text-emerald-500 hover:text-emerald-400" aria-label="Confirm Rename">
+                    <button type="submit" className="text-emerald-600 hover:text-emerald-500" aria-label="Confirm Rename">
                       <Check className="h-3 w-3" />
                     </button>
-                    <button type="button" onClick={cancelEditing} className="text-red-500 hover:text-red-400" aria-label="Cancel Rename">
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setEditingId(null);
+                      }}
+                      className="text-destructive hover:text-destructive/80"
+                      aria-label="Cancel Rename"
+                    >
                       <X className="h-3 w-3" />
                     </button>
                   </form>
                 ) : (
                   <>
                     <div className="flex items-center gap-2 min-w-0 pr-10">
-                      <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${isActive ? 'text-brand-500' : 'text-slate-600 group-hover:text-slate-400 transition-colors'}`} />
+                      <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
                       <span className="truncate text-xs tracking-tight">{chat.title}</span>
                     </div>
 
                     {/* Actions panel (Clean, low-profile overlay) */}
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                       <button
                         onClick={(e) => startEditing(chat, e)}
-                        className="rounded p-1 text-slate-500 hover:bg-white/10 hover:text-white"
+                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                         title="Rename chat"
                         aria-label={`Rename chat ${chat.title}`}
                       >
@@ -209,7 +208,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           e.stopPropagation();
                           onDeleteChat(chat.id);
                         }}
-                        className="rounded p-1 text-slate-500 hover:bg-white/10 hover:text-red-400"
+                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive"
                         title="Delete chat"
                         aria-label={`Delete chat ${chat.title}`}
                       >
@@ -225,28 +224,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Sidebar Footer Area */}
-      <div className="bg-slate-950/20 px-4 py-3 flex items-center justify-between border-t border-white/[0.015]">
+      <div className="bg-muted/20 px-4 py-3 flex items-center justify-between border-t border-border">
         
         {/* Model info panel */}
         <div className="min-w-0 pr-2 select-none">
           <div className="flex items-center gap-1">
-            <div className="h-1 w-1 rounded-full bg-brand-500/80" />
-            <span className="text-[9px] font-medium text-slate-600 uppercase tracking-widest truncate">{getProviderLabel()}</span>
+            <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest truncate">{getProviderLabel()}</span>
           </div>
-          <span className="text-[10px] font-medium text-slate-400 truncate block mt-[2px]" title={settings.model}>
+          <span className="text-[10px] font-semibold text-foreground truncate block mt-[2px]" title={settings.model}>
             {getModelLabel()}
           </span>
         </div>
 
-        {/* Settings button */}
-        <button
-          onClick={onOpenSettings}
-          className="rounded-lg border border-white/[0.04] bg-white/[0.02] p-2 text-slate-400 hover:bg-white/5 hover:text-white active:scale-95 transition-all duration-300 cursor-pointer"
-          title="Open settings"
-          aria-label="Open settings"
-        >
-          <SettingsIcon className="h-3.5 w-3.5" />
-        </button>
+        {/* Action button panel */}
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Schedules button */}
+          <button
+            onClick={onOpenSchedules}
+            className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95 transition-all duration-200 cursor-pointer"
+            title="Open Task Scheduler"
+            aria-label="Open Task Scheduler"
+          >
+            <Clock className="h-3.5 w-3.5" />
+          </button>
+
+          <button
+            onClick={() => {
+              onThemeChanged(theme === 'light' ? 'dark' : 'light');
+            }}
+            className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95 transition-all duration-200 cursor-pointer animate-fade-in"
+            title={`Switch Theme (Current: ${theme})`}
+            aria-label="Switch App Theme"
+          >
+            {theme === 'light' && <Sun className="h-3.5 w-3.5" />}
+            {theme === 'dark' && <Moon className="h-3.5 w-3.5" />}
+          </button>
+
+          {/* Settings button */}
+          <button
+            onClick={onOpenSettings}
+            className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95 transition-all duration-200 cursor-pointer"
+            title="Open settings"
+            aria-label="Open settings"
+          >
+            <SettingsIcon className="h-3.5 w-3.5" />
+          </button>
+        </div>
 
       </div>
     </aside>

@@ -112,18 +112,18 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-md animate-fade-in select-none">
-      <div className="glass-panel flex h-[500px] w-full max-w-lg flex-col overflow-hidden rounded-2xl shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm animate-fade-in select-none">
+      <div className="flex h-[500px] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-border bg-background shadow-lg">
         
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/[0.015] px-5 py-3.5 bg-slate-950/10">
+        <div className="flex items-center justify-between border-b border-border px-5 py-3.5 bg-muted/40">
           <div className="flex items-center gap-2">
-            <Database className="h-4 w-4 text-brand-500" />
-            <h2 className="font-display text-sm font-semibold tracking-wide text-white">Local Semantic Memory (RAG)</h2>
+            <Database className="h-4 w-4 text-primary" />
+            <h2 className="font-sans text-sm font-semibold tracking-wide text-foreground">Local Semantic Memory (RAG)</h2>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-white/5 hover:text-white transition-all cursor-pointer"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition active:scale-95 cursor-pointer"
             aria-label="Close RAG panel"
           >
             <X className="h-4 w-4" />
@@ -134,15 +134,15 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
           
           {/* Controls */}
-          <div className="flex items-center justify-between rounded-xl border border-white/[0.03] bg-white/[0.01] p-3">
+          <div className="flex items-center justify-between rounded-lg border border-border bg-muted/20 p-3">
             <div className="space-y-0.5">
-              <span className="text-xs font-semibold text-white">Enable Semantic Context</span>
-              <p className="text-[10px] text-slate-500">Inject matching document segments into prompt system prompts automatically.</p>
+              <span className="text-xs font-semibold text-foreground">Enable Semantic Context</span>
+              <p className="text-[10px] text-muted-foreground">Inject matching document segments into prompt system prompts automatically.</p>
             </div>
             <button
               onClick={() => onToggleRag(!isRagEnabled)}
               className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                isRagEnabled ? 'bg-brand-500' : 'bg-slate-800'
+                isRagEnabled ? 'bg-primary' : 'bg-muted'
               }`}
               role="switch"
               aria-checked={isRagEnabled}
@@ -156,17 +156,17 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
           </div>
 
           {/* Model Status Section */}
-          <div className="rounded-xl border border-white/[0.03] bg-white/[0.01] p-3 space-y-2">
+          <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
             <div className="flex items-center justify-between text-[10px]">
-              <span className="font-semibold text-slate-400 uppercase tracking-wider">Embeddings Model Weight</span>
+              <span className="font-semibold text-muted-foreground uppercase tracking-wider">Embeddings Model Weight</span>
               <span className={`font-bold px-2 py-0.5 rounded-full ${
                 modelStatus === 'ready' 
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                  ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' 
                   : modelStatus === 'loading'
-                    ? 'bg-brand-500/10 text-brand-400 border border-brand-500/20'
+                    ? 'bg-primary/10 text-primary border border-primary/20 animate-pulse'
                     : modelStatus === 'error'
-                      ? 'bg-red-500/10 text-red-400 border border-red-500/20'
-                      : 'bg-slate-800 text-slate-400 border border-white/[0.03]'
+                      ? 'bg-destructive/10 text-destructive border border-destructive/20'
+                      : 'bg-muted border border-border text-muted-foreground'
               }`}>
                 {modelStatus === 'idle' && 'Not Loaded'}
                 {modelStatus === 'loading' && 'Downloading...'}
@@ -178,13 +178,13 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
 
             {modelStatus === 'loading' && (
               <div className="space-y-1">
-                <div className="h-1 w-full rounded-full bg-slate-800 overflow-hidden">
+                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
                   <div 
-                    className="h-full bg-brand-500 transition-all duration-300" 
+                    className="h-full bg-primary transition-all duration-300" 
                     style={{ width: `${modelProgress}%` }}
                   />
                 </div>
-                <div className="flex justify-between text-[8px] font-bold text-brand-400">
+                <div className="flex justify-between text-[8px] font-bold text-primary">
                   <span>DOWNLOADING LOCAL EMBEDDINGS MODEL (~23MB)</span>
                   <span>{modelProgress.toFixed(0)}%</span>
                 </div>
@@ -195,7 +195,7 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
               <button
                 type="button"
                 onClick={() => vectorDb.preloadModel()}
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-brand-500/30 hover:border-brand-500 bg-brand-500/5 hover:bg-brand-500/10 text-[10px] font-semibold text-brand-400 hover:text-brand-300 py-1.5 transition active:scale-98 cursor-pointer select-none"
+                className="w-full flex items-center justify-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent text-[10px] font-semibold text-foreground py-1.5 transition active:scale-98 cursor-pointer select-none"
               >
                 <Download className="h-3 w-3" />
                 <span>Pre-load local Embeddings Model</span>
@@ -203,7 +203,7 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
             )}
 
             {modelStatus === 'ready' && (
-              <p className="text-[9px] text-slate-500 italic text-center font-medium">
+              <p className="text-[9px] text-muted-foreground italic text-center font-medium">
                 Embeddings model cached in browser memory. Calculations run 100% locally.
               </p>
             )}
@@ -212,7 +212,7 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
           {/* Upload Area */}
           <div 
             onClick={() => fileInputRef.current?.click()}
-            className="flex flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] hover:border-brand-500/30 bg-slate-950/30 p-6 transition duration-300 cursor-pointer"
+            className="flex flex-col items-center justify-center rounded-lg border border-dashed border-input bg-background hover:bg-accent/45 p-6 transition duration-200 cursor-pointer"
           >
             <input
               type="file"
@@ -223,27 +223,27 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
             />
             {isUploading ? (
               <div className="text-center space-y-2">
-                <Loader2 className="h-5 w-5 text-brand-500 animate-spin mx-auto" />
-                <span className="text-[10px] font-semibold text-slate-300 block">Processing & Indexing...</span>
-                <span className="text-[8px] text-slate-500 block">Chunking and embedding document on CPU/GPU</span>
+                <Loader2 className="h-5 w-5 text-primary animate-spin mx-auto" />
+                <span className="text-[10px] font-semibold text-foreground block">Processing & Indexing...</span>
+                <span className="text-[8px] text-muted-foreground block">Chunking and embedding document on CPU/GPU</span>
               </div>
             ) : (
               <div className="text-center space-y-1.5">
-                <Plus className="h-4 w-4 text-slate-500 mx-auto" />
-                <span className="text-[10px] font-semibold text-slate-300 block">Upload Documents to Memory</span>
-                <span className="text-[8px] text-slate-500 block">Supports .txt, .md, .json up to 5MB</span>
+                <Plus className="h-4 w-4 text-muted-foreground mx-auto" />
+                <span className="text-[10px] font-semibold text-foreground block">Upload Documents to Memory</span>
+                <span className="text-[8px] text-muted-foreground block">Supports .txt, .md, .json up to 5MB</span>
               </div>
             )}
           </div>
 
           {/* Document list */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-slate-500 px-1">
+            <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-muted-foreground px-1 border-b border-border pb-1">
               <span>Indexed Documents ({documents.length})</span>
               {documents.length > 0 && (
                 <button
                   onClick={handleClearAll}
-                  className="text-red-500 hover:text-red-400 hover:underline transition font-bold"
+                  className="text-destructive hover:underline font-bold"
                 >
                   Clear All
                 </button>
@@ -251,26 +251,26 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
             </div>
 
             {documents.length === 0 ? (
-              <div className="rounded-xl border border-white/[0.02] bg-white/[0.005] p-6 text-center select-none">
-                <FileText className="h-5 w-5 text-slate-700 mx-auto mb-1.5" />
-                <p className="text-[10px] text-slate-500 italic">No local documents indexed in memory yet.</p>
+              <div className="rounded-md border border-border bg-card p-6 text-center select-none">
+                <FileText className="h-5 w-5 text-muted-foreground mx-auto mb-1.5" />
+                <p className="text-[10px] text-muted-foreground italic">No local documents indexed in memory yet.</p>
               </div>
             ) : (
               <div className="space-y-1.5 max-h-36 overflow-y-auto scrollbar-thin">
                 {documents.map(doc => (
-                  <div key={doc.id} className="flex items-center justify-between rounded-lg border border-white/[0.03] bg-white/[0.01] px-3 py-2">
+                  <div key={doc.id} className="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2">
                     <div className="flex items-center gap-2 min-w-0 pr-4">
-                      <FileText className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+                      <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                       <div className="truncate">
-                        <span className="font-semibold text-white text-[11px] block truncate">{doc.name}</span>
-                        <span className="text-slate-500 text-[8px] block mt-0.5 select-none font-medium">
+                        <span className="font-semibold text-foreground text-[11px] block truncate">{doc.name}</span>
+                        <span className="text-muted-foreground text-[8px] block mt-0.5 select-none font-medium">
                           {(doc.size / 1024).toFixed(1)} KB • {doc.chunksCount} chunks
                         </span>
                       </div>
                     </div>
                     <button
                       onClick={() => handleDeleteDoc(doc.id)}
-                      className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-red-400 transition"
+                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive transition"
                       aria-label={`Delete ${doc.name}`}
                     >
                       <Trash2 className="h-3 w-3" />

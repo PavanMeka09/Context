@@ -5,11 +5,14 @@ import { Composer } from './components/Composer';
 import { SettingsModal } from './components/SettingsModal';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { RAGPanel } from './components/RAGPanel';
+import { CommandPalette } from './components/CommandPalette';
+import { SchedulesPanel } from './components/SchedulesPanel';
+import { BrowserModal } from './components/BrowserModal';
 import { vectorDb } from './utils/vectorDb';
 import { PRESET_PROMPTS, Storage, reconstructActivePath, upgradeChatToTree } from './utils/storage';
-import type { Chat, Message, MessageNode, Settings, SystemPrompt, Attachment } from './utils/storage';
-import { streamChatCompletion } from './utils/api';
-import { searchSearxng, formatSearxngResults, classifyAndOptimizeSearchQuery } from './utils/searxng';
+import type { Chat, Message, MessageNode, Settings, SystemPrompt, Attachment, BrowserSessionData } from './utils/storage';
+import { streamChatCompletion, generateTextCompletion } from './utils/api';
+import { searchSearxng, formatSearxngResults, classifySearchHeuristically } from './utils/searxng';
 import { AlertCircle, X } from 'lucide-react';
 
 function addMessageToTree(chat: Chat, message: Message, parentId: string | null): Chat {
@@ -23,7 +26,8 @@ function addMessageToTree(chat: Chat, message: Message, parentId: string | null)
     timestamp: message.timestamp,
     parentId: parentId,
     children: [],
-    attachments: message.attachments
+    attachments: message.attachments,
+    browserSession: message.browserSession
   };
   
   tree[newNode.id] = newNode;
@@ -69,11 +73,13 @@ function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [ragPanelOpen, setRagPanelOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [schedulesOpen, setSchedulesOpen] = useState(false);
+  const [browserModalOpen, setBrowserModalOpen] = useState(false);
 
   // Preference and accessibility states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => Storage.getSidebarCollapsed());
-  const [fontSize, setFontSize] = useState<'sm' | 'base' | 'lg'>(() => Storage.getFontSize());
-  const [theme, setTheme] = useState<'dark' | 'light' | 'system'>(() => Storage.getTheme());
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => Storage.getTheme());
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   // Elegant Toast alerts state
@@ -96,24 +102,16 @@ function App() {
   // Theme Sync Effect
   useEffect(() => {
     const root = document.documentElement;
-    const applyTheme = (t: 'dark' | 'light' | 'system') => {
-      let activeTheme = t;
-      if (t === 'system') {
-        activeTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    const applyTheme = (t: 'dark' | 'light') => {
+      root.setAttribute('data-theme', t);
+      if (t === 'dark') {
+        root.classList.add('dark');
+      } else {
+        root.classList.remove('dark');
       }
-      root.setAttribute('data-theme', activeTheme);
     };
 
     applyTheme(theme);
-
-    if (theme === 'system') {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      const listener = (e: MediaQueryListEvent) => {
-        root.setAttribute('data-theme', e.matches ? 'dark' : 'light');
-      };
-      mediaQuery.addEventListener('change', listener);
-      return () => mediaQuery.removeEventListener('change', listener);
-    }
   }, [theme]);
 
   const handleNewChat = useCallback(() => {
@@ -172,6 +170,12 @@ function App() {
         textareaRef.current?.focus();
       }
 
+      // Command Palette Toggle: Ctrl+K or Cmd+K
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen(prev => !prev);
+      }
+
       // Help Shortcut: ?
       if (e.key === '?' && !isInputFocused) {
         e.preventDefault();
@@ -183,6 +187,8 @@ function App() {
         setSettingsOpen(false);
         setShortcutsOpen(false);
         setRagPanelOpen(false);
+        setCommandPaletteOpen(false);
+        setBrowserModalOpen(false);
       }
     };
 
@@ -213,6 +219,82 @@ function App() {
         window.clearTimeout(toastTimerRef.current);
       }
     };
+  }, []);
+
+  // Sync settings to schedules backend whenever they change
+  useEffect(() => {
+    fetch('/api/schedules/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings)
+    }).catch(err => console.error('Failed to sync settings to schedules backend', err));
+  }, [settings]);
+
+interface SyncEvent {
+  id: string;
+  chatId: string;
+  isNewChat: boolean;
+  chatTitle: string;
+  userMsg: Message;
+  assistantMsg: Message;
+  timestamp: string;
+}
+
+  // Background polling to sync schedules execution results
+  useEffect(() => {
+    const pollSchedulesSync = async () => {
+      try {
+        const res = await fetch('/api/schedules/sync');
+        if (!res.ok) return;
+        const events: SyncEvent[] = await res.json();
+        if (events.length === 0) return;
+
+        setChats(prevChats => {
+          let updatedChats = [...prevChats];
+
+          events.forEach((event: SyncEvent) => {
+            const chatIndex = updatedChats.findIndex(c => c.id === event.chatId);
+            
+            if (chatIndex !== -1) {
+              // Append to existing chat
+              const existingChat = updatedChats[chatIndex];
+              let chat = upgradeChatToTree(existingChat);
+              const parentId = chat.activeLeafId || null;
+              chat = addMessageToTree(chat, event.userMsg, parentId);
+              chat = addMessageToTree(chat, event.assistantMsg, event.userMsg.id);
+              updatedChats[chatIndex] = chat;
+            } else {
+              // Create new chat
+              const emptyChat: Chat = {
+                id: event.chatId,
+                title: event.chatTitle || 'Scheduled Task',
+                createdAt: event.timestamp || new Date().toISOString(),
+                updatedAt: event.timestamp || new Date().toISOString(),
+                messages: [],
+                messageTree: {},
+                activeLeafId: null
+              };
+              let chat = upgradeChatToTree(emptyChat);
+              chat = addMessageToTree(chat, event.userMsg, null);
+              chat = addMessageToTree(chat, event.assistantMsg, event.userMsg.id);
+              updatedChats = [chat, ...updatedChats];
+            }
+          });
+
+          Storage.saveChatsImmediately(updatedChats);
+          return updatedChats;
+        });
+
+        showToast(`Synced ${events.length} background task execution results!`, 'success');
+      } catch (err) {
+        console.error('Error polling schedules sync:', err);
+      }
+    };
+
+    // Run immediately, then poll every 10 seconds
+    pollSchedulesSync();
+    const interval = setInterval(pollSchedulesSync, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleSelectChat = (id: string) => {
@@ -258,16 +340,42 @@ function App() {
     const all = [...PRESET_PROMPTS, ...customPrompts];
     const basePrompt = all.find(p => p.id === activePromptId)?.content || '';
     
-    if (settings.thinkingLevel && settings.thinkingLevel !== 'off') {
-      const thinkingInstructions = {
-        low: 'Before answering, you MUST include a short thought process inside a `<thinking>` block. Focus only on the core requirements.',
-        medium: 'Before answering, you MUST include a comprehensive step-by-step thought process inside a `<thinking>` block. Explore the logic, potential edge cases, and architectural choices.',
-        high: 'Before answering, you MUST conduct a highly detailed, rigorous, and exhaustive reasoning/analysis inside a `<thinking>` block. Deeply verify code syntax, edge cases, potential bugs, alternatives, and complexity analyses.'
-      };
-      return `${basePrompt}\n\n${thinkingInstructions[settings.thinkingLevel]}`;
+    const workspaceCapabilities = `\n\n[WORKSPACE CAPABILITIES]\nYou are running inside Context, a premium local-first AI workspace. The user has access to the following integrated tools directly in the interface:\n1. **Interactive Code Execution (JS/TS/Python)**: Every JavaScript, TypeScript, or Python code block you generate has a "Run" button next to it. The user can execute the script locally in a sandbox. When writing scripts, use console.log (JS/TS) or print (Python) to output results so they display in their console drawer.\n2. **Auto-Fix Self-Healing Loop**: If their script throws an execution error, the user can click "Fix with AI" to automatically send the code and terminal stack trace back to you. When you receive an execution error report, focus on providing a revised, corrected, and clean script.\n3. **Web Search (SearXNG)**: A toggle to search the web in real-time. If search is enabled, relevant web results are injected into your system context automatically.\n4. **Local Document Context (RAG)**: A toggle to index local documents. Excerpts of matching text files are injected into your context.\nIf the user asks you to run a code block, search the web, or read their documents, remind them that they can toggle/use these features in the bottom toolbar of their composer input box.`;
+
+    const questionInstructions = `\n\n[INTERACTIVE QUESTIONS CAPABILITY]\nIf you need to ask the user a clarifying question, gather preferences, choose a topic/option, or conduct an interactive quiz/test, you can render a beautiful interactive multiple-choice Question Card by outputting a custom XML-style tag in this format at the END of your message:\n\n<ask_question question="What topic should I test you on?">\n  <option>DSA / Algorithms</option>\n  <option>JavaScript / TypeScript</option>\n  <option>System Design</option>\n</ask_question>\n\nGuidelines:\n1. Keep the "question" attribute short and clear.\n2. Write between 2 to 5 standard choices, each wrapped in a <option> tag.\n3. The interactive card automatically supports custom write-in answers ("Something else") and "Skip" features by default. Use it when you want the user to pick an option rather than typing it. DO NOT output the XML tag in the middle of code blocks.`;
+
+    let memoryContext = '';
+    if (settings.isMemoryEnabled) {
+      try {
+        const memoryItems = Storage.getMemories();
+        if (memoryItems.length > 0) {
+          const preferences = memoryItems.filter(m => m.category === 'preference').map(m => `- ${m.content}`).join('\n');
+          const projects = memoryItems.filter(m => m.category === 'project').map(m => `- ${m.content}`).join('\n');
+          const conversations = memoryItems.filter(m => m.category === 'conversation').map(m => `- ${m.content}`).join('\n');
+          const others = memoryItems.filter(m => m.category === 'other').map(m => `- ${m.content}`).join('\n');
+          
+          memoryContext = `\n\n[USER PERSONAL MEMORY]\nYou have the following details stored in your long-term memory about the user. Use this information to personalize your responses, remember their projects, and reference relevant context from previous conversations:`;
+          if (preferences) {
+            memoryContext += `\n* Preferences:\n${preferences}`;
+          }
+          if (projects) {
+            memoryContext += `\n* Projects:\n${projects}`;
+          }
+          if (conversations) {
+            memoryContext += `\n* Conversations:\n${conversations}`;
+          }
+          if (others) {
+            memoryContext += `\n* General:\n${others}`;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to retrieve memories for system prompt:', err);
+      }
     }
-    
-    return basePrompt;
+
+    const screenshotInstructions = `\n\n[BROWSER SCREENSHOT CAPABILITY]\nIf the user asks you to show, send, or capture a screenshot of the current page, or if they ask "what do you see in the browser?" or "show me the browser", you can include the tag \`<show_screenshot />\` anywhere in your response. The system will automatically render a live visual screenshot of the current Puppeteer browser sandbox. Make sure to tell the user what page you are displaying.`;
+
+    return `${basePrompt}${workspaceCapabilities}${questionInstructions}${screenshotInstructions}${memoryContext}`;
   };
 
   // Main streaming loop
@@ -326,7 +434,7 @@ function App() {
     if (settings.isWebSearchEnabled && userQuery) {
       try {
         // Run classification and query optimization
-        const { shouldSearch, searchQuery } = await classifyAndOptimizeSearchQuery(settings, activeChat.messages);
+        const { shouldSearch, searchQuery } = classifySearchHeuristically(userQuery);
 
         if (shouldSearch && searchQuery) {
           // Update visual placeholder query in state
@@ -456,6 +564,15 @@ function App() {
             Storage.saveChatsImmediately(finalChats);
             return finalChats;
           });
+
+          if (settings.isMemoryEnabled) {
+            import('./utils/memory').then(({ extractAndSaveMemories }) => {
+              extractAndSaveMemories(settings, userQuery, finalText).catch(err => {
+                console.error('Failed to extract memories in background:', err);
+              });
+            });
+          }
+
           abortControllerRef.current = null;
         },
         onError: (errorMsg: string) => {
@@ -497,6 +614,365 @@ function App() {
       },
       controller.signal
     );
+  };
+
+  const triggerBrowserAgentLoop = async (chatList: Chat[], targetChatId: string, userGoal: string) => {
+    const activeChatIndex = chatList.findIndex(c => c.id === targetChatId);
+    if (activeChatIndex === -1) return;
+
+    const activeChat = upgradeChatToTree(chatList[activeChatIndex]);
+    setIsGenerating(true);
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    const streamMessageId = `msg-browser-${Date.now()}`;
+    const initialSession: BrowserSessionData = {
+      url: '',
+      title: 'Launching local sandbox browser...',
+      status: 'running',
+      steps: [],
+      screenshotTimestamp: 0
+    };
+
+    const placeholderMessage: Message = {
+      id: streamMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date().toISOString(),
+      browserSession: initialSession
+    };
+
+    // Add placeholder to tree
+    const parentId = activeChat.activeLeafId || null;
+    let currentChat = addMessageToTree(activeChat, placeholderMessage, parentId);
+    
+    setChats(prevChats =>
+      prevChats.map(c => (c.id === targetChatId ? currentChat : c))
+    );
+
+    let currentUrl: string;
+    let currentTitle: string;
+    const steps: BrowserSessionData['steps'] = [];
+    let loopCount = 0;
+    const maxLoops = 15;
+    let isFinished = false;
+    let extractedContext = '';
+
+    // Launch/ensure browser session
+    try {
+      const initRes = await fetch(`/api/browser/state?sessionId=${encodeURIComponent(targetChatId)}`);
+      if (!initRes.ok) {
+        if (initRes.status === 500) {
+          try {
+            const errData = await initRes.json();
+            throw new Error(errData.error || 'Puppeteer failed to launch');
+          } catch {
+            throw new Error('Browser server internal error (500)');
+          }
+        } else {
+          throw new Error(`Browser companion server is not running (HTTP ${initRes.status}). Please start it with "npm run server".`);
+        }
+      }
+      const initState = await initRes.json();
+      currentUrl = initState.url || '';
+      currentTitle = initState.title || 'Blank Page';
+      
+      placeholderMessage.browserSession = {
+        url: currentUrl,
+        title: currentTitle,
+        status: 'running',
+        steps: [],
+        screenshotTimestamp: Date.now()
+      };
+      
+      currentChat = addMessageToTree(activeChat, placeholderMessage, parentId);
+      setChats(prevChats =>
+        prevChats.map(c => (c.id === targetChatId ? currentChat : c))
+      );
+    } catch (e) {
+      const error = e as Error;
+      console.error('Failed to connect to browser server', error);
+      setIsGenerating(false);
+      showToast(error.message || 'Browser companion server is not running. Please start it with "npm run server".', 'error');
+      
+      // Rollback chat session
+      setChats(prevChats => {
+        const rolledBackChats = prevChats.map(c => {
+          if (c.id === targetChatId) {
+            const upgraded = upgradeChatToTree(c);
+            const tree = { ...upgraded.messageTree };
+            
+            const nodeToDelete = tree[streamMessageId];
+            if (nodeToDelete && nodeToDelete.parentId && tree[nodeToDelete.parentId]) {
+              const parentNode = { ...tree[nodeToDelete.parentId] };
+              parentNode.children = parentNode.children.filter(id => id !== streamMessageId);
+              tree[nodeToDelete.parentId] = parentNode;
+            }
+            
+            delete tree[streamMessageId];
+            const activeLeaf = parentId;
+            const messages = reconstructActivePath(tree, activeLeaf);
+            
+            return {
+              ...upgraded,
+              messageTree: tree,
+              activeLeafId: activeLeaf,
+              messages
+            };
+          }
+          return c;
+        });
+        Storage.saveChatsImmediately(rolledBackChats);
+        return rolledBackChats;
+      });
+      return;
+    }
+
+    while (!isFinished && loopCount < maxLoops) {
+      if (controller.signal.aborted) {
+        throw new Error('Automation stopped by user');
+      }
+      loopCount++;
+      
+      try {
+        // 1. Fetch current browser state
+        const stateRes = await fetch(`/api/browser/state?sessionId=${encodeURIComponent(targetChatId)}`);
+        if (!stateRes.ok) throw new Error('Failed to fetch browser state');
+        const browserState = await stateRes.json();
+        currentUrl = browserState.url;
+        currentTitle = browserState.title;
+        const elements = browserState.elements || [];
+
+        // 2. Prompt LLM to choose next action
+        const systemPrompt = `You are Context's Browser Agent. Your task is to achieve the user's goal by executing step-by-step browser actions.
+Goal: "${userGoal}"
+Current URL: ${currentUrl || 'about:blank'}
+Page Title: ${currentTitle || 'No Title'}
+
+List of interactive elements on the current page:
+${JSON.stringify(elements, null, 2)}
+
+${extractedContext ? `Extracted Page Text Context:\n${extractedContext}\n` : ''}
+
+Available Actions:
+1. { "action": "navigate", "url": "https://..." }
+2. { "action": "click", "targetId": "element-id-from-list" }
+3. { "action": "type", "targetId": "element-id-from-list", "text": "text to type" }
+4. { "action": "hover", "targetId": "element-id-from-list" }
+5. { "action": "back" }
+6. { "action": "key", "targetId": "element-id-from-list", "text": "keyName" }
+7. { "action": "scroll", "text": "up" | "down" }
+8. { "action": "wait", "text": "milliseconds" }
+9. { "action": "extract" } - Extract text content from the current page.
+10. { "action": "done", "text": "Final detailed answer / summary of what you accomplished" }
+11. { "action": "fail", "text": "Error explanation / why it was not possible to complete the task" }
+
+Select the next single action to take. Provide your thought process (concise, written in third-person, e.g. "I will click the 'Sign In' button") and the next action in JSON format:
+{
+  "thought": "Thought text...",
+  "action": "click" | "navigate" | "type" | "hover" | "back" | "key" | "scroll" | "wait" | "extract" | "done" | "fail",
+  "targetId": "context-el-...",
+  "text": "...",
+  "url": "..."
+}
+
+Respond ONLY with a JSON object. Do not include markdown code block wrappers (like \`\`\`json). No explanations, no text before or after the JSON.`;
+
+        const screenshot = browserState.screenshot || '';
+
+        const llmResponse = await generateTextCompletion(
+          settings,
+          [{
+            id: `browser-loop-${loopCount}`,
+            role: 'user',
+            content: `What is the next action to take to achieve my goal?`,
+            timestamp: new Date().toISOString(),
+            attachments: screenshot ? [{
+              id: `screenshot-${loopCount}`,
+              name: 'screenshot.png',
+              type: 'image/png',
+              data: screenshot,
+              size: 0
+            }] : []
+          }],
+          systemPrompt
+        );
+
+        if (!llmResponse) throw new Error('Empty response from LLM');
+
+        let cleanLlm = llmResponse.trim();
+        if (cleanLlm.startsWith('```json')) {
+          cleanLlm = cleanLlm.slice(7);
+        } else if (cleanLlm.startsWith('```')) {
+          cleanLlm = cleanLlm.slice(3);
+        }
+        if (cleanLlm.endsWith('```')) {
+          cleanLlm = cleanLlm.slice(0, -3);
+        }
+        cleanLlm = cleanLlm.trim();
+
+        const decision = JSON.parse(cleanLlm);
+        if (!decision || !decision.action) throw new Error('Invalid JSON decision format from LLM');
+
+        // 3. Add step to list as pending
+        const stepId = `step-${loopCount}-${Date.now()}`;
+        const newStep: {
+          id: string;
+          thought?: string;
+          action: string;
+          targetId?: string;
+          text?: string;
+          url?: string;
+          status: 'pending' | 'success' | 'error';
+          logMessage?: string;
+          timestamp: string;
+        } = {
+          id: stepId,
+          thought: decision.thought || 'Executing next step...',
+          action: decision.action,
+          targetId: decision.targetId,
+          text: decision.text,
+          url: decision.url,
+          status: 'pending',
+          timestamp: new Date().toISOString()
+        };
+        steps.push(newStep);
+
+        // Update UI state
+        placeholderMessage.browserSession = {
+          url: currentUrl,
+          title: currentTitle,
+          status: 'running',
+          steps: [...steps],
+          screenshotTimestamp: Date.now()
+        };
+        currentChat = addMessageToTree(activeChat, placeholderMessage, parentId);
+        setChats(prevChats =>
+          prevChats.map(c => (c.id === targetChatId ? currentChat : c))
+        );
+
+        // 4. Handle exit conditions (done/fail)
+        if (decision.action === 'done' || decision.action === 'fail') {
+          isFinished = true;
+          newStep.status = 'success';
+          newStep.logMessage = decision.action === 'done' ? 'Completed task' : 'Failed task';
+
+          placeholderMessage.content = decision.text || (decision.action === 'done' ? 'Browser automation task completed successfully.' : 'Browser automation failed.');
+          placeholderMessage.browserSession = {
+            url: currentUrl,
+            title: currentTitle,
+            status: decision.action === 'done' ? 'completed' : 'failed',
+            steps: [...steps],
+            screenshotTimestamp: Date.now()
+          };
+
+          currentChat = addMessageToTree(activeChat, placeholderMessage, parentId);
+          setChats(prevChats => {
+            const finalChats = prevChats.map(c => (c.id === targetChatId ? currentChat : c));
+            Storage.saveChatsImmediately(finalChats);
+            return finalChats;
+          });
+
+          fetch('/api/browser/close', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: targetChatId })
+          }).catch(err => console.error(err));
+          abortControllerRef.current = null;
+          break;
+        }
+
+        // 5. Execute action via API request
+        const actionRes = await fetch('/api/browser/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: decision.action,
+            targetId: decision.targetId,
+            text: decision.text,
+            url: decision.url,
+            stepId: stepId,
+            sessionId: targetChatId
+          })
+        });
+
+        if (!actionRes.ok) {
+          const errData = await actionRes.json();
+          throw new Error(errData.error || 'Action execution failed');
+        }
+
+        const actionResult = await actionRes.json();
+        
+        newStep.status = 'success';
+        newStep.logMessage = actionResult.logMessage;
+        
+        if (decision.action === 'extract' && actionResult.data) {
+          extractedContext += `\n[Page Data from ${actionResult.url || currentUrl}]:\n${actionResult.data.slice(0, 1500)}\n`;
+        }
+
+        currentUrl = actionResult.url || currentUrl;
+        currentTitle = actionResult.title || currentTitle;
+
+        placeholderMessage.browserSession = {
+          url: currentUrl,
+          title: currentTitle,
+          status: 'running',
+          steps: [...steps],
+          screenshotTimestamp: Date.now()
+        };
+        currentChat = addMessageToTree(activeChat, placeholderMessage, parentId);
+        setChats(prevChats =>
+          prevChats.map(c => (c.id === targetChatId ? currentChat : c))
+        );
+
+        await new Promise(r => setTimeout(r, 1000));
+
+      } catch (err) {
+        const error = err as Error;
+        console.error('Error during browser automation step:', error);
+        
+        if (steps.length > 0) {
+          steps[steps.length - 1].status = 'error';
+          steps[steps.length - 1].logMessage = `Error: ${error.message || 'Unknown error occurred'}`;
+        } else {
+          steps.push({
+            id: `error-${Date.now()}`,
+            thought: 'An error occurred during execution.',
+            action: 'error',
+            status: 'error',
+            logMessage: error.message || 'Unknown error',
+            timestamp: new Date().toISOString()
+          });
+        }
+
+        placeholderMessage.content = `Browser automation failed: ${error.message || 'Unknown error'}`;
+        placeholderMessage.browserSession = {
+          url: currentUrl,
+          title: currentTitle,
+          status: 'failed',
+          steps: [...steps],
+          screenshotTimestamp: Date.now()
+        };
+
+        currentChat = addMessageToTree(activeChat, placeholderMessage, parentId);
+        setChats(prevChats => {
+          const finalChats = prevChats.map(c => (c.id === targetChatId ? currentChat : c));
+          Storage.saveChatsImmediately(finalChats);
+          return finalChats;
+        });
+
+        fetch('/api/browser/close', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: targetChatId })
+        }).catch(closeErr => console.error(closeErr));
+        abortControllerRef.current = null;
+        break;
+      }
+    }
+
+    setIsGenerating(false);
   };
 
   const handleSendMessage = async (textToSend?: string, attachmentsToSend?: Attachment[]) => {
@@ -554,7 +1030,11 @@ function App() {
 
     // Trigger completion stream
     if (currentChatId) {
-      await triggerStreamingResponse(currentChats, currentChatId);
+      if (settings.isBrowserAgentEnabled) {
+        await triggerBrowserAgentLoop(currentChats, currentChatId, text);
+      } else {
+        await triggerStreamingResponse(currentChats, currentChatId);
+      }
     }
   };
 
@@ -807,13 +1287,7 @@ function App() {
   const userPrompts = activeChat?.messages.filter(m => m.role === 'user').map(m => m.content) || [];
 
   return (
-    <div 
-      className="flex h-screen w-screen overflow-hidden bg-slate-950 font-sans text-slate-200"
-      style={{
-        '--chat-font-size-user': fontSize === 'sm' ? '12px' : fontSize === 'lg' ? '16px' : '14px',
-        '--chat-font-size-assistant': fontSize === 'sm' ? '13px' : fontSize === 'lg' ? '17px' : '15px'
-      } as React.CSSProperties}
-    >
+    <div className="flex h-screen w-screen overflow-hidden bg-background font-sans text-foreground">
       
       {/* Dynamic Slide-in Toast notifications */}
       {toast && (
@@ -844,12 +1318,17 @@ function App() {
         onDeleteChat={handleDeleteChat}
         onRenameChat={handleRenameChat}
         onOpenSettings={() => setSettingsOpen(true)}
-        onOpenRagPanel={() => setRagPanelOpen(true)}
+        onOpenSchedules={() => setSchedulesOpen(true)}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => {
           const next = !isSidebarCollapsed;
           setIsSidebarCollapsed(next);
           Storage.saveSidebarCollapsed(next);
+        }}
+        theme={theme}
+        onThemeChanged={(newTheme) => {
+          setTheme(newTheme);
+          Storage.saveTheme(newTheme);
         }}
       />
 
@@ -866,8 +1345,8 @@ function App() {
           setIsSidebarCollapsed(next);
           Storage.saveSidebarCollapsed(next);
         }}
-        fontSize={fontSize}
         onSwitchBranch={handleSwitchBranch}
+        onOpenBrowserModal={() => setBrowserModalOpen(true)}
       >
         <Composer
           input={composerInput}
@@ -877,7 +1356,6 @@ function App() {
           onStop={handleStopGenerating}
           inputRef={textareaRef}
           userPrompts={userPrompts}
-          fontSize={fontSize}
           onError={(msg) => showToast(msg, 'error')}
           settings={settings}
           onSettingsChanged={setSettings}
@@ -899,16 +1377,6 @@ function App() {
           onSettingsSaved={handleSettingsSaved}
           onPromptsChanged={handlePromptsChanged}
           onBackupImported={handleBackupImported}
-          fontSize={fontSize}
-          onFontSizeChanged={(size) => {
-            setFontSize(size);
-            Storage.saveFontSize(size);
-          }}
-          theme={theme}
-          onThemeChanged={(newTheme) => {
-            setTheme(newTheme);
-            Storage.saveTheme(newTheme);
-          }}
         />
       )}
 
@@ -932,6 +1400,57 @@ function App() {
             Storage.saveSettings(newSettings);
           }}
           onError={(msg) => showToast(msg, 'error')}
+        />
+      )}
+
+      {/* Command Palette Overlay */}
+      {commandPaletteOpen && (
+        <CommandPalette
+          isOpen={commandPaletteOpen}
+          onClose={() => setCommandPaletteOpen(false)}
+          chats={chats}
+          activeChatId={activeChatId}
+          onSelectChat={handleSelectChat}
+          onNewChat={handleNewChat}
+          settings={settings}
+          onSettingsChanged={setSettings}
+          activePromptId={activePromptId}
+          onSelectPromptId={(id) => {
+            setActivePromptId(id);
+            Storage.saveActivePromptId(id);
+          }}
+          customPrompts={customPrompts}
+          theme={theme}
+          onThemeChanged={(newTheme) => {
+            setTheme(newTheme);
+            Storage.saveTheme(newTheme);
+          }}
+          onToggleSidebar={() => {
+            const next = !isSidebarCollapsed;
+            setIsSidebarCollapsed(next);
+            Storage.saveSidebarCollapsed(next);
+          }}
+          onToggleSettings={() => setSettingsOpen(true)}
+          onToggleRAG={() => setRagPanelOpen(true)}
+          onShowToast={(msg, type) => showToast(msg, type)}
+        />
+      )}
+
+      {/* Task Schedules Dashboard */}
+      {schedulesOpen && (
+        <SchedulesPanel
+          isOpen={schedulesOpen}
+          onClose={() => setSchedulesOpen(false)}
+          chats={chats}
+          onShowToast={(msg, type) => showToast(msg, type)}
+        />
+      )}
+
+      {/* Browser View Modal */}
+      {browserModalOpen && (
+        <BrowserModal
+          isOpen={browserModalOpen}
+          onClose={() => setBrowserModalOpen(false)}
         />
       )}
 

@@ -11,6 +11,19 @@ services:
       - "3000:80"
     depends_on:
       - searxng
+      - companion-server
+    restart: unless-stopped
+    networks:
+      - context-network
+
+  # Puppeteer Companion Server Backend
+  companion-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.companion
+    container_name: companion-server
+    volumes:
+      - companion-data:/root/.context-ai
     restart: unless-stopped
     networks:
       - context-network
@@ -28,6 +41,9 @@ services:
     restart: unless-stopped
     networks:
       - context-network
+
+volumes:
+  companion-data:
 
 networks:
   context-network:

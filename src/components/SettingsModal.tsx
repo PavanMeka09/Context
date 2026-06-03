@@ -1,11 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect, useCallback } from 'react';
 import { PRESET_PROMPTS, Storage } from '../utils/storage';
-import type { Settings, SystemPrompt, Chat } from '../utils/storage';
-import { fetchModels } from '../utils/api';
-import { localSpeech } from '../utils/localSpeech';
-import type { ModelOption } from '../utils/api';
-import { X, Eye, EyeOff, Save, Plus, Trash2, Edit2, AlertCircle, Loader2, Download, CheckSquare, ChevronDown, Check, Globe, Search, Cpu, Sliders, Database, FileText, Terminal } from 'lucide-react';
+import type { Settings, SystemPrompt, Chat, MemoryItem } from '../utils/storage';
+import { fetchModels, type ModelOption } from '../utils/api';
+import { X, Eye, EyeOff, Save, Plus, Trash2, Edit2, AlertCircle, Loader2, Download, CheckSquare, ChevronDown, Check, Globe, Search, Cpu, Database, FileText, Terminal, Brain } from 'lucide-react';
 import { testSearxngConnection } from '../utils/searxng';
 
 interface SettingsModalProps {
@@ -15,10 +13,6 @@ interface SettingsModalProps {
   onSettingsSaved: (settings: Settings) => void;
   onPromptsChanged: () => void;
   onBackupImported: () => void;
-  fontSize: 'sm' | 'base' | 'lg';
-  onFontSizeChanged: (size: 'sm' | 'base' | 'lg') => void;
-  theme: 'dark' | 'light' | 'system';
-  onThemeChanged: (theme: 'dark' | 'light' | 'system') => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -27,15 +21,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   activeChat,
   onSettingsSaved,
   onPromptsChanged,
-  onBackupImported,
-  fontSize,
-  onFontSizeChanged,
-  theme,
-  onThemeChanged
+  onBackupImported
 }) => {
-  const [activeTab, setActiveTab] = useState<'provider' | 'prompts' | 'websearch' | 'preferences' | 'backup'>('provider');
+  const [activeTab, setActiveTab] = useState<'provider' | 'prompts' | 'websearch' | 'memory' | 'backup'>('provider');
   const [settings, setSettings] = useState<Settings>(() => Storage.getSettings());
-  const [localSttStatus, setLocalSttStatus] = useState<string>('idle');
+  const [memories, setMemories] = useState<MemoryItem[]>(() => Storage.getMemories());
+  const [newMemoryContent, setNewMemoryContent] = useState('');
+  const [newMemoryCategory, setNewMemoryCategory] = useState<'preference' | 'project' | 'conversation' | 'other'>('preference');
 
   const slugify = (text: string) => {
     return text
@@ -127,31 +119,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       <head>
         <meta charset="utf-8">
         <title>${activeChat.title}</title>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
         <style>
           body {
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
             background: white;
-            color: #1e293b;
+            color: #1c1917;
             margin: 0;
             padding: 40px;
             line-height: 1.6;
           }
           .header {
-            border-bottom: 2px solid #f1f5f9;
+            border-bottom: 2px solid #e7e5e4;
             padding-bottom: 20px;
             margin-bottom: 30px;
           }
           .title {
-            font-family: 'Outfit', sans-serif;
             font-size: 26px;
             font-weight: 700;
-            color: #0f172a;
+            color: #1c1917;
             margin: 0;
           }
           .meta {
             font-size: 11px;
-            color: #64748b;
+            color: #78716c;
             margin-top: 8px;
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -164,18 +155,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           .message-meta {
             font-size: 10px;
             font-weight: 600;
-            color: #64748b;
+            color: #78716c;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             margin-bottom: 6px;
           }
           .message-content {
             font-size: 14px;
-            color: #334155;
+            color: #44403c;
           }
           .user-content {
-            background: #f8fafc;
-            border-left: 3px solid #4f46e5;
+            background: #f5f5f4;
+            border-left: 3px solid #1c1917;
             padding: 12px 16px;
             border-radius: 0 8px 8px 0;
           }
@@ -183,8 +174,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             padding: 4px 0;
           }
           pre {
-            background: #0f172a !important;
-            color: #cbd5e1 !important;
+            background: #1c1917 !important;
+            color: #f5f5f4 !important;
             padding: 12px 16px;
             border-radius: 8px;
             font-family: Menlo, Monaco, Consolas, monospace;
@@ -197,8 +188,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           code {
             font-family: Menlo, Monaco, Consolas, monospace;
             font-size: 12.5px;
-            background: #f1f5f9;
-            color: #e11d48;
+            background: #e7e5e4;
+            color: #000000;
             padding: 2px 4px;
             border-radius: 4px;
           }
@@ -208,13 +199,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             padding: 0;
             border-radius: 0;
           }
-          .text-slate-500 { color: #64748b !important; font-style: italic; }
-          .text-emerald-400 { color: #059669 !important; font-weight: 500; }
-          .text-brand-500 { color: #4f46e5 !important; font-weight: bold; }
-          .text-sky-400 { color: #0284c7 !important; font-weight: 600; }
-          .text-blue-400 { color: #2563eb !important; }
-          .text-amber-400 { color: #d97706 !important; }
-          .text-slate-200 { color: #cbd5e1 !important; }
           table {
             width: 100%;
             border-collapse: collapse;
@@ -223,12 +207,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           }
           th, td {
             padding: 8px 12px;
-            border: 1px solid #e2e8f0;
+            border: 1px solid #e7e5e4;
             text-align: left;
           }
           th {
-            background: #f8fafc;
-            color: #0f172a;
+            background: #f5f5f4;
+            color: #1c1917;
             font-weight: 600;
           }
           @media print {
@@ -262,9 +246,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
     }, 500);
   };
-  const [localSttProgress, setLocalSttProgress] = useState<number>(0);
 
-  // SearXNG connection tester states
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionTestResult, setConnectionTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -295,40 +277,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  useEffect(() => {
-    const unsubStatus = localSpeech.subscribeStatus((status) => {
-      setTimeout(() => setLocalSttStatus(status), 0);
-    });
-    const unsubProgress = localSpeech.subscribeProgress((progress) => {
-      setTimeout(() => setLocalSttProgress(progress), 0);
-    });
-    return () => {
-      unsubStatus();
-      unsubProgress();
-    };
-  }, []);
-
-  const handleSpeechEngineChange = (engine: 'native' | 'local') => {
-    setSettings(prev => ({ ...prev, speechToTextEngine: engine }));
-  };
   const [showKey, setShowKey] = useState(false);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
   const [modelSearchQuery, setModelSearchQuery] = useState('');
 
-  // Custom Dropdowns open states
   const [providerDropdownOpen, setProviderDropdownOpen] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
 
-  // System Prompts state
   const [customPrompts, setCustomPrompts] = useState<SystemPrompt[]>(() => Storage.getCustomPrompts());
   const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
   const [promptName, setPromptName] = useState('');
   const [promptContent, setPromptContent] = useState('');
   const [promptError, setPromptError] = useState<string | null>(null);
 
-  // Backup & Import states
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<boolean>(false);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
@@ -424,7 +387,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadModelsForProvider]);
 
-  // Capture Escape key to close open dropdowns without dismissing settings modal
   useEffect(() => {
     const handleEscapeCapture = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -442,7 +404,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
 
     if (providerDropdownOpen || modelDropdownOpen) {
-      window.addEventListener('keydown', handleEscapeCapture, true); // true = capture phase
+      window.addEventListener('keydown', handleEscapeCapture, true);
       return () => window.removeEventListener('keydown', handleEscapeCapture, true);
     }
   }, [providerDropdownOpen, modelDropdownOpen]);
@@ -521,18 +483,48 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setPromptError(null);
   };
 
+  const handleAddMemory = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMemoryContent.trim()) return;
+
+    const newItem: MemoryItem = {
+      id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      content: newMemoryContent.trim(),
+      category: newMemoryCategory,
+      createdAt: new Date().toISOString()
+    };
+
+    const updated = [newItem, ...memories];
+    setMemories(updated);
+    Storage.saveMemories(updated);
+    setNewMemoryContent('');
+  };
+
+  const handleDeleteMemory = (id: string) => {
+    const updated = memories.filter(m => m.id !== id);
+    setMemories(updated);
+    Storage.saveMemories(updated);
+  };
+
+  const handleClearAllMemories = () => {
+    if (window.confirm('Are you sure you want to permanently delete all personal memories?')) {
+      setMemories([]);
+      Storage.saveMemories([]);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-md animate-fade-in">
-      <div className="glass-panel flex h-[520px] w-full max-w-xl flex-col overflow-hidden rounded-2xl shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm animate-fade-in">
+      <div className="flex h-[520px] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-border bg-background shadow-lg">
         
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-white/[0.015] px-5 py-3.5 bg-slate-950/10">
-          <h2 className="font-display text-sm font-semibold tracking-wide text-white">Settings</h2>
+        <div className="flex items-center justify-between border-b border-border px-5 py-3.5 bg-muted/40">
+          <h2 className="font-sans text-sm font-semibold tracking-wide text-foreground">Settings</h2>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-white/5 hover:text-white transition-all cursor-pointer"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition active:scale-95 cursor-pointer"
             aria-label="Close settings"
           >
             <X className="h-4 w-4" />
@@ -540,21 +532,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Modal Tabs */}
-        <div className="flex border-b border-white/[0.01] bg-slate-950/5 px-5 overflow-x-auto scrollbar-none">
+        <div className="flex border-b border-border bg-muted/20 px-5 overflow-x-auto scrollbar-none">
           {[
             { id: 'provider', name: 'AI Provider', icon: <Cpu className="h-3.5 w-3.5" /> },
             { id: 'prompts', name: 'System Prompts', icon: <FileText className="h-3.5 w-3.5" /> },
             { id: 'websearch', name: 'Web Search', icon: <Globe className="h-3.5 w-3.5" /> },
-            { id: 'preferences', name: 'Preferences', icon: <Sliders className="h-3.5 w-3.5" /> },
-            { id: 'backup', name: 'Backup & History', icon: <Database className="h-3.5 w-3.5" /> }
+            { id: 'memory', name: 'Memory', icon: <Brain className="h-3.5 w-3.5" /> },
+            { id: 'backup', name: 'Backup', icon: <Database className="h-3.5 w-3.5" /> }
           ].map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               className={`border-b-2 px-3 py-2.5 text-xs font-medium transition shrink-0 cursor-pointer flex items-center gap-1.5 ${
                 activeTab === tab.id
-                  ? 'border-brand-500 text-white font-semibold'
-                  : 'border-transparent text-slate-400 hover:text-slate-200'
+                  ? 'border-primary text-foreground font-semibold'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               {tab.icon}
@@ -570,7 +562,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               
               {/* Provider Selection */}
               <div className="relative">
-                <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   API Provider
                 </label>
                  <button
@@ -582,14 +574,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     setProviderDropdownOpen(!providerDropdownOpen);
                     setModelDropdownOpen(false);
                   }}
-                  className="flex w-full items-center justify-between rounded-lg border border-white/[0.04] bg-slate-900 px-3.5 py-2 text-left text-xs text-white cursor-pointer hover:bg-slate-850/80 transition-all duration-300"
+                  className="flex w-full items-center justify-between rounded-md border border-input bg-background px-3.5 py-2 text-left text-xs text-foreground cursor-pointer hover:bg-accent transition-all duration-200"
                 >
-                  <span>
+                  <span className="truncate pr-2">
                     {settings.provider === 'gemini' && 'Google Gemini'}
                     {settings.provider === 'openrouter' && 'OpenRouter'}
                     {settings.provider === 'ollama' && 'Ollama (Local LLM)'}
                   </span>
-                  <ChevronDown className="h-4 w-4 text-slate-500" />
+                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                 </button>
 
                 {providerDropdownOpen && (
@@ -598,7 +590,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div 
                       role="listbox" 
                       aria-labelledby="provider-select-btn"
-                      className="absolute left-0 right-0 mt-2 z-20 rounded-lg border border-white/[0.04] bg-slate-900 p-1 shadow-2xl backdrop-blur-xl animate-fade-in"
+                      className="absolute left-0 right-0 mt-2 z-20 rounded-md border border-border bg-popover p-1 shadow-md animate-fade-in"
                     >
                       {[
                         { id: 'gemini', name: 'Google Gemini' },
@@ -621,12 +613,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           }}
                           className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-xs transition cursor-pointer ${
                             settings.provider === p.id
-                              ? 'bg-brand-500/10 text-white font-semibold'
-                              : 'text-slate-400 hover:bg-white/[0.02] hover:text-slate-200'
+                              ? 'bg-accent text-accent-foreground font-semibold'
+                              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                           }`}
                         >
                           <span>{p.name}</span>
-                          {settings.provider === p.id && <Check className="h-3.5 w-3.5 text-brand-500" />}
+                          {settings.provider === p.id && <Check className="h-3.5 w-3.5 text-primary" />}
                         </button>
                       ))}
                     </div>
@@ -637,7 +629,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* API Key */}
               {settings.provider !== 'ollama' && (
                 <div className="space-y-1">
-                  <label htmlFor="api-key-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  <label htmlFor="api-key-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                     API Key
                   </label>
                   <div className="relative">
@@ -652,25 +644,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           ? 'Enter Gemini API Key...' 
                           : 'sk-or-...'
                       }
-                      className="glass-input w-full rounded-lg bg-slate-900 pl-3.5 pr-10 py-2 text-xs font-mono text-white"
+                      className="w-full rounded-md border border-input bg-background pl-3.5 pr-10 py-2 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     />
                     <button
                       type="button"
                       onClick={() => setShowKey(!showKey)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                       aria-label={showKey ? "Hide API key" : "Show API key"}
                     >
                       {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
-                  <div className="flex justify-between items-center text-[9px] text-slate-400 mt-1 select-none">
-                    <span>Saved locally. No backend tracking.</span>
+                  <div className="flex justify-end items-center text-[9px] text-muted-foreground mt-1 select-none">
                     {settings.provider === 'gemini' && (
                       <a
                         href="https://aistudio.google.com/"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-brand-500 hover:text-brand-400 font-semibold underline transition duration-150"
+                        className="text-primary hover:underline font-semibold transition"
                       >
                         Get Free Gemini Key
                       </a>
@@ -680,7 +671,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         href="https://openrouter.ai/keys"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-brand-500 hover:text-brand-400 font-semibold underline transition duration-150"
+                        className="text-primary hover:underline font-semibold transition"
                       >
                         Get OpenRouter Key
                       </a>
@@ -692,7 +683,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* Local Server Endpoint for Ollama */}
               {settings.provider === 'ollama' && (
                 <div className="space-y-1">
-                  <label htmlFor="local-url-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  <label htmlFor="local-url-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                     Local Server Endpoint
                   </label>
                   <input
@@ -707,9 +698,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       loadModelsForProvider(settings.provider, settings.apiKey, settings.model, settings.localUrl);
                     }}
                     placeholder="http://localhost:11434/v1"
-                    className="glass-input w-full rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-mono text-white"
+                    className="w-full rounded-md border border-input bg-background px-3.5 py-2 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   />
-                  <div className="flex justify-between items-center text-[9px] text-slate-400 mt-1 select-none">
+                  <div className="flex justify-between items-center text-[9px] text-muted-foreground mt-1 select-none">
                     <span>Ollama default: http://localhost:11434/v1 | LM Studio: http://localhost:1234/v1</span>
                   </div>
                 </div>
@@ -718,11 +709,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {/* Model Dropdown */}
               <div className="relative">
                 <div className="mb-1.5 flex items-center justify-between">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                     Model Selection
                   </label>
                   {loadingModels && (
-                    <span className="flex items-center gap-1 text-[10px] text-brand-500">
+                    <span className="flex items-center gap-1 text-[10px] text-primary">
                       <Loader2 className="h-3 w-3 animate-spin" />
                       Fetching...
                     </span>
@@ -730,7 +721,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 
                 {modelError && (
-                  <div className="mb-2.5 flex items-center gap-2 rounded-lg bg-red-950/20 border border-red-900/30 p-2.5 text-[10px] text-red-400">
+                  <div className="mb-2.5 flex items-center gap-2 rounded bg-destructive/10 border border-destructive/20 p-2.5 text-[10px] text-destructive">
                     <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                     <span>{modelError}</span>
                   </div>
@@ -748,13 +739,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     }
                   }}
                   disabled={loadingModels || models.length === 0}
-                  className="flex w-full items-center justify-between rounded-lg border border-white/[0.04] bg-slate-900 px-3.5 py-2 text-left text-xs text-white cursor-pointer hover:bg-slate-850/80 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
+                  className="flex w-full items-center justify-between rounded-md border border-input bg-background px-3.5 py-2 text-left text-xs text-foreground cursor-pointer hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
                 >
-                  <span>
+                  <span className="truncate pr-2">
                     {models.find(m => m.id === settings.model)?.name || 
                      'Configure API key above to load models...'}
                   </span>
-                  <ChevronDown className="h-4 w-4 text-slate-500" />
+                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                 </button>
 
                 {modelDropdownOpen && models.length > 0 && (
@@ -766,19 +757,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div 
                       role="listbox" 
                       aria-labelledby="model-select-btn"
-                      className="absolute left-0 right-0 mt-2.5 z-20 flex flex-col max-h-60 rounded-lg border border-white/[0.04] bg-slate-900 shadow-2xl backdrop-blur-xl animate-fade-in"
+                      className="absolute left-0 right-0 mt-2.5 z-20 flex flex-col max-h-60 rounded-md border border-border bg-popover shadow-md animate-fade-in"
                     >
                       {/* Search Bar */}
-                      <div className="p-2 border-b border-white/[0.03] shrink-0 relative select-none">
+                      <div className="p-2 border-b border-border shrink-0 relative select-none">
                         <input
                           type="text"
                           value={modelSearchQuery}
                           onChange={(e) => setModelSearchQuery(e.target.value)}
                           placeholder="Search models..."
                           autoFocus
-                          className="w-full bg-slate-950/40 border border-white/[0.04] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-brand-500/50 transition-all duration-300"
+                          className="w-full bg-background border border-input rounded pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
                         />
-                        <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500 pointer-events-none" />
+                        <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                       </div>
 
                       {/* Models List */}
@@ -791,7 +782,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           
                           if (filtered.length === 0) {
                             return (
-                              <div className="text-center py-4 text-xs text-slate-500 italic select-none">
+                              <div className="text-center py-4 text-xs text-muted-foreground italic select-none">
                                 No models found
                               </div>
                             );
@@ -810,12 +801,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               }}
                               className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-xs transition cursor-pointer ${
                                 settings.model === m.id
-                                  ? 'bg-brand-500/10 text-white font-semibold'
-                                  : 'text-slate-400 hover:bg-white/[0.02] hover:text-slate-200'
+                                  ? 'bg-accent text-accent-foreground font-semibold'
+                                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                               }`}
                             >
                               <span>{m.name}</span>
-                              {settings.model === m.id && <Check className="h-3.5 w-3.5 text-brand-500" />}
+                              {settings.model === m.id && <Check className="h-3.5 w-3.5 text-primary" />}
                             </button>
                           ));
                         })()}
@@ -830,13 +821,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="space-y-5">
               
               {/* CRUD Custom Prompt Form */}
-              <form onSubmit={handleSavePrompt} className="space-y-2 rounded-xl border border-white/[0.03] bg-white/[0.01] p-3">
-                <h3 className="font-display text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <form onSubmit={handleSavePrompt} className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
+                <h3 className="font-sans text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   {editingPromptId ? 'Edit Custom Prompt' : 'Create Custom Prompt'}
                 </h3>
                 
                 {promptError && (
-                  <div className="flex items-center gap-1.5 text-[10px] text-red-400">
+                  <div className="flex items-center gap-1.5 text-[10px] text-destructive">
                     <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                     <span>{promptError}</span>
                   </div>
@@ -848,14 +839,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     placeholder="Prompt Name (e.g. Code Architect)"
                     value={promptName}
                     onChange={e => setPromptName(e.target.value)}
-                    className="glass-input w-full rounded-lg bg-slate-950 px-3 py-1.5 text-xs text-white"
+                    className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   />
                   <textarea
-                    placeholder="Instructions (e.g. Act as a software engineer and answer with typescript...)"
+                    placeholder="Instructions (e.g. Act as a software engineer...)"
                     value={promptContent}
                     onChange={e => setPromptContent(e.target.value)}
                     rows={2}
-                    className="glass-input w-full rounded-lg bg-slate-950 px-3 py-1.5 text-xs text-slate-200"
+                    className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   />
                   
                   <div className="flex justify-end gap-1.5">
@@ -863,14 +854,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <button
                         type="button"
                         onClick={handleCancelPromptEdit}
-                        className="rounded border border-white/[0.05] bg-white/[0.01] px-2.5 py-1 text-[10px] text-slate-400 hover:bg-white/5 hover:text-white"
+                        className="rounded border border-input bg-transparent px-2.5 py-1 text-[10px] text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer"
                       >
                         Cancel
                       </button>
                     )}
                     <button
                       type="submit"
-                      className="flex items-center gap-1 rounded bg-brand-600 hover:bg-brand-500 px-3 py-1 text-[10px] font-medium text-white shadow-sm"
+                      className="flex items-center gap-1 rounded bg-primary hover:bg-primary/95 px-3 py-1 text-[10px] font-medium text-primary-foreground shadow-sm cursor-pointer"
                     >
                       <Plus className="h-3 w-3" />
                       <span>{editingPromptId ? 'Update' : 'Add'}</span>
@@ -883,37 +874,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="space-y-4">
                 {/* Presets List */}
                 <div className="space-y-1.5">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500">System Presets (Read-Only)</span>
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">System Presets (Read-Only)</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                     {PRESET_PROMPTS.map(p => (
-                      <div key={p.id} className="rounded-lg bg-white/[0.01] border border-white/[0.03] p-2 text-left text-[11px] leading-tight select-none">
-                        <span className="font-semibold text-slate-200 block mb-0.5">{p.name}</span>
-                        <span className="text-slate-500 line-clamp-1 italic">{p.content}</span>
+                      <div key={p.id} className="rounded border border-border bg-card p-2 text-left text-[11px] leading-tight select-none">
+                        <span className="font-semibold text-foreground block mb-0.5 truncate">{p.name}</span>
+                        <span className="text-muted-foreground line-clamp-1 italic">{p.content}</span>
                       </div>
                     ))}
                   </div>
                 </div>
 
                 {/* Custom List */}
-                <div className="space-y-1.5 pt-1 border-t border-white/[0.01]">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-500 block">Your Custom Prompts</span>
+                <div className="space-y-1.5 pt-1 border-t border-border">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground block">Your Custom Prompts</span>
                   
                   {customPrompts.length === 0 ? (
-                    <p className="text-[10px] italic text-slate-500 py-1">No custom prompts created yet.</p>
+                    <p className="text-[10px] italic text-muted-foreground py-1">No custom prompts created yet.</p>
                   ) : (
                     <div className="space-y-1.5">
                       {customPrompts.map(p => (
-                        <div key={p.id} className="flex items-center justify-between rounded-lg border border-white/[0.03] bg-white/[0.01] px-3 py-2">
-                          <div className="flex-1 min-w-0 pr-4">
-                            <span className="font-semibold text-white text-[11px] block">{p.name}</span>
-                            <span className="text-slate-500 text-[10px] italic line-clamp-1 mt-[1px]">{p.content}</span>
+                        <div key={p.id} className="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2 gap-3">
+                          <div className="flex-1 min-w-0">
+                            <span className="font-semibold text-foreground text-[11px] block truncate">{p.name}</span>
+                            <span className="text-muted-foreground text-[10px] italic line-clamp-1 mt-[1px]">{p.content}</span>
                           </div>
                           
-                          <div className="flex items-center gap-0.5">
+                          <div className="flex items-center gap-0.5 shrink-0">
                             <button
                               type="button"
                               onClick={() => handleEditPrompt(p)}
-                              className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-white"
+                              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground shrink-0"
                               aria-label={`Edit prompt ${p.name}`}
                             >
                               <Edit2 className="h-3 w-3" />
@@ -921,7 +912,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             <button
                               type="button"
                               onClick={() => handleDeletePrompt(p.id)}
-                              className="rounded p-1 text-slate-500 hover:bg-white/5 hover:text-red-400"
+                              className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive shrink-0"
                               aria-label={`Delete prompt ${p.name}`}
                             >
                               <Trash2 className="h-3 w-3" />
@@ -939,33 +930,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           ) : activeTab === 'websearch' ? (
             <div className="space-y-4 animate-fade-in select-none">
               
-              {/* Enable Web Search Toggle */}
-              <div className="flex items-center justify-between rounded-xl border border-white/[0.03] bg-white/[0.01] p-3.5">
-                <div>
-                  <h3 className="font-display text-xs font-semibold text-white">Enable Web Search</h3>
-                  <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
-                    Give the AI assistant real-time web search capabilities using SearXNG.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSettings(prev => ({ ...prev, isWebSearchEnabled: !prev.isWebSearchEnabled }))}
-                  aria-checked={settings.isWebSearchEnabled}
-                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    settings.isWebSearchEnabled ? 'bg-emerald-500' : 'bg-slate-800'
-                  }`}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                      settings.isWebSearchEnabled ? 'translate-x-4' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-              </div>
-
               {/* SearXNG Instance URL */}
               <div className="space-y-1.5">
-                <label htmlFor="searxng-url-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                <label htmlFor="searxng-url-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   SearXNG Instance URL
                 </label>
                 <div className="flex gap-2">
@@ -978,13 +945,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       setSettings(prev => ({ ...prev, searxngUrl: val }));
                     }}
                     placeholder="http://localhost:8080 (Leave blank for Docker proxy)"
-                    className="glass-input flex-1 rounded-lg bg-slate-900 px-3.5 py-2 text-xs font-mono text-white"
+                    className="flex-1 min-w-0 rounded-md border border-input bg-background px-3.5 py-2 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   />
                   <button
                     type="button"
                     disabled={testingConnection}
                     onClick={handleTestConnection}
-                    className="flex h-8 items-center justify-center rounded-lg border border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.06] text-[10px] font-semibold text-slate-300 hover:text-white px-3 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    className="flex h-8 items-center justify-center rounded-md border border-input bg-background hover:bg-accent text-[10px] font-semibold text-muted-foreground hover:text-foreground px-3 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0"
                   >
                     {testingConnection ? (
                       <span className="flex items-center gap-1">
@@ -998,7 +965,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 
                 {connectionTestResult && (
-                  <div className={`mt-2 flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[10px] animate-fade-in ${
+                  <div className={`mt-2 flex items-center gap-1.5 rounded-md border px-3 py-2 text-[10px] animate-fade-in ${
                     connectionTestResult.success
                       ? 'bg-emerald-950/20 border-emerald-900/30 text-emerald-400'
                       : 'bg-red-950/20 border-red-900/30 text-red-400'
@@ -1008,170 +975,147 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 )}
                 
-                <p className="text-[9px] text-slate-500 leading-relaxed mt-1 select-none">
-                  SearXNG is a privacy-respecting search engine. If you are using our Docker Compose setup, leave this blank (it defaults to the internal proxied route <code>/searxng</code>). For external custom instances, specify the full origin (e.g. <code>https://searx.be</code>).
+                <p className="text-[9px] text-muted-foreground leading-relaxed mt-1 select-none">
+                  SearXNG is a privacy-respecting search engine. If you are using our Docker Compose setup, leave this blank (it defaults to internal proxy <code>/searxng</code>). For external custom instances, specify the origin (e.g. <code>https://searx.be</code>).
                 </p>
               </div>
 
               {/* How it works */}
-              <div className="rounded-xl border border-white/[0.03] bg-white/[0.01] p-3.5 space-y-2">
-                <h4 className="font-display text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <Globe className="h-3.5 w-3.5 text-emerald-400" />
+              <div className="rounded-md border border-border bg-muted/20 p-3.5 space-y-2">
+                <h4 className="font-sans text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Globe className="h-3.5 w-3.5 text-primary" />
                   <span>How does Web Search work?</span>
                 </h4>
-                <p className="text-[10px] text-slate-500 leading-relaxed">
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
                   When Web Search is enabled, Context queries SearXNG before the LLM generation starts, retrieves the top search snippets, and automatically injects them into the model's context. This allows any model (local Ollama, Gemini, or OpenRouter) to answer with up-to-date information.
                 </p>
               </div>
 
             </div>
-          ) : activeTab === 'preferences' ? (
-            <div className="space-y-5 animate-fade-in select-none">
-              
-              <div>
-                <label className="mb-2.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  Speech-to-Text Engine
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { id: 'native', name: 'Browser Native', desc: 'Fast, cloud-assisted in some browsers' },
-                    { id: 'local', name: 'Local Whisper', desc: '100% private, runs offline, WASM (75MB)' }
-                  ].map(opt => (
+          ) : activeTab === 'memory' ? (
+            <div className="space-y-4 animate-fade-in select-none">
+              {/* Enable Memory Toggle */}
+              <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3.5">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-semibold text-foreground">Enable Personal Memory</span>
+                  <p className="text-[10px] text-muted-foreground">Automatically remember preferences, projects, and key notes across chats.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSettings(prev => ({ ...prev, isMemoryEnabled: !prev.isMemoryEnabled }))}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    settings.isMemoryEnabled ? 'bg-primary' : 'bg-muted'
+                  }`}
+                  role="switch"
+                  aria-checked={settings.isMemoryEnabled}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      settings.isMemoryEnabled ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Add Memory Form */}
+              <form onSubmit={handleAddMemory} className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
+                <h3 className="font-sans text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Add Custom Memory
+                </h3>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="E.g., Prefers Tailwind CSS over vanilla CSS"
+                    value={newMemoryContent}
+                    onChange={e => setNewMemoryContent(e.target.value)}
+                    className="flex-1 min-w-0 rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                  <select
+                    value={newMemoryCategory}
+                    onChange={e => setNewMemoryCategory(e.target.value as any)}
+                    className="rounded-md border border-input bg-background px-2 py-1.5 text-[11px] text-foreground cursor-pointer focus:outline-none shrink-0"
+                  >
+                    <option value="preference">Preference</option>
+                    <option value="project">Project</option>
+                    <option value="conversation">Conversation</option>
+                    <option value="other">General</option>
+                  </select>
+                  <button
+                    type="submit"
+                    className="flex items-center gap-1 rounded bg-primary hover:bg-primary/90 px-3 py-1.5 text-[10px] font-medium text-primary-foreground shadow-sm cursor-pointer shrink-0"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Add</span>
+                  </button>
+                </div>
+              </form>
+
+              {/* Categorized Memories List */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-muted-foreground px-1 border-b border-border pb-1">
+                  <span>Saved Memories ({memories.length})</span>
+                  {memories.length > 0 && (
                     <button
-                      key={opt.id}
                       type="button"
-                      onClick={() => handleSpeechEngineChange(opt.id as any)}
-                      className={`flex flex-col items-center justify-center rounded-xl border py-2.5 px-2 text-center transition cursor-pointer ${
-                        (settings.speechToTextEngine || 'native') === opt.id
-                          ? 'border-brand-500 bg-brand-500/10 text-white font-semibold'
-                          : 'border-white/[0.03] bg-white/[0.015] text-slate-400 hover:bg-white/[0.03] hover:text-slate-200'
-                      }`}
+                      onClick={handleClearAllMemories}
+                      className="text-destructive hover:underline font-bold"
                     >
-                      <span className="text-xs font-semibold">{opt.name}</span>
-                      <span className="text-[8px] text-slate-500 mt-0.5">{opt.desc}</span>
+                      Clear All
                     </button>
-                  ))}
+                  )}
                 </div>
 
-                {settings.speechToTextEngine === 'local' && (
-                  <div className="mt-3 rounded-xl border border-white/[0.03] bg-white/[0.01] p-3 space-y-2 animate-fade-in">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="font-semibold text-slate-400 uppercase tracking-wider">Whisper Model Status</span>
-                      <span className={`font-bold px-2 py-0.5 rounded-full ${
-                        localSttStatus === 'ready' 
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                          : localSttStatus === 'loading'
-                            ? 'bg-brand-500/10 text-brand-400 border border-brand-500/20'
-                            : localSttStatus === 'error'
-                              ? 'bg-red-500/10 text-red-400 border border-red-500/20'
-                              : 'bg-slate-800 text-slate-400 border border-white/[0.03]'
-                      }`}>
-                        {localSttStatus === 'idle' && 'Not Loaded'}
-                        {localSttStatus === 'loading' && 'Downloading...'}
-                        {localSttStatus === 'ready' && 'Ready / Cached'}
-                        {localSttStatus === 'error' && 'Load Failed'}
-                        {localSttStatus === 'transcribing' && 'Transcribing...'}
-                      </span>
-                    </div>
-
-                    {localSttStatus === 'loading' && (
-                      <div className="space-y-1">
-                        <div className="h-1 w-full rounded-full bg-slate-800 overflow-hidden">
-                          <div 
-                            className="h-full bg-brand-500 transition-all duration-300" 
-                            style={{ width: `${localSttProgress}%` }}
-                          />
+                {memories.length === 0 ? (
+                  <div className="rounded-md border border-border bg-card p-6 text-center">
+                    <Brain className="h-5 w-5 text-muted-foreground mx-auto mb-1.5" />
+                    <p className="text-[10px] text-muted-foreground italic">No personal memories saved yet. Speak with the AI to auto-populate, or add one manually above.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-48 overflow-y-auto scrollbar-thin pr-1">
+                    {([
+                      { id: 'preference', name: 'Preferences', desc: 'User habits, settings, and styles' },
+                      { id: 'project', name: 'Projects', desc: 'Workspace details, tech stacks, code structures' },
+                      { id: 'conversation', name: 'Conversations', desc: 'Summaries, decisions, and takeaways' },
+                      { id: 'other', name: 'General', desc: 'Other facts' }
+                    ] as const).map(cat => {
+                      const items = memories.filter(m => m.category === cat.id);
+                      if (items.length === 0) return null;
+                      return (
+                        <div key={cat.id} className="space-y-1.5">
+                          <div className="flex items-baseline justify-between select-none">
+                            <span className="text-[9.5px] font-bold text-foreground">{cat.name}</span>
+                            <span className="text-[8px] text-muted-foreground">{cat.desc}</span>
+                          </div>
+                          <div className="space-y-1">
+                            {items.map(item => (
+                              <div key={item.id} className="flex items-start justify-between rounded-md border border-border bg-card px-2.5 py-1.5 hover:bg-accent hover:text-accent-foreground transition duration-200 gap-2">
+                                <span className="text-[10.5px] text-foreground leading-tight flex-1 min-w-0 break-words">{item.content}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMemory(item.id)}
+                                  className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive transition shrink-0"
+                                  aria-label="Delete memory item"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                        <div className="flex justify-between text-[8px] font-bold text-brand-400">
-                          <span>DOWNLOADING MODEL WEIGHTS</span>
-                          <span>{localSttProgress.toFixed(0)}%</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {localSttStatus === 'idle' && (
-                      <button
-                        type="button"
-                        onClick={() => localSpeech.preloadModel()}
-                        className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-brand-500/30 hover:border-brand-500 bg-brand-500/5 hover:bg-brand-500/10 text-[10px] font-semibold text-brand-400 hover:text-brand-300 py-1.5 transition active:scale-98 cursor-pointer select-none"
-                      >
-                        <Download className="h-3 w-3" />
-                        <span>Pre-download Whisper Model (~75MB)</span>
-                      </button>
-                    )}
-
-                    {localSttStatus === 'ready' && (
-                      <p className="text-[9px] text-slate-500 italic text-center font-medium">
-                        Model cached in browser memory & IndexedDB. Voice typing will work 100% offline.
-                      </p>
-                    )}
+                      );
+                    })}
                   </div>
                 )}
               </div>
-
-              <div>
-                <label className="mb-2.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  Readability Font Size
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'sm', name: 'Small', desc: 'Compact view' },
-                    { id: 'base', name: 'Medium', desc: 'Balanced default' },
-                    { id: 'lg', name: 'Large', desc: 'High readability' }
-                  ].map(opt => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => onFontSizeChanged(opt.id as any)}
-                      className={`flex flex-col items-center justify-center rounded-xl border py-2.5 px-2 text-center transition cursor-pointer ${
-                        fontSize === opt.id
-                          ? 'border-brand-500 bg-brand-500/10 text-white font-semibold'
-                          : 'border-white/[0.03] bg-white/[0.015] text-slate-400 hover:bg-white/[0.03] hover:text-slate-200'
-                      }`}
-                    >
-                      <span className="text-xs font-semibold">{opt.name}</span>
-                      <span className="text-[8px] text-slate-500 mt-0.5">{opt.desc}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-2.5 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  App Color Theme
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'light', name: 'Light Mode', desc: 'Clean & crisp' },
-                    { id: 'dark', name: 'Dark Mode', desc: 'Premium deep slate' },
-                    { id: 'system', name: 'System', desc: 'Sync with browser' }
-                  ].map(opt => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => onThemeChanged(opt.id as any)}
-                      className={`flex flex-col items-center justify-center rounded-xl border py-2.5 px-2 text-center transition cursor-pointer ${
-                        theme === opt.id
-                          ? 'border-brand-500 bg-brand-500/10 text-white font-semibold'
-                          : 'border-white/[0.03] bg-white/[0.015] text-slate-400 hover:bg-white/[0.03] hover:text-slate-200'
-                      }`}
-                    >
-                      <span className="text-xs font-semibold">{opt.name}</span>
-                      <span className="text-[8px] text-slate-500 mt-0.5">{opt.desc}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
             </div>
           ) : (
             <div className="space-y-4 animate-fade-in">
 
               {activeChat && activeChat.messages && activeChat.messages.length > 0 && (
-                <div className="rounded-xl border border-white/[0.03] bg-white/[0.01] p-3.5 space-y-3">
+                <div className="rounded-md border border-border bg-muted/20 p-3.5 space-y-3">
                   <div>
-                    <h3 className="font-display text-xs font-semibold text-white">Export Conversation</h3>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                    <h3 className="font-sans text-xs font-semibold text-foreground">Export Conversation</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
                       Download the transcript of your current conversation in different formats.
                     </p>
                   </div>
@@ -1179,64 +1123,64 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       type="button"
                       onClick={exportToMarkdown}
-                      className="flex items-center gap-1.5 rounded-lg border border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.06] text-xs font-semibold text-slate-300 hover:text-white px-3.5 py-1.5 transition active:scale-95 cursor-pointer shadow-sm select-none"
+                      className="flex items-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground text-xs font-semibold px-3.5 py-1.5 transition active:scale-95 cursor-pointer shadow-sm select-none"
                     >
-                      <FileText className="h-3.5 w-3.5 text-brand-500" />
+                      <FileText className="h-3.5 w-3.5 text-primary" />
                       <span>Markdown (.md)</span>
                     </button>
                     <button
                       type="button"
                       onClick={exportToJSON}
-                      className="flex items-center gap-1.5 rounded-lg border border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.06] text-xs font-semibold text-slate-300 hover:text-white px-3.5 py-1.5 transition active:scale-95 cursor-pointer shadow-sm select-none"
+                      className="flex items-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground text-xs font-semibold px-3.5 py-1.5 transition active:scale-95 cursor-pointer shadow-sm select-none"
                     >
-                      <Terminal className="h-3.5 w-3.5 text-emerald-500" />
+                      <Terminal className="h-3.5 w-3.5 text-primary" />
                       <span>JSON (.json)</span>
                     </button>
                     <button
                       type="button"
                       onClick={exportToPDF}
-                      className="flex items-center gap-1.5 rounded-lg border border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.06] text-xs font-semibold text-slate-300 hover:text-white px-3.5 py-1.5 transition active:scale-95 cursor-pointer shadow-sm select-none"
+                      className="flex items-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground text-xs font-semibold px-3.5 py-1.5 transition active:scale-95 cursor-pointer shadow-sm select-none"
                     >
-                      <FileText className="h-3.5 w-3.5 text-sky-500" />
+                      <FileText className="h-3.5 w-3.5 text-primary" />
                       <span>Print / PDF</span>
                     </button>
                   </div>
                 </div>
               )}
               
-              <div className="rounded-xl border border-white/[0.03] bg-white/[0.01] p-3.5 space-y-3 flex items-center justify-between">
+              <div className="rounded-md border border-border bg-muted/20 p-3.5 space-y-3 flex items-center justify-between">
                 <div>
-                  <h3 className="font-display text-xs font-semibold text-white">Export Global Backup</h3>
+                  <h3 className="font-sans text-xs font-semibold text-foreground">Export Global Backup</h3>
                 </div>
                 <button
                   type="button"
                   onClick={handleExportBackup}
-                  className="flex items-center gap-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 px-3.5 py-1.5 text-xs font-medium text-white transition active:scale-95 cursor-pointer shadow-sm shrink-0"
+                  className="flex items-center gap-1.5 rounded-md bg-primary hover:bg-primary/90 px-3.5 py-1.5 text-xs font-medium text-primary-foreground transition active:scale-95 cursor-pointer shadow-sm shrink-0"
                 >
                   <Download className="h-3.5 w-3.5" />
                   <span>Download JSON</span>
                 </button>
               </div>
 
-              <div className="rounded-xl border border-white/[0.03] bg-white/[0.01] p-3.5 space-y-3">
+              <div className="rounded-md border border-border bg-muted/20 p-3.5 space-y-3">
                 <div>
-                  <h3 className="font-display text-xs font-semibold text-white">Import Global Backup</h3>
+                  <h3 className="font-sans text-xs font-semibold text-foreground">Import Global Backup</h3>
                 </div>
 
                 {importError && (
-                  <div className="flex items-center gap-1.5 rounded-lg bg-red-950/20 border border-red-900/30 p-2 text-[10px] text-red-400">
+                  <div className="flex items-center gap-1.5 rounded-md bg-destructive/10 border border-destructive/20 p-2 text-[10px] text-destructive">
                     <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                     <span>{importError}</span>
                   </div>
                 )}
                 {importSuccess && (
-                  <div className="flex items-center gap-1.5 rounded-lg bg-emerald-950/20 border border-emerald-900/30 p-2 text-[10px] text-emerald-400">
+                  <div className="flex items-center gap-1.5 rounded-md bg-emerald-950/20 border border-emerald-900/30 p-2 text-[10px] text-emerald-400">
                     <CheckSquare className="h-3.5 w-3.5 shrink-0" />
                     <span>Backup restored successfully!</span>
                   </div>
                 )}
 
-                <div className="relative flex items-center justify-center rounded-xl border border-dashed border-white/[0.08] hover:border-brand-500/30 bg-slate-950/30 p-4 transition duration-300">
+                <div className="relative flex items-center justify-center rounded-md border border-dashed border-input hover:border-primary bg-background p-4 transition duration-300">
                   <input
                     type="file"
                     accept=".json"
@@ -1244,18 +1188,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                   />
                   <div className="text-center space-y-1 pointer-events-none select-none">
-                    <Plus className="h-4 w-4 text-slate-500 mx-auto" />
-                    <span className="text-[10px] font-semibold text-slate-300 block">Choose Backup File</span>
-                    <span className="text-[9px] text-slate-500 block">Accepts .json files</span>
+                    <Plus className="h-4 w-4 text-muted-foreground mx-auto" />
+                    <span className="text-[10px] font-semibold text-foreground block">Choose Backup File</span>
+                    <span className="text-[9px] text-muted-foreground block">Accepts .json files</span>
                   </div>
                 </div>
               </div>
 
               {/* Danger Zone */}
-              <div className="rounded-xl border border-red-900/30 bg-red-950/5 p-3.5 space-y-3">
+              <div className="rounded-md border border-destructive/20 bg-destructive/5 p-3.5 space-y-3">
                 <div>
-                  <h3 className="font-display text-xs font-semibold text-red-400">Danger Zone</h3>
-                  <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                  <h3 className="font-sans text-xs font-semibold text-destructive">Danger Zone</h3>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
                     Permanently erase all conversations, API keys, custom system prompts, and preferences from your browser. This action is irreversible.
                   </p>
                 </div>
@@ -1264,18 +1208,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <div className="flex items-center gap-2 select-none">
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
+                        try {
+                          await fetch('/api/schedules/clear-all', { method: 'POST' });
+                        } catch (err) {
+                          console.error('Failed to clear scheduling database on server', err);
+                        }
                         localStorage.clear();
                         window.location.reload();
                       }}
-                      className="rounded-lg bg-red-600 hover:bg-red-500 px-3.5 py-1.5 text-[10px] font-semibold text-white transition cursor-pointer active:scale-95"
+                      className="rounded-md bg-destructive hover:bg-destructive/90 px-3.5 py-1.5 text-[10px] font-semibold text-destructive-foreground transition cursor-pointer active:scale-95"
                     >
                       Yes, Delete Everything
                     </button>
                     <button
                       type="button"
                       onClick={() => setConfirmDeleteAll(false)}
-                      className="rounded-lg border border-white/[0.05] bg-white/[0.01] px-3.5 py-1.5 text-[10px] font-semibold text-slate-400 hover:text-white transition cursor-pointer"
+                      className="rounded-md border border-input bg-transparent px-3.5 py-1.5 text-[10px] font-semibold text-muted-foreground hover:bg-accent hover:text-foreground transition cursor-pointer"
                     >
                       Cancel
                     </button>
@@ -1284,7 +1233,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setConfirmDeleteAll(true)}
-                    className="rounded-lg bg-red-950/20 border border-red-900/40 hover:bg-red-950/40 px-3.5 py-1.5 text-[10px] font-medium text-red-400 hover:text-red-300 transition cursor-pointer select-none"
+                    className="rounded-md bg-destructive/10 border border-destructive/20 hover:bg-destructive/20 px-3.5 py-1.5 text-[10px] font-medium text-destructive transition cursor-pointer select-none"
                   >
                     Delete All Data
                   </button>
@@ -1295,18 +1244,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
         </div>
 
-        {/* Modal Footer */}
-        <div className="flex items-center justify-end border-t border-white/[0.015] bg-slate-950/10 px-5 py-3.5 gap-2.5">
-          <span className="text-[10px] text-slate-500 font-medium select-none mr-auto">100% Serverless & Private</span>
+        <div className="flex items-center justify-end border-t border-border bg-muted/40 px-5 py-3.5 gap-2.5">
           <button
             onClick={onClose}
-            className="rounded-lg border border-white/[0.05] bg-white/[0.01] px-4 py-2 text-xs font-medium text-slate-400 hover:bg-white/5 hover:text-white"
+            className="rounded-md border border-input bg-transparent px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             Cancel
           </button>
           <button
             onClick={handleSaveSettings}
-            className="flex items-center gap-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 px-5 py-2 text-xs font-semibold text-white shadow-md active:scale-95 transition"
+            className="flex items-center gap-1.5 rounded-md bg-primary hover:bg-primary/90 px-5 py-2 text-xs font-semibold text-primary-foreground shadow-sm active:scale-95 transition"
           >
             <Save className="h-3.5 w-3.5" />
             <span>Save Settings</span>

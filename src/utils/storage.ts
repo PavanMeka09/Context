@@ -6,12 +6,31 @@ export interface Attachment {
   size: number;
 }
 
+export interface BrowserSessionData {
+  url: string;
+  title: string;
+  status: 'idle' | 'running' | 'completed' | 'failed';
+  steps: {
+    id: string;
+    thought?: string;
+    action: string;
+    targetId?: string;
+    text?: string;
+    url?: string;
+    status: 'pending' | 'success' | 'error';
+    logMessage?: string;
+    timestamp: string;
+  }[];
+  screenshotTimestamp: number;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
   attachments?: Attachment[];
+  browserSession?: BrowserSessionData;
 }
 
 export interface MessageNode {
@@ -22,6 +41,7 @@ export interface MessageNode {
   parentId: string | null;
   children: string[];
   attachments?: Attachment[];
+  browserSession?: BrowserSessionData;
 }
 
 export interface Chat {
@@ -34,16 +54,40 @@ export interface Chat {
   activeLeafId?: string | null;
 }
 
+export interface MemoryItem {
+  id: string;
+  content: string;
+  category: 'preference' | 'project' | 'conversation' | 'other';
+  createdAt: string;
+}
+
+export interface TaskSchedule {
+  id: string;
+  title: string;
+  prompt: string;
+  targetChatId: string; // 'new' or specific chat ID
+  scheduleType: 'cron' | 'interval' | 'once';
+  cronExpression?: string;
+  intervalMinutes?: number;
+  dateTime?: string;
+  isActive: boolean;
+  agentMode: 'standard' | 'browser';
+  lastRun?: string;
+  nextRun?: string;
+  createdAt: string;
+}
+
 export interface Settings {
   provider: 'gemini' | 'openrouter' | 'ollama';
   apiKey: string;
   model: string;
-  thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
-  speechToTextEngine?: 'native' | 'local';
   localUrl?: string;
   isRagEnabled?: boolean;
   isWebSearchEnabled?: boolean;
   searxngUrl?: string;
+  thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
+  isMemoryEnabled?: boolean;
+  isBrowserAgentEnabled?: boolean;
 }
 
 
@@ -111,7 +155,9 @@ const KEYS = {
   ACTIVE_PROMPT: 'context_active_prompt_id',
   SIDEBAR_COLLAPSED: 'context_sidebar_collapsed',
   FONT_SIZE: 'context_font_size',
-  THEME: 'context_theme'
+  THEME: 'context_theme',
+  MEMORIES: 'context_memories',
+  SCHEDULES: 'context_schedules'
 };
 
 // Debounce helper
@@ -150,7 +196,8 @@ export function reconstructActivePath(
       role: node.role,
       content: node.content,
       timestamp: node.timestamp,
-      attachments: node.attachments
+      attachments: node.attachments,
+      browserSession: node.browserSession
     });
     currentId = node.parentId;
   }
@@ -179,7 +226,8 @@ export function upgradeChatToTree(chat: Chat): Chat {
       timestamp: msg.timestamp,
       parentId: parentId,
       children: nextMsgId ? [nextMsgId] : [],
-      attachments: msg.attachments
+      attachments: msg.attachments,
+      browserSession: msg.browserSession
     };
   }
 
@@ -203,12 +251,7 @@ export const Storage = {
           parsed.provider = 'gemini';
           parsed.model = 'gemini-2.5-flash';
         }
-        if (parsed && !parsed.thinkingLevel) {
-          parsed.thinkingLevel = 'off';
-        }
-        if (parsed && !parsed.speechToTextEngine) {
-          parsed.speechToTextEngine = 'native';
-        }
+
         if (parsed && !parsed.localUrl) {
           parsed.localUrl = 'http://localhost:11434/v1';
         }
@@ -221,6 +264,15 @@ export const Storage = {
         if (parsed && parsed.searxngUrl === undefined) {
           parsed.searxngUrl = '';
         }
+        if (parsed && parsed.thinkingLevel === undefined) {
+          parsed.thinkingLevel = 'off';
+        }
+        if (parsed && parsed.isMemoryEnabled === undefined) {
+          parsed.isMemoryEnabled = true;
+        }
+        if (parsed && parsed.isBrowserAgentEnabled === undefined) {
+          parsed.isBrowserAgentEnabled = false;
+        }
         return parsed;
       }
     } catch (e) {
@@ -230,12 +282,13 @@ export const Storage = {
       provider: 'gemini',
       apiKey: '',
       model: 'gemini-2.5-flash',
-      thinkingLevel: 'off',
-      speechToTextEngine: 'native',
       localUrl: 'http://localhost:11434/v1',
       isRagEnabled: false,
       isWebSearchEnabled: false,
-      searxngUrl: ''
+      searxngUrl: '',
+      thinkingLevel: 'off',
+      isMemoryEnabled: true,
+      isBrowserAgentEnabled: false
     };
   },
 
@@ -244,6 +297,46 @@ export const Storage = {
       localStorage.setItem(KEYS.SETTINGS, JSON.stringify(settings));
     } catch (e) {
       console.error('Error saving settings to localStorage', e);
+    }
+  },
+
+  getMemories(): MemoryItem[] {
+    try {
+      const data = localStorage.getItem(KEYS.MEMORIES);
+      if (data) {
+        return JSON.parse(data);
+      }
+    } catch (e) {
+      console.error('Error reading memories from localStorage', e);
+    }
+    return [];
+  },
+
+  saveMemories(memories: MemoryItem[]): void {
+    try {
+      localStorage.setItem(KEYS.MEMORIES, JSON.stringify(memories));
+    } catch (e) {
+      console.error('Error saving memories to localStorage', e);
+    }
+  },
+
+  getSchedules(): TaskSchedule[] {
+    try {
+      const data = localStorage.getItem(KEYS.SCHEDULES);
+      if (data) {
+        return JSON.parse(data);
+      }
+    } catch (e) {
+      console.error('Error reading schedules from localStorage', e);
+    }
+    return [];
+  },
+
+  saveSchedules(schedules: TaskSchedule[]): void {
+    try {
+      localStorage.setItem(KEYS.SCHEDULES, JSON.stringify(schedules));
+    } catch (e) {
+      console.error('Error saving schedules to localStorage', e);
     }
   },
 
@@ -336,13 +429,13 @@ export const Storage = {
     localStorage.setItem(KEYS.FONT_SIZE, size);
   },
 
-  getTheme(): 'dark' | 'light' | 'system' {
+  getTheme(): 'dark' | 'light' {
     const theme = localStorage.getItem(KEYS.THEME);
-    if (theme === 'dark' || theme === 'light' || theme === 'system') return theme;
+    if (theme === 'dark' || theme === 'light') return theme;
     return 'dark';
   },
 
-  saveTheme(theme: 'dark' | 'light' | 'system'): void {
+  saveTheme(theme: 'dark' | 'light'): void {
     localStorage.setItem(KEYS.THEME, theme);
   }
 };
