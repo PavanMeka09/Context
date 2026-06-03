@@ -438,21 +438,26 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
               <span className="text-[10px] text-slate-500 mt-1 block">Live headless Puppeteer session</span>
             </div>
             
-            {activeChatId && (
-              <div className="ml-6 flex items-center gap-2 bg-slate-950/60 border border-white/[0.06] rounded-lg px-2.5 py-1 text-xs">
-                <span className="text-slate-400 font-medium">Session:</span>
-                <select
-                  value={sessionId}
-                  onChange={(e) => setSessionId(e.target.value)}
-                  className="bg-transparent text-slate-200 border-0 focus:ring-0 text-xs py-0 pl-1 pr-6 font-semibold cursor-pointer outline-none"
-                >
-                  <option value="interactive" className="bg-slate-900 text-slate-200">Interactive Sandbox</option>
+            <div className="ml-6 flex items-center gap-2 bg-slate-950/60 border border-white/[0.06] rounded-lg px-2.5 py-1 text-xs">
+              <span className="text-slate-400 font-medium">Session:</span>
+              <select
+                value={sessionId}
+                onChange={(e) => setSessionId(e.target.value)}
+                className="bg-transparent text-slate-200 border-0 focus:ring-0 text-xs py-0 pl-1 pr-6 font-semibold cursor-pointer outline-none"
+              >
+                <option value="interactive" className="bg-slate-900 text-slate-200">Interactive Sandbox</option>
+                {activeChatId && (
                   <option value={activeChatId} className="bg-slate-900 text-slate-200">
                     Chat Agent ({activeChatTitle || 'Active Chat'})
                   </option>
-                </select>
-              </div>
-            )}
+                )}
+                {sessionId && sessionId !== 'interactive' && sessionId !== activeChatId && (
+                  <option value={sessionId} className="bg-slate-900 text-slate-200">
+                    Target Session ({sessionId.startsWith('sched-') ? 'Task Schedule' : 'Older Chat'})
+                  </option>
+                )}
+              </select>
+            </div>
 
             {sessionId === activeChatId && isBrowserAgentRunning && (
               <div className="ml-2 bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 animate-pulse">

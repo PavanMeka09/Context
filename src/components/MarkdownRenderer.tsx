@@ -19,10 +19,23 @@ const BrowserScreenshotCard: React.FC<{
   const [refreshKey, setRefreshKey] = useState(() => Date.now());
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // Helper to extract a query parameter from a URL string
+  const getParamFromSrc = (urlStr: string, paramName: string) => {
+    try {
+      const url = new URL(urlStr, window.location.origin);
+      return url.searchParams.get(paramName);
+    } catch {
+      return null;
+    }
+  };
+
+  const parsedSessionId = getParamFromSrc(src, 'sessionId') || sessionId || 'default';
+  const parsedStepId = getParamFromSrc(src, 'stepId');
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      await fetch(`/api/browser/state?sessionId=${encodeURIComponent(sessionId || 'default')}`);
+      await fetch(`/api/browser/state?sessionId=${encodeURIComponent(parsedSessionId)}`);
     } catch (e) {
       console.error(e);
     }
@@ -31,10 +44,18 @@ const BrowserScreenshotCard: React.FC<{
   };
 
   const handleOpenSandbox = () => {
-    window.dispatchEvent(new CustomEvent('open-browser-sandbox-modal'));
+    window.dispatchEvent(new CustomEvent('open-browser-sandbox-modal', {
+      detail: { sessionId: parsedSessionId }
+    }));
   };
 
-  const currentSrc = `${src.split('?')[0]}?sessionId=${encodeURIComponent(sessionId || 'default')}&t=${refreshKey}`;
+  const queryParams = new URLSearchParams();
+  queryParams.set('sessionId', parsedSessionId);
+  if (parsedStepId) {
+    queryParams.set('stepId', parsedStepId);
+  }
+  queryParams.set('t', refreshKey.toString());
+  const currentSrc = `${src.split('?')[0]}?${queryParams.toString()}`;
 
   return (
     <div className="w-full max-w-xl mx-auto rounded-xl border border-white/[0.06] bg-slate-900/60 overflow-hidden shadow-lg flex flex-col font-sans my-4 select-none">

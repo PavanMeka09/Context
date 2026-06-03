@@ -240,6 +240,19 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleNewChat]);
 
+  // Listen to global open browser sandbox events
+  useEffect(() => {
+    const handleOpenSandbox = (e: Event) => {
+      const customEvent = e as CustomEvent<{ sessionId?: string }>;
+      const sid = customEvent.detail?.sessionId || 'interactive';
+      setBrowserModalSessionId(sid);
+      setBrowserModalOpen(true);
+    };
+
+    window.addEventListener('open-browser-sandbox-modal', handleOpenSandbox);
+    return () => window.removeEventListener('open-browser-sandbox-modal', handleOpenSandbox);
+  }, []);
+
   const showToast = (message: React.ReactNode, type: 'error' | 'success' = 'error') => {
     if (toastTimerRef.current) {
       window.clearTimeout(toastTimerRef.current);
