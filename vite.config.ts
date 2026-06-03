@@ -17,11 +17,7 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/searxng/, ''),
       },
-      '/api/browser': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-      },
-      '/api/schedules': {
+      '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,
       }

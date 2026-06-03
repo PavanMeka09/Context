@@ -6,6 +6,27 @@ const fs = require('fs');
 const path = require('path');
 const cron = require('node-cron');
 
+let pythonCommand = 'python';
+
+function detectPythonCommand() {
+  const { exec } = require('child_process');
+  exec('python --version', (error) => {
+    if (error) {
+      exec('python3 --version', (error3) => {
+        if (!error3) {
+          pythonCommand = 'python3';
+          console.log('[System] Detected python3 as Python interpreter');
+        } else {
+          console.log('[System] Neither python nor python3 detected in PATH. Python execution might fail.');
+        }
+      });
+    } else {
+      console.log('[System] Detected python as Python interpreter');
+    }
+  });
+}
+detectPythonCommand();
+
 const DATA_DIR = path.join(os.homedir(), '.context-ai');
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -1963,7 +1984,7 @@ app.post('/api/execute', (req, res) => {
   const start = performance.now();
   let cmd = '';
   if (language === 'python') {
-    cmd = `python "${tempFile}"`;
+    cmd = `${pythonCommand} "${tempFile}"`;
   } else {
     cmd = `node "${tempFile}"`;
   }
