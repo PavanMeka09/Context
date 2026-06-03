@@ -800,8 +800,19 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
         const browserState = await stateRes.json();
         currentUrl = browserState.url;
         currentTitle = browserState.title;
-        const elements = browserState.elements || [];
-        const elementsForLlm = elements.map(({ rect, ...rest }: any) => rest);
+        interface InteractiveElement {
+          id: string;
+          tagName: string;
+          type: string;
+          text: string;
+        }
+        const elements = (browserState.elements || []) as InteractiveElement[];
+        const elementsForLlm = elements.map((el) => ({
+          id: el.id,
+          tagName: el.tagName,
+          type: el.type,
+          text: el.text
+        }));
 
         // Generate step history context for the LLM
         const formattedSteps = steps.map((s, idx) => {

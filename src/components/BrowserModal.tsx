@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, RotateCw, Globe, ArrowRight, MousePointer, Keyboard, 
   ChevronUp, ChevronDown, FileText, Loader2, Search, Compass, Power, 
-  AlertTriangle, Eye, EyeOff
+  AlertTriangle, Eye, EyeOff, Terminal, Plus, Trash2, ArrowLeft
 } from 'lucide-react';
 
 interface InteractiveElement {
@@ -60,11 +60,42 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
   const [clickIndicator, setClickIndicator] = useState<{ x: number; y: number } | null>(null);
   const [showOverlays, setShowOverlays] = useState(true);
 
+  // Advanced browser features: Multi-tab and Real-time Console logs
+  const [tabs, setTabs] = useState<{ id: string; title: string; url: string; isActive: boolean }[]>([]);
+  const [logs, setLogs] = useState<{ timestamp: string; type: string; text: string; url: string }[]>([]);
+  const [showConsoleDrawer, setShowConsoleDrawer] = useState(false);
+
   // Sync initialSessionId state if the parent prop changes
   if (initialSessionId !== prevInitialSessionId) {
     setPrevInitialSessionId(initialSessionId);
     setSessionId(initialSessionId || 'interactive');
   }
+
+  // Fetch active tabs in session
+  const fetchTabs = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/browser/tabs?sessionId=${encodeURIComponent(sessionId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setTabs(data.tabs || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch tabs:', err);
+    }
+  }, [sessionId]);
+
+  // Fetch console and network logs
+  const fetchLogs = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/browser/logs?sessionId=${encodeURIComponent(sessionId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setLogs(data.logs || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch logs:', err);
+    }
+  }, [sessionId]);
 
   // Fetch current browser state
   const fetchBrowserState = useCallback(async (showMainLoader = false) => {
@@ -82,6 +113,11 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       setBrowserState(data);
       setAddressInput(data.url || '');
       setScreenshotTimestamp(Date.now());
+
+      // Async refresh tabs and logs
+      fetchTabs();
+      fetchLogs();
+
       return data;
     } catch (err: unknown) {
       console.error(err);
@@ -91,7 +127,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
     } finally {
       if (showMainLoader) setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, fetchTabs, fetchLogs]);
 
   // Run load on open or when sessionId changes
   useEffect(() => {
@@ -102,6 +138,19 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       return () => clearTimeout(timer);
     }
   }, [isOpen, fetchBrowserState]);
+
+  // Periodic polling for background execution / dynamic changes while open
+  useEffect(() => {
+    let intervalId: number | undefined;
+    if (isOpen && browserState && !actionLoading) {
+      intervalId = window.setInterval(() => {
+        fetchBrowserState(false);
+      }, 3000);
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [isOpen, browserState, actionLoading, fetchBrowserState]);
 
   // Handle browser session launch
   const handleLaunchSession = async () => {
@@ -165,6 +214,73 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       alert(err instanceof Error ? err.message : 'Failed to complete action');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // Tab control helpers
+  const handleSwitchTab = async (tabId: string) => {
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/browser/tabs/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, tabId })
+      });
+      if (!res.ok) throw new Error('Failed to switch tab');
+      await fetchBrowserState(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to switch tab');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCloseTab = async (e: React.MouseEvent, tabId: string) => {
+    e.stopPropagation();
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/browser/tabs/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, tabId })
+      });
+      if (!res.ok) throw new Error('Failed to close tab');
+      await fetchBrowserState(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to close tab');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCreateTab = async () => {
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/browser/tabs/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, url: 'https://www.google.com' })
+      });
+      if (!res.ok) throw new Error('Failed to create tab');
+      await fetchBrowserState(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to create tab');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Logs control helpers
+  const handleClearLogs = async () => {
+    try {
+      await fetch('/api/browser/logs/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+      setLogs([]);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -329,9 +445,54 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
           </div>
         </div>
 
+        {/* Tab Bar */}
+        {browserState && tabs.length > 0 && (
+          <div className="flex h-10 shrink-0 items-end gap-1 px-6 bg-slate-900 border-b border-white/[0.06] overflow-x-auto scrollbar-none select-none">
+            {tabs.map((tab) => (
+              <div
+                key={tab.id}
+                onClick={() => handleSwitchTab(tab.id)}
+                className={`group flex items-center gap-2 px-3.5 py-1.5 text-xs rounded-t-lg font-medium max-w-[160px] transition cursor-pointer border-t border-x ${
+                  tab.isActive
+                    ? 'bg-slate-950/40 border-white/[0.08] text-slate-100'
+                    : 'bg-transparent border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.02]'
+                }`}
+              >
+                <Globe className="h-3 w-3 shrink-0 opacity-60" />
+                <span className="truncate flex-1">{tab.title || tab.url}</span>
+                {tabs.length > 1 && (
+                  <button
+                    onClick={(e) => handleCloseTab(e, tab.id)}
+                    className="p-0.5 rounded-full hover:bg-white/10 text-slate-500 hover:text-slate-350 transition opacity-0 group-hover:opacity-100 focus:opacity-100 animate-fade-in"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              onClick={handleCreateTab}
+              disabled={actionLoading}
+              className="mb-1.5 p-1 rounded hover:bg-white/5 text-slate-400 hover:text-white transition active:scale-90 cursor-pointer disabled:opacity-50"
+              title="Open new tab"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Address Bar Toolbar */}
         {browserState && (
           <div className="flex h-12 shrink-0 items-center gap-3 px-6 border-b border-white/[0.04] bg-slate-950/20">
+            <button
+              onClick={() => runAction('back')}
+              disabled={actionLoading}
+              className="p-2 rounded-lg border border-white/[0.06] bg-slate-950/40 text-slate-400 hover:text-white transition active:scale-95 cursor-pointer disabled:opacity-50"
+              title="Go back"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+            </button>
+
             <form onSubmit={handleNavigate} className="flex-1 flex items-center gap-2 bg-slate-950/60 border border-white/[0.06] rounded-lg px-3 py-1 text-xs">
               <Globe className="h-3.5 w-3.5 text-slate-500" />
               <input
@@ -351,6 +512,19 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
               </button>
             </form>
             
+            <button
+              onClick={() => setShowConsoleDrawer(!showConsoleDrawer)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition active:scale-95 cursor-pointer ${
+                showConsoleDrawer
+                  ? 'border-brand-500/30 bg-brand-500/10 text-brand-400'
+                  : 'border-white/[0.06] bg-slate-950/40 text-slate-400 hover:text-white'
+              }`}
+              title="Toggle browser developer console logs"
+            >
+              <Terminal className="h-3.5 w-3.5" />
+              <span>Console ({logs.length})</span>
+            </button>
+
             <button
               onClick={() => setShowOverlays(!showOverlays)}
               disabled={actionLoading}
@@ -405,99 +579,170 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
             </div>
           ) : (
             <>
-              {/* Viewport Box (Left Side) */}
-              <div className="flex-1 bg-slate-950/40 p-4 flex flex-col items-center justify-center overflow-auto relative">
-                
-                {actionLoading && (
-                  <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/20 backdrop-blur-[1px]">
-                    <div className="bg-slate-900/90 border border-white/[0.08] shadow-2xl rounded-xl px-4 py-3 flex items-center gap-3">
-                      <Loader2 className="h-4 w-4 animate-spin text-brand-400" />
-                      <span className="text-xs font-semibold text-slate-200">Executing browser action...</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Screenshot Frame */}
-                {browserState && (
-                  <div 
-                    onClick={handleScreenshotClick}
-                    className="relative border border-white/[0.06] shadow-2xl rounded-lg overflow-hidden w-full max-w-full aspect-[16/10] select-none bg-slate-900 cursor-crosshair group/viewport"
-                  >
-                    <img
-                      src={browserState.screenshot || `/api/browser/screenshot?sessionId=${encodeURIComponent(sessionId)}&t=${screenshotTimestamp}`}
-                      alt="Sandbox Live Viewport"
-                      className="w-full h-full select-none pointer-events-none"
-                    />
-                    
-                    {/* Click Indicator Ripple */}
-                    {clickIndicator && (
-                      <div 
-                        className="absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-45"
-                        style={{ 
-                          left: `${clickIndicator.x}%`, 
-                          top: `${clickIndicator.y}%`
-                        }}
-                      >
-                        <div className="w-full h-full border-2 border-brand-500 rounded-full bg-brand-500/20 animate-ping" />
-                        <div className="w-2.5 h-2.5 bg-brand-500 rounded-full border border-white/50 shadow-md absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+              {/* Left Column (Viewport & Console Drawer) */}
+              <div className="flex-1 flex flex-col min-h-0 relative bg-slate-950/40 border-r border-white/[0.04]">
+                <div className="flex-1 p-4 flex flex-col items-center justify-center overflow-auto relative">
+                  
+                  {actionLoading && (
+                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/20 backdrop-blur-[1px]">
+                      <div className="bg-slate-900/90 border border-white/[0.08] shadow-2xl rounded-xl px-4 py-3 flex items-center gap-3">
+                        <Loader2 className="h-4 w-4 animate-spin text-brand-400" />
+                        <span className="text-xs font-semibold text-slate-200">Executing browser action...</span>
                       </div>
-                    )}
+                    </div>
+                  )}
 
-                    {/* Visual Interactive Element Overlays */}
-                    {showOverlays && browserState.elements && browserState.elements.map((el) => {
-                      if (!el.rect) return null;
-                      const isSelected = selectedElement?.id === el.id;
-                      const leftPct = (el.rect.left / 1280) * 100;
-                      const topPct = (el.rect.top / 800) * 100;
-                      const widthPct = (el.rect.width / 1280) * 100;
-                      const heightPct = (el.rect.height / 800) * 100;
-
-                      return (
-                        <div
-                          key={el.id}
-                          onClick={(e) => {
-                            e.stopPropagation(); // Avoid triggering general coordinate click
-                            handleElementClick(el);
+                  {/* Screenshot Frame */}
+                  {browserState && (
+                    <div 
+                      onClick={handleScreenshotClick}
+                      className="relative border border-white/[0.06] shadow-2xl rounded-lg overflow-hidden w-full max-w-full aspect-[16/10] select-none bg-slate-900 cursor-crosshair group/viewport"
+                    >
+                      <img
+                        src={browserState.screenshot || `/api/browser/screenshot?sessionId=${encodeURIComponent(sessionId)}&t=${screenshotTimestamp}`}
+                        alt="Sandbox Live Viewport"
+                        className="w-full h-full select-none pointer-events-none"
+                      />
+                      
+                      {/* Click Indicator Ripple */}
+                      {clickIndicator && (
+                        <div 
+                          className="absolute w-8 h-8 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-45"
+                          style={{ 
+                            left: `${clickIndicator.x}%`, 
+                            top: `${clickIndicator.y}%`
                           }}
-                          onDoubleClick={(e) => {
-                            e.stopPropagation();
-                            handleOverlayDoubleClick(el);
-                          }}
-                          className={`absolute border rounded cursor-pointer transition-all duration-150 group/overlay ${
-                            isSelected
-                              ? 'bg-brand-500/15 border-brand-500 ring-2 ring-brand-500/30 z-30 shadow-[0_0_8px_rgba(6,182,212,0.3)]'
-                              : 'bg-cyan-500/[0.02] border-cyan-500/20 hover:bg-cyan-500/10 hover:border-cyan-400 z-10 hover:z-20'
-                          }`}
-                          style={{
-                            left: `${leftPct}%`,
-                            top: `${topPct}%`,
-                            width: `${widthPct}%`,
-                            height: `${heightPct}%`,
-                          }}
-                          title={`${el.text} (${el.tagName})`}
                         >
-                          {/* Floating Badge (Vimium-style index / info) */}
-                          <span className={`absolute -top-5 left-0 px-1 py-0.5 rounded text-[8px] font-mono font-bold leading-none pointer-events-none scale-0 group-hover/overlay:scale-100 transition-transform origin-bottom-left whitespace-nowrap shadow-md z-50 ${
-                            isSelected ? 'bg-brand-500 text-slate-950' : 'bg-slate-900 border border-white/10 text-cyan-400'
-                          }`}>
-                            {el.text ? `${el.text.slice(0, 20)} [${el.id}]` : el.id}
-                          </span>
+                          <div className="w-full h-full border-2 border-brand-500 rounded-full bg-brand-500/20 animate-ping" />
+                          <div className="w-2.5 h-2.5 bg-brand-500 rounded-full border border-white/50 shadow-md absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
+                      )}
 
-                {/* Status telemetry footer */}
-                {browserState && (
-                  <div className="mt-4 flex items-center gap-4 text-[10.5px] text-slate-400 font-mono">
-                    <span className="truncate max-w-[280px]">
-                      Title: <span className="text-slate-300 font-semibold">{browserState.title || 'Blank Page'}</span>
-                    </span>
-                    <span className="h-3 w-[1px] bg-white/10" />
-                    <span className="truncate max-w-[280px]">
-                      URL: <span className="text-slate-300">{browserState.url || 'about:blank'}</span>
-                    </span>
+                      {/* Visual Interactive Element Overlays */}
+                      {showOverlays && browserState.elements && browserState.elements.map((el) => {
+                        if (!el.rect) return null;
+                        const isSelected = selectedElement?.id === el.id;
+                        const leftPct = (el.rect.left / 1280) * 100;
+                        const topPct = (el.rect.top / 800) * 100;
+                        const widthPct = (el.rect.width / 1280) * 100;
+                        const heightPct = (el.rect.height / 800) * 100;
+
+                        return (
+                          <div
+                            key={el.id}
+                            onClick={(e) => {
+                              e.stopPropagation(); // Avoid triggering general coordinate click
+                              handleElementClick(el);
+                            }}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              handleOverlayDoubleClick(el);
+                            }}
+                            className={`absolute border rounded cursor-pointer transition-all duration-150 group/overlay ${
+                              isSelected
+                                ? 'bg-brand-500/15 border-brand-500 ring-2 ring-brand-500/30 z-30 shadow-[0_0_8px_rgba(6,182,212,0.3)]'
+                                : 'bg-cyan-500/[0.02] border-cyan-500/20 hover:bg-cyan-500/10 hover:border-cyan-400 z-10 hover:z-20'
+                            }`}
+                            style={{
+                              left: `${leftPct}%`,
+                              top: `${topPct}%`,
+                              width: `${widthPct}%`,
+                              height: `${heightPct}%`,
+                            }}
+                            title={`${el.text} (${el.tagName})`}
+                          >
+                            {/* Floating Badge (Vimium-style index / info) */}
+                            <span className={`absolute -top-5 left-0 px-1 py-0.5 rounded text-[8px] font-mono font-bold leading-none pointer-events-none scale-0 group-hover/overlay:scale-100 transition-transform origin-bottom-left whitespace-nowrap shadow-md z-50 ${
+                              isSelected ? 'bg-brand-500 text-slate-950' : 'bg-slate-900 border border-white/10 text-cyan-400'
+                            }`}>
+                              {el.text ? `${el.text.slice(0, 20)} [${el.id}]` : el.id}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Status telemetry footer */}
+                  {browserState && (
+                    <div className="mt-4 flex items-center gap-4 text-[10.5px] text-slate-400 font-mono">
+                      <span className="truncate max-w-[280px]">
+                        Title: <span className="text-slate-300 font-semibold">{browserState.title || 'Blank Page'}</span>
+                      </span>
+                      <span className="h-3 w-[1px] bg-white/10" />
+                      <span className="truncate max-w-[280px]">
+                        URL: <span className="text-slate-300">{browserState.url || 'about:blank'}</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Console Logs Drawer */}
+                {showConsoleDrawer && (
+                  <div className="h-48 shrink-0 bg-slate-950 border-t border-white/[0.08] flex flex-col min-h-0 font-mono text-[10px] animate-slide-up">
+                    {/* Drawer Header */}
+                    <div className="flex h-8 items-center justify-between px-4 border-b border-white/[0.04] bg-slate-900/60 select-none">
+                      <div className="flex items-center gap-2">
+                        <Terminal className="h-3 w-3 text-brand-400 animate-pulse" />
+                        <span className="font-semibold text-slate-350 tracking-wide uppercase text-[9px]">Developer Console Logs</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleClearLogs}
+                          className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-white/5 text-slate-400 hover:text-white transition cursor-pointer"
+                          title="Clear console log history"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          <span>Clear</span>
+                        </button>
+                        <button
+                          onClick={() => setShowConsoleDrawer(false)}
+                          className="p-0.5 rounded hover:bg-white/5 text-slate-450 hover:text-slate-300 transition cursor-pointer"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    {/* Drawer Content */}
+                    <div className="flex-1 overflow-y-auto p-3 space-y-1.5 scrollbar-thin">
+                      {logs.length === 0 ? (
+                        <div className="text-slate-650 italic text-center py-6 text-[10.5px]">
+                          Console is clean. No errors or messages logged yet.
+                        </div>
+                      ) : (
+                        logs.map((log, idx) => {
+                          let textClass = 'text-slate-300';
+                          let bgClass = '';
+                          if (log.type === 'error') {
+                            textClass = 'text-red-400 font-semibold';
+                            bgClass = 'bg-red-500/[0.03] border-l-2 border-red-500/80 px-2 py-0.5';
+                          } else if (log.type === 'warning') {
+                            textClass = 'text-amber-400';
+                            bgClass = 'bg-amber-500/[0.02] border-l-2 border-amber-500/80 px-2 py-0.5';
+                          } else if (log.type === 'network_error') {
+                            textClass = 'text-orange-450 font-semibold';
+                            bgClass = 'bg-orange-500/[0.03] border-l-2 border-orange-500/80 px-2 py-0.5';
+                          }
+                          
+                          return (
+                            <div key={idx} className={`flex flex-col gap-0.5 leading-relaxed break-all ${bgClass}`}>
+                              <div className="flex items-start gap-2">
+                                <span className="text-slate-550 select-none shrink-0 font-light text-[9.5px]">
+                                  {new Date(log.timestamp).toLocaleTimeString()}
+                                </span>
+                                <span className={textClass}>{log.text}</span>
+                              </div>
+                              {log.url && (
+                                <span className="text-[8.5px] text-slate-500 pl-14 truncate">
+                                  Source: {log.url}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                      <div ref={(el) => el?.scrollIntoView({ behavior: 'smooth' })} />
+                    </div>
                   </div>
                 )}
               </div>

@@ -58,6 +58,7 @@ async function ensureBrowser() {
               if (session.context === targetContext) {
                 session.page = newPage;
                 await newPage.setViewport({ width: 1280, height: 800 });
+                setupPageListeners(sid, newPage, session);
                 console.log(`[Browser Server] Auto-switched session ${sid} to new page: ${newPage.url()}`);
                 await updateScreenshotForSession(sid);
                 break;
@@ -72,13 +73,59 @@ async function ensureBrowser() {
   }
 }
 
+// Helper to attach console, error and network listeners to page
+function setupPageListeners(sid, pageInstance, session) {
+  if (pageInstance._listenersAttached) return;
+  pageInstance._listenersAttached = true;
+
+  pageInstance._contextTabId = pageInstance._contextTabId || `tab-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  session.logs = session.logs || [];
+
+  const addLog = (type, text, url = '') => {
+    session.logs.push({
+      timestamp: new Date().toISOString(),
+      type,
+      text,
+      url
+    });
+    if (session.logs.length > 100) {
+      session.logs.shift();
+    }
+  };
+
+  pageInstance.on('console', msg => {
+    const text = msg.text();
+    const type = msg.type();
+    let cleanType = 'info';
+    if (type === 'error') cleanType = 'error';
+    else if (type === 'warning') cleanType = 'warning';
+    
+    if (text.trim()) {
+      addLog(cleanType, `Console [${type}]: ${text}`, pageInstance.url());
+    }
+  });
+
+  pageInstance.on('pageerror', err => {
+    addLog('error', `JS Exception: ${err.message}`, pageInstance.url());
+  });
+
+  pageInstance.on('requestfailed', request => {
+    const failure = request.failure();
+    const reason = failure ? failure.errorText : 'Failed';
+    const resourceType = request.resourceType();
+    if (['document', 'xhr', 'fetch', 'script'].includes(resourceType)) {
+      addLog('network_error', `Network Error (${resourceType}): ${request.method()} ${request.url()} failed with ${reason}`, pageInstance.url());
+    }
+  });
+}
+
 // Helper to get or create isolated session
 async function ensureSession(sessionId) {
   const sid = sessionId || 'default';
   await ensureBrowser();
 
   let session = sessions.get(sid);
-  if (!session || (session.page && session.page.isClosed())) {
+  if (!session) {
     let context;
     try {
       context = await browser.createBrowserContext();
@@ -93,10 +140,31 @@ async function ensureSession(sessionId) {
     session = {
       context,
       page: pageInstance,
-      latestScreenshotBuffer: null
+      latestScreenshotBuffer: null,
+      logs: []
     };
     sessions.set(sid, session);
+    setupPageListeners(sid, pageInstance, session);
     console.log(`[Browser Server] Created new isolated context for session: ${sid}`);
+  } else {
+    try {
+      const pages = await session.context.pages();
+      if (pages.length === 0) {
+        const pageInstance = await session.context.newPage();
+        await pageInstance.setViewport({ width: 1280, height: 800 });
+        setupPageListeners(sid, pageInstance, session);
+        session.page = pageInstance;
+      } else if (!session.page || session.page.isClosed() || !pages.includes(session.page)) {
+        session.page = pages[pages.length - 1];
+      }
+    } catch (e) {
+      console.error(`Error verifying active pages for session ${sid}, resetting context`, e);
+      try {
+        await session.context.close();
+      } catch (err) {}
+      sessions.delete(sid);
+      return ensureSession(sid);
+    }
   }
 
   return session;
@@ -689,6 +757,141 @@ app.post('/api/browser/close', async (req, res) => {
       }
     }
     res.json({ success: true, message: `Browser session ${sid} closed` });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Endpoint: Get list of active tabs in browser session
+app.get('/api/browser/tabs', async (req, res) => {
+  const sessionId = req.query.sessionId || 'default';
+  try {
+    const session = await ensureSession(sessionId);
+    const pages = await session.context.pages();
+    
+    const tabs = await Promise.all(pages.map(async (p, idx) => {
+      p._contextTabId = p._contextTabId || `tab-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      setupPageListeners(sessionId, p, session); // Ensure listeners are attached
+      
+      let title = 'Blank Page';
+      try {
+        title = await p.title();
+      } catch (err) {}
+      
+      return {
+        id: p._contextTabId,
+        title: title || 'Untitled',
+        url: p.url(),
+        isActive: p === session.page
+      };
+    }));
+    
+    res.json({ success: true, tabs });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Endpoint: Switch to a specific tab
+app.post('/api/browser/tabs/switch', async (req, res) => {
+  const { sessionId, tabId } = req.body;
+  const sid = sessionId || 'default';
+  try {
+    const session = await ensureSession(sid);
+    const pages = await session.context.pages();
+    
+    const targetPage = pages.find(p => p._contextTabId === tabId);
+    if (!targetPage) {
+      return res.status(404).json({ error: 'Tab not found' });
+    }
+    
+    session.page = targetPage;
+    await updateScreenshotForSession(sid);
+    
+    res.json({ success: true, message: `Switched to tab: ${targetPage.url()}` });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Endpoint: Close a specific tab
+app.post('/api/browser/tabs/close', async (req, res) => {
+  const { sessionId, tabId } = req.body;
+  const sid = sessionId || 'default';
+  try {
+    const session = await ensureSession(sid);
+    const pages = await session.context.pages();
+    
+    const targetPage = pages.find(p => p._contextTabId === tabId);
+    if (!targetPage) {
+      return res.status(404).json({ error: 'Tab not found' });
+    }
+    
+    await targetPage.close();
+    
+    // Auto-switch to remaining tabs if active tab was closed
+    const remainingPages = await session.context.pages();
+    if (remainingPages.length === 0) {
+      const pageInstance = await session.context.newPage();
+      await pageInstance.setViewport({ width: 1280, height: 800 });
+      setupPageListeners(sid, pageInstance, session);
+      session.page = pageInstance;
+    } else if (session.page === targetPage || session.page.isClosed()) {
+      session.page = remainingPages[remainingPages.length - 1];
+    }
+    
+    await updateScreenshotForSession(sid);
+    res.json({ success: true, message: 'Tab closed' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Endpoint: Open a new tab
+app.post('/api/browser/tabs/create', async (req, res) => {
+  const { sessionId, url } = req.body;
+  const sid = sessionId || 'default';
+  try {
+    const session = await ensureSession(sid);
+    const pageInstance = await session.context.newPage();
+    await pageInstance.setViewport({ width: 1280, height: 800 });
+    setupPageListeners(sid, pageInstance, session);
+    session.page = pageInstance;
+    
+    if (url) {
+      let targetUrl = url.trim();
+      if (!/^https?:\/\//i.test(targetUrl)) {
+        targetUrl = 'https://' + targetUrl;
+      }
+      await pageInstance.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    }
+    
+    await updateScreenshotForSession(sid);
+    res.json({ success: true, message: 'New tab created', url: pageInstance.url() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Endpoint: Get console/network logs for session
+app.get('/api/browser/logs', async (req, res) => {
+  const sessionId = req.query.sessionId || 'default';
+  try {
+    const session = await ensureSession(sessionId);
+    res.json({ success: true, logs: session.logs || [] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Endpoint: Clear logs
+app.post('/api/browser/logs/clear', async (req, res) => {
+  const { sessionId } = req.body;
+  const sid = sessionId || 'default';
+  try {
+    const session = await ensureSession(sid);
+    session.logs = [];
+    res.json({ success: true, message: 'Logs cleared' });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
