@@ -230,10 +230,6 @@ async function scrapeInteractiveElements(pageInstance) {
     const isVisible = (el) => {
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return false;
-      
-      if (rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) {
-        return false;
-      }
 
       const style = window.getComputedStyle(el);
       if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
@@ -664,6 +660,11 @@ async function executeBrowserAgent(settings, userGoal, runLog, sessionId) {
       // Generate semantic context element mappings
       const elements = await scrapeInteractiveElements(pageInstance);
 
+      // Generate step history context for the LLM
+      const formattedSteps = steps.map((s, idx) => {
+        return `- Step ${idx + 1}: Thought: "${s.thought}" -> Action: ${s.action}${s.targetId ? ` on element "${s.targetId}"` : ''}${s.text ? ` with "${s.text}"` : ''}${s.url ? ` to "${s.url}"` : ''} (${s.status === 'success' ? 'Success' : `Failed: ${s.logMessage || 'unknown error'}`})`;
+      }).join('\n');
+
       const systemPrompt = `You are Context's Browser Agent. Your task is to achieve the user's goal by executing step-by-step browser actions.
 Goal: "${userGoal}"
 Current URL: ${currentUrl || 'about:blank'}
@@ -673,6 +674,8 @@ List of interactive elements on the current page:
 ${JSON.stringify(elements, null, 2)}
 
 ${extractedContext ? `Extracted Page Text Context:\n${extractedContext}\n` : ''}
+
+${steps.length > 0 ? `Execution History of Previous Steps:\n${formattedSteps}\n` : ''}
 
 Available Actions:
 1. { "action": "navigate", "url": "https://..." }
@@ -744,87 +747,94 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
       }
 
       const { action, targetId, text, url } = decision;
-      if (action === 'navigate') {
-        let targetUrl = url.trim();
-        if (!/^https?:\/\//i.test(targetUrl)) targetUrl = 'https://' + targetUrl;
-        await pageInstance.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-        currentStep.status = 'success';
-        currentStep.logMessage = `Navigated to ${targetUrl}`;
-      } else if (action === 'click') {
-        const selector = `[data-context-id="${targetId}"]`;
-        const el = await pageInstance.$(selector);
-        if (!el) throw new Error(`Element ${targetId} not found`);
-        await highlightElement(selector, '#ef4444', sid);
-        await el.click();
-        await sleep(1500);
-        currentStep.status = 'success';
-        currentStep.logMessage = `Clicked element "${targetId}"`;
-      } else if (action === 'type') {
-        const selector = `[data-context-id="${targetId}"]`;
-        const el = await pageInstance.$(selector);
-        if (!el) throw new Error(`Element ${targetId} not found`);
-        await highlightElement(selector, '#3b82f6', sid);
-        await pageInstance.evaluate((sel) => {
-          const item = document.querySelector(sel);
-          if (item) {
-            item.value = '';
-            item.focus();
-          }
-        }, selector);
-        await el.type(text || '');
-        await pageInstance.evaluate((sel) => {
-          const item = document.querySelector(sel);
-          if (item) {
-            item.dispatchEvent(new Event('change', { bubbles: true }));
-            item.blur();
-          }
-        }, selector);
-        currentStep.status = 'success';
-        currentStep.logMessage = `Typed "${text}" into element "${targetId}"`;
-      } else if (action === 'hover') {
-        const selector = `[data-context-id="${targetId}"]`;
-        const el = await pageInstance.$(selector);
-        if (!el) throw new Error(`Element ${targetId} not found`);
-        await highlightElement(selector, '#eab308', sid);
-        await el.hover();
-        await sleep(1000);
-        currentStep.status = 'success';
-        currentStep.logMessage = `Hovered cursor over element "${targetId}"`;
-      } else if (action === 'back') {
-        await pageInstance.goBack({ waitUntil: 'networkidle2', timeout: 30000 });
-        await sleep(1000);
-        currentStep.status = 'success';
-        currentStep.logMessage = `Performed browser go-back navigation`;
-      } else if (action === 'key') {
-        if (!text) throw new Error('Key text required for keyboard press');
-        if (targetId) {
+      try {
+        if (action === 'navigate') {
+          let targetUrl = url.trim();
+          if (!/^https?:\/\//i.test(targetUrl)) targetUrl = 'https://' + targetUrl;
+          await pageInstance.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+          currentStep.status = 'success';
+          currentStep.logMessage = `Navigated to ${targetUrl}`;
+        } else if (action === 'click') {
           const selector = `[data-context-id="${targetId}"]`;
           const el = await pageInstance.$(selector);
           if (!el) throw new Error(`Element ${targetId} not found`);
-          await highlightElement(selector, '#10b981', sid);
-          await el.focus();
+          await highlightElement(selector, '#ef4444', sid);
+          await el.click();
+          await sleep(1500);
+          currentStep.status = 'success';
+          currentStep.logMessage = `Clicked element "${targetId}"`;
+        } else if (action === 'type') {
+          const selector = `[data-context-id="${targetId}"]`;
+          const el = await pageInstance.$(selector);
+          if (!el) throw new Error(`Element ${targetId} not found`);
+          await highlightElement(selector, '#3b82f6', sid);
+          await pageInstance.evaluate((sel) => {
+            const item = document.querySelector(sel);
+            if (item) {
+              item.value = '';
+              item.focus();
+            }
+          }, selector);
+          await el.type(text || '');
+          await pageInstance.evaluate((sel) => {
+            const item = document.querySelector(sel);
+            if (item) {
+              item.dispatchEvent(new Event('change', { bubbles: true }));
+              item.blur();
+            }
+          }, selector);
+          currentStep.status = 'success';
+          currentStep.logMessage = `Typed "${text}" into element "${targetId}"`;
+        } else if (action === 'hover') {
+          const selector = `[data-context-id="${targetId}"]`;
+          const el = await pageInstance.$(selector);
+          if (!el) throw new Error(`Element ${targetId} not found`);
+          await highlightElement(selector, '#eab308', sid);
+          await el.hover();
+          await sleep(1000);
+          currentStep.status = 'success';
+          currentStep.logMessage = `Hovered cursor over element "${targetId}"`;
+        } else if (action === 'back') {
+          await pageInstance.goBack({ waitUntil: 'networkidle2', timeout: 30000 });
+          await sleep(1000);
+          currentStep.status = 'success';
+          currentStep.logMessage = `Performed browser go-back navigation`;
+        } else if (action === 'key') {
+          if (!text) throw new Error('Key text required for keyboard press');
+          if (targetId) {
+            const selector = `[data-context-id="${targetId}"]`;
+            const el = await pageInstance.$(selector);
+            if (!el) throw new Error(`Element ${targetId} not found`);
+            await highlightElement(selector, '#10b981', sid);
+            await el.focus();
+          }
+          await pageInstance.keyboard.press(text);
+          await sleep(1000);
+          currentStep.status = 'success';
+          currentStep.logMessage = `Pressed key "${text}"${targetId ? ` on element "${targetId}"` : ''}`;
+        } else if (action === 'scroll') {
+          const dir = text === 'up' ? 'up' : 'down';
+          await pageInstance.evaluate((d) => window.scrollBy(0, d === 'up' ? -500 : 500), dir);
+          currentStep.status = 'success';
+          currentStep.logMessage = `Scrolled page ${dir}`;
+        } else if (action === 'wait') {
+          const ms = parseInt(text, 10) || 2000;
+          await sleep(ms);
+          currentStep.status = 'success';
+          currentStep.logMessage = `Waited ${ms}ms`;
+        } else if (action === 'extract') {
+          const pageText = await pageInstance.evaluate(() => document.body.innerText);
+          extractedContext += `\n[Page Data from ${pageInstance.url()}]:\n${pageText.slice(0, 1500)}\n`;
+          currentStep.status = 'success';
+          currentStep.logMessage = `Extracted text from page`;
+        } else {
+          throw new Error(`Unsupported action "${action}"`);
         }
-        await pageInstance.keyboard.press(text);
-        await sleep(1000);
-        currentStep.status = 'success';
-        currentStep.logMessage = `Pressed key "${text}"${targetId ? ` on element "${targetId}"` : ''}`;
-      } else if (action === 'scroll') {
-        const dir = text === 'up' ? 'up' : 'down';
-        await pageInstance.evaluate((d) => window.scrollBy(0, d === 'up' ? -500 : 500), dir);
-        currentStep.status = 'success';
-        currentStep.logMessage = `Scrolled page ${dir}`;
-      } else if (action === 'wait') {
-        const ms = parseInt(text, 10) || 2000;
-        await sleep(ms);
-        currentStep.status = 'success';
-        currentStep.logMessage = `Waited ${ms}ms`;
-      } else if (action === 'extract') {
-        const pageText = await pageInstance.evaluate(() => document.body.innerText);
-        extractedContext += `\n[Page Data from ${pageInstance.url()}]:\n${pageText.slice(0, 1500)}\n`;
-        currentStep.status = 'success';
-        currentStep.logMessage = `Extracted text from page`;
-      } else {
-        throw new Error(`Unsupported action "${action}"`);
+      } catch (err) {
+        console.error(`Error executing action ${action} in background session ${sid}:`, err);
+        currentStep.status = 'error';
+        currentStep.logMessage = err.message || `Action ${action} failed`;
+        runLog.push(`Step ${loopCount} error: ${err.message}`);
       }
 
       await updateScreenshotForSession(sid);

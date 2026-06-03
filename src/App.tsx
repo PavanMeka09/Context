@@ -744,6 +744,11 @@ interface SyncEvent {
         currentTitle = browserState.title;
         const elements = browserState.elements || [];
 
+        // Generate step history context for the LLM
+        const formattedSteps = steps.map((s, idx) => {
+          return `- Step ${idx + 1}: Thought: "${s.thought}" -> Action: ${s.action}${s.targetId ? ` on element "${s.targetId}"` : ''}${s.text ? ` with "${s.text}"` : ''}${s.url ? ` to "${s.url}"` : ''} (${s.status === 'success' ? 'Success' : `Failed: ${s.logMessage || 'unknown error'}`})`;
+        }).join('\n');
+
         // 2. Prompt LLM to choose next action
         const systemPrompt = `You are Context's Browser Agent. Your task is to achieve the user's goal by executing step-by-step browser actions.
 Goal: "${userGoal}"
@@ -754,6 +759,8 @@ List of interactive elements on the current page:
 ${JSON.stringify(elements, null, 2)}
 
 ${extractedContext ? `Extracted Page Text Context:\n${extractedContext}\n` : ''}
+
+${steps.length > 0 ? `Execution History of Previous Steps:\n${formattedSteps}\n` : ''}
 
 Available Actions:
 1. { "action": "navigate", "url": "https://..." }
@@ -884,35 +891,42 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
         }
 
         // 5. Execute action via API request
-        const actionRes = await fetch('/api/browser/action', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: decision.action,
-            targetId: decision.targetId,
-            text: decision.text,
-            url: decision.url,
-            stepId: stepId,
-            sessionId: targetChatId
-          })
-        });
+        try {
+          const actionRes = await fetch('/api/browser/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: decision.action,
+              targetId: decision.targetId,
+              text: decision.text,
+              url: decision.url,
+              stepId: stepId,
+              sessionId: targetChatId
+            })
+          });
 
-        if (!actionRes.ok) {
-          const errData = await actionRes.json();
-          throw new Error(errData.error || 'Action execution failed');
+          if (!actionRes.ok) {
+            const errData = await actionRes.json();
+            throw new Error(errData.error || 'Action execution failed');
+          }
+
+          const actionResult = await actionRes.json();
+          
+          newStep.status = 'success';
+          newStep.logMessage = actionResult.logMessage;
+          
+          if (decision.action === 'extract' && actionResult.data) {
+            extractedContext += `\n[Page Data from ${actionResult.url || currentUrl}]:\n${actionResult.data.slice(0, 1500)}\n`;
+          }
+
+          currentUrl = actionResult.url || currentUrl;
+          currentTitle = actionResult.title || currentTitle;
+        } catch (stepErr) {
+          console.error(`Step error:`, stepErr);
+          const err = stepErr as Error;
+          newStep.status = 'error';
+          newStep.logMessage = err.message || 'Action execution failed';
         }
-
-        const actionResult = await actionRes.json();
-        
-        newStep.status = 'success';
-        newStep.logMessage = actionResult.logMessage;
-        
-        if (decision.action === 'extract' && actionResult.data) {
-          extractedContext += `\n[Page Data from ${actionResult.url || currentUrl}]:\n${actionResult.data.slice(0, 1500)}\n`;
-        }
-
-        currentUrl = actionResult.url || currentUrl;
-        currentTitle = actionResult.title || currentTitle;
 
         placeholderMessage.browserSession = {
           url: currentUrl,
