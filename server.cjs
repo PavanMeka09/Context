@@ -313,6 +313,94 @@ async function scrapeInteractiveElements(pageInstance) {
   });
 }
 
+// Helper to resolve an interactive element by ID, or attempt to heal it if missing/mutated
+async function getInteractiveElementOrHeal(session, targetId, runLog) {
+  const pageInstance = session.page;
+  const selector = `[data-context-id="${targetId}"]`;
+  let el = await pageInstance.$(selector);
+  if (el) return { el, actualId: targetId, healed: false };
+
+  const logMsg = `Element "${targetId}" not found immediately. Entering self-healing flow...`;
+  console.log(`[Browser Server] ${logMsg}`);
+  if (runLog) runLog.push(logMsg);
+
+  // 1. Wait a bit for page load/DOM changes
+  await new Promise(r => setTimeout(r, 1500));
+
+  // 2. Re-scrape interactive elements
+  const previousElements = session.lastElements || [];
+  const targetElement = previousElements.find(item => item.id === targetId);
+
+  const newElements = await scrapeInteractiveElements(pageInstance);
+  session.lastElements = newElements;
+
+  // Try standard selector again first (maybe it appeared/loaded now and has the same ID)
+  el = await pageInstance.$(selector);
+  if (el) {
+    const logFound = `Element "${targetId}" appeared after delay.`;
+    console.log(`[Browser Server] ${logFound}`);
+    if (runLog) runLog.push(logFound);
+    return { el, actualId: targetId, healed: false };
+  }
+
+  // 3. Match using element details
+  if (targetElement) {
+    const matched = newElements.find(item => 
+      item.tagName === targetElement.tagName && 
+      item.type === targetElement.type && 
+      item.text === targetElement.text &&
+      item.text !== `[Unnamed ${item.tagName}]`
+    );
+
+    if (matched) {
+      const healSelector = `[data-context-id="${matched.id}"]`;
+      const healedEl = await pageInstance.$(healSelector);
+      if (healedEl) {
+        const healMsg = `Self-healed: matched mutated element "${targetId}" to new element "${matched.id}" (tag: ${matched.tagName}, text: "${matched.text}").`;
+        console.log(`[Browser Server] ${healMsg}`);
+        if (runLog) runLog.push(healMsg);
+        return { el: healedEl, actualId: matched.id, healed: true };
+      }
+    }
+
+    // Fallback: match by tagName and text (if text is meaningful)
+    if (targetElement.text && !targetElement.text.startsWith('[Unnamed')) {
+      const matchedByText = newElements.find(item => 
+        item.tagName === targetElement.tagName && 
+        item.text === targetElement.text
+      );
+      if (matchedByText) {
+        const healSelector = `[data-context-id="${matchedByText.id}"]`;
+        const healedEl = await pageInstance.$(healSelector);
+        if (healedEl) {
+          const healMsg = `Self-healed (text-match): matched element "${targetId}" to "${matchedByText.id}" (tag: ${matchedByText.tagName}, text: "${matchedByText.text}").`;
+          console.log(`[Browser Server] ${healMsg}`);
+          if (runLog) runLog.push(healMsg);
+          return { el: healedEl, actualId: matchedByText.id, healed: true };
+        }
+      }
+    }
+
+    // Fallback: match by index
+    const oldIndex = previousElements.findIndex(item => item.id === targetId);
+    if (oldIndex !== -1 && oldIndex < newElements.length) {
+      const candidate = newElements[oldIndex];
+      if (candidate && candidate.tagName === targetElement.tagName && candidate.type === targetElement.type) {
+        const healSelector = `[data-context-id="${candidate.id}"]`;
+        const healedEl = await pageInstance.$(healSelector);
+        if (healedEl) {
+          const healMsg = `Self-healed (index-match): matched element "${targetId}" to "${candidate.id}" at index ${oldIndex} (tag: ${candidate.tagName}).`;
+          console.log(`[Browser Server] ${healMsg}`);
+          if (runLog) runLog.push(healMsg);
+          return { el: healedEl, actualId: candidate.id, healed: true };
+        }
+      }
+    }
+  }
+
+  throw new Error(`Element "${targetId}" not found and self-healing failed.`);
+}
+
 // Endpoint: Page state (URL, Title, and visible interactive element map)
 app.get('/api/browser/state', async (req, res) => {
   const sessionId = req.query.sessionId || 'default';
@@ -322,6 +410,7 @@ app.get('/api/browser/state', async (req, res) => {
     const title = await session.page.title();
     
     const elements = await scrapeInteractiveElements(session.page);
+    session.lastElements = elements; // Save in session for self-healing lookup
 
     let screenshotBase64 = '';
     if (session.page) {
@@ -364,13 +453,33 @@ app.post('/api/browser/action', async (req, res) => {
       logMessage = `Navigated to ${targetUrl}`;
     } else if (action === 'click') {
       if (targetId) {
-        const selector = `[data-context-id="${targetId}"]`;
-        const el = await pageInstance.$(selector);
-        if (!el) throw new Error(`Element with ID ${targetId} not found`);
-
-        await highlightElement(selector, '#ef4444', sid); // Red outline for click
-        await el.click();
-        logMessage = `Clicked element "${targetId}"`;
+        let attempts = 0;
+        let success = false;
+        let lastError;
+        let actualTargetId = targetId;
+        let healedResult = false;
+        
+        while (attempts < 2 && !success) {
+          attempts++;
+          try {
+            const { el, actualId, healed } = await getInteractiveElementOrHeal(session, targetId, null);
+            actualTargetId = actualId;
+            healedResult = healed || healedResult;
+            const selector = `[data-context-id="${actualId}"]`;
+            await highlightElement(selector, '#ef4444', sid); // Red outline for click
+            await el.click();
+            success = true;
+          } catch (err) {
+            lastError = err;
+            if (attempts < 2) {
+              console.log(`[Browser Server] Click attempt ${attempts} failed: ${err.message}. Retrying...`);
+              await new Promise(r => setTimeout(r, 1000));
+              await scrapeInteractiveElements(session.page);
+            }
+          }
+        }
+        if (!success) throw lastError;
+        logMessage = `Clicked element "${targetId}"${healedResult ? ` (healed to "${actualTargetId}")` : ''}`;
         await new Promise(r => setTimeout(r, 1500));
       } else if (x !== undefined && y !== undefined) {
         // Resolve element ID at coordinates if any
@@ -398,40 +507,80 @@ app.post('/api/browser/action', async (req, res) => {
       }
     } else if (action === 'type') {
       if (!targetId) throw new Error('Target ID required for typing');
-      const selector = `[data-context-id="${targetId}"]`;
-      const el = await pageInstance.$(selector);
-      if (!el) throw new Error(`Element with ID ${targetId} not found`);
-
-      await highlightElement(selector, '#3b82f6', sid); // Blue outline for typing
-      await pageInstance.evaluate((sel) => {
-        const item = document.querySelector(sel);
-        if (item) {
-          item.scrollIntoView({ block: 'center', behavior: 'instant' });
-          item.value = '';
-          item.focus();
-        }
-      }, selector);
-
-      await el.type(text || '');
-      logMessage = `Typed "${text}" into element "${targetId}"`;
+      let attempts = 0;
+      let success = false;
+      let lastError;
+      let actualTargetId = targetId;
+      let healedResult = false;
       
-      await pageInstance.evaluate((sel) => {
-        const item = document.querySelector(sel);
-        if (item) {
-          item.dispatchEvent(new Event('change', { bubbles: true }));
-          item.blur();
+      while (attempts < 2 && !success) {
+        attempts++;
+        try {
+          const { el, actualId, healed } = await getInteractiveElementOrHeal(session, targetId, null);
+          actualTargetId = actualId;
+          healedResult = healed || healedResult;
+          const selector = `[data-context-id="${actualId}"]`;
+          await highlightElement(selector, '#3b82f6', sid); // Blue outline for typing
+          await pageInstance.evaluate((sel) => {
+            const item = document.querySelector(sel);
+            if (item) {
+              item.scrollIntoView({ block: 'center', behavior: 'instant' });
+              item.value = '';
+              item.focus();
+            }
+          }, selector);
+
+          await el.type(text || '');
+          
+          await pageInstance.evaluate((sel) => {
+            const item = document.querySelector(sel);
+            if (item) {
+              item.dispatchEvent(new Event('change', { bubbles: true }));
+              item.blur();
+            }
+          }, selector);
+          success = true;
+        } catch (err) {
+          lastError = err;
+          if (attempts < 2) {
+            console.log(`[Browser Server] Type attempt ${attempts} failed: ${err.message}. Retrying...`);
+            await new Promise(r => setTimeout(r, 1000));
+            await scrapeInteractiveElements(session.page);
+          }
         }
-      }, selector);
+      }
+      if (!success) throw lastError;
+      logMessage = `Typed "${text}" into element "${targetId}"${healedResult ? ` (healed to "${actualTargetId}")` : ''}`;
       await new Promise(r => setTimeout(r, 1000));
     } else if (action === 'hover') {
       if (!targetId) throw new Error('Target ID required for hover');
-      const selector = `[data-context-id="${targetId}"]`;
-      const el = await pageInstance.$(selector);
-      if (!el) throw new Error(`Element with ID ${targetId} not found`);
-
-      await highlightElement(selector, '#eab308', sid); // Yellow outline for hover
-      await el.hover();
-      logMessage = `Hovered cursor over element "${targetId}"`;
+      let attempts = 0;
+      let success = false;
+      let lastError;
+      let actualTargetId = targetId;
+      let healedResult = false;
+      
+      while (attempts < 2 && !success) {
+        attempts++;
+        try {
+          const { el, actualId, healed } = await getInteractiveElementOrHeal(session, targetId, null);
+          actualTargetId = actualId;
+          healedResult = healed || healedResult;
+          const selector = `[data-context-id="${actualId}"]`;
+          await highlightElement(selector, '#eab308', sid); // Yellow outline for hover
+          await el.hover();
+          success = true;
+        } catch (err) {
+          lastError = err;
+          if (attempts < 2) {
+            console.log(`[Browser Server] Hover attempt ${attempts} failed: ${err.message}. Retrying...`);
+            await new Promise(r => setTimeout(r, 1000));
+            await scrapeInteractiveElements(session.page);
+          }
+        }
+      }
+      if (!success) throw lastError;
+      logMessage = `Hovered cursor over element "${targetId}"${healedResult ? ` (healed to "${actualTargetId}")` : ''}`;
       await new Promise(r => setTimeout(r, 1000));
     } else if (action === 'back') {
       await pageInstance.goBack({ waitUntil: 'networkidle2', timeout: 30000 });
@@ -439,15 +588,36 @@ app.post('/api/browser/action', async (req, res) => {
       await new Promise(r => setTimeout(r, 1000));
     } else if (action === 'key') {
       if (!text) throw new Error('Key text required for keyboard press');
-      if (targetId) {
-        const selector = `[data-context-id="${targetId}"]`;
-        const el = await pageInstance.$(selector);
-        if (!el) throw new Error(`Element with ID ${targetId} not found`);
-        await highlightElement(selector, '#10b981', sid); // Green outline for key press
-        await el.focus();
+      let attempts = 0;
+      let success = false;
+      let lastError;
+      let actualTargetId = targetId;
+      let healedResult = false;
+      
+      while (attempts < 2 && !success) {
+        attempts++;
+        try {
+          if (targetId) {
+            const { el, actualId, healed } = await getInteractiveElementOrHeal(session, targetId, null);
+            actualTargetId = actualId;
+            healedResult = healed || healedResult;
+            const selector = `[data-context-id="${actualId}"]`;
+            await highlightElement(selector, '#10b981', sid); // Green outline for key press
+            await el.focus();
+          }
+          await pageInstance.keyboard.press(text);
+          success = true;
+        } catch (err) {
+          lastError = err;
+          if (attempts < 2) {
+            console.log(`[Browser Server] Key press attempt ${attempts} failed: ${err.message}. Retrying...`);
+            await new Promise(r => setTimeout(r, 1000));
+            await scrapeInteractiveElements(session.page);
+          }
+        }
       }
-      await pageInstance.keyboard.press(text);
-      logMessage = `Pressed key "${text}"${targetId ? ` on element "${targetId}"` : ''}`;
+      if (!success) throw lastError;
+      logMessage = `Pressed key "${text}"${targetId ? ` on element "${targetId}"${healedResult ? ` (healed to "${actualTargetId}")` : ''}` : ''}`;
       await new Promise(r => setTimeout(r, 1000));
     } else if (action === 'scroll') {
       const direction = text === 'up' ? 'up' : 'down';
@@ -716,6 +886,7 @@ async function executeBrowserAgent(settings, userGoal, runLog, sessionId) {
 
       // Generate semantic context element mappings
       const elements = await scrapeInteractiveElements(pageInstance);
+      session.lastElements = elements; // Save in session for self-healing lookup
 
       // Generate step history context for the LLM
       const formattedSteps = steps.map((s, idx) => {
@@ -812,45 +983,108 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
           currentStep.status = 'success';
           currentStep.logMessage = `Navigated to ${targetUrl}`;
         } else if (action === 'click') {
-          const selector = `[data-context-id="${targetId}"]`;
-          const el = await pageInstance.$(selector);
-          if (!el) throw new Error(`Element ${targetId} not found`);
-          await highlightElement(selector, '#ef4444', sid);
-          await el.click();
+          let attempts = 0;
+          let success = false;
+          let lastError;
+          let actualTargetId = targetId;
+          let healedResult = false;
+          
+          while (attempts < 2 && !success) {
+            attempts++;
+            try {
+              const { el, actualId, healed } = await getInteractiveElementOrHeal(session, targetId, runLog);
+              actualTargetId = actualId;
+              healedResult = healed || healedResult;
+              const selector = `[data-context-id="${actualId}"]`;
+              await highlightElement(selector, '#ef4444', sid);
+              await el.click();
+              success = true;
+            } catch (err) {
+              lastError = err;
+              if (attempts < 2) {
+                runLog.push(`Click attempt ${attempts} failed: ${err.message}. Retrying...`);
+                await sleep(1000);
+                await scrapeInteractiveElements(pageInstance);
+              }
+            }
+          }
+          if (!success) throw lastError;
           await sleep(1500);
           currentStep.status = 'success';
-          currentStep.logMessage = `Clicked element "${targetId}"`;
+          currentStep.logMessage = `Clicked element "${targetId}"${healedResult ? ` (healed to "${actualTargetId}")` : ''}`;
         } else if (action === 'type') {
-          const selector = `[data-context-id="${targetId}"]`;
-          const el = await pageInstance.$(selector);
-          if (!el) throw new Error(`Element ${targetId} not found`);
-          await highlightElement(selector, '#3b82f6', sid);
-          await pageInstance.evaluate((sel) => {
-            const item = document.querySelector(sel);
-            if (item) {
-              item.value = '';
-              item.focus();
+          let attempts = 0;
+          let success = false;
+          let lastError;
+          let actualTargetId = targetId;
+          let healedResult = false;
+          
+          while (attempts < 2 && !success) {
+            attempts++;
+            try {
+              const { el, actualId, healed } = await getInteractiveElementOrHeal(session, targetId, runLog);
+              actualTargetId = actualId;
+              healedResult = healed || healedResult;
+              const selector = `[data-context-id="${actualId}"]`;
+              await highlightElement(selector, '#3b82f6', sid);
+              await pageInstance.evaluate((sel) => {
+                const item = document.querySelector(sel);
+                if (item) {
+                  item.value = '';
+                  item.focus();
+                }
+              }, selector);
+              await el.type(text || '');
+              await pageInstance.evaluate((sel) => {
+                const item = document.querySelector(sel);
+                if (item) {
+                  item.dispatchEvent(new Event('change', { bubbles: true }));
+                  item.blur();
+                }
+              }, selector);
+              success = true;
+            } catch (err) {
+              lastError = err;
+              if (attempts < 2) {
+                runLog.push(`Type attempt ${attempts} failed: ${err.message}. Retrying...`);
+                await sleep(1000);
+                await scrapeInteractiveElements(pageInstance);
+              }
             }
-          }, selector);
-          await el.type(text || '');
-          await pageInstance.evaluate((sel) => {
-            const item = document.querySelector(sel);
-            if (item) {
-              item.dispatchEvent(new Event('change', { bubbles: true }));
-              item.blur();
-            }
-          }, selector);
+          }
+          if (!success) throw lastError;
           currentStep.status = 'success';
-          currentStep.logMessage = `Typed "${text}" into element "${targetId}"`;
+          currentStep.logMessage = `Typed "${text}" into element "${targetId}"${healedResult ? ` (healed to "${actualTargetId}")` : ''}`;
         } else if (action === 'hover') {
-          const selector = `[data-context-id="${targetId}"]`;
-          const el = await pageInstance.$(selector);
-          if (!el) throw new Error(`Element ${targetId} not found`);
-          await highlightElement(selector, '#eab308', sid);
-          await el.hover();
+          let attempts = 0;
+          let success = false;
+          let lastError;
+          let actualTargetId = targetId;
+          let healedResult = false;
+          
+          while (attempts < 2 && !success) {
+            attempts++;
+            try {
+              const { el, actualId, healed } = await getInteractiveElementOrHeal(session, targetId, runLog);
+              actualTargetId = actualId;
+              healedResult = healed || healedResult;
+              const selector = `[data-context-id="${actualId}"]`;
+              await highlightElement(selector, '#eab308', sid);
+              await el.hover();
+              success = true;
+            } catch (err) {
+              lastError = err;
+              if (attempts < 2) {
+                runLog.push(`Hover attempt ${attempts} failed: ${err.message}. Retrying...`);
+                await sleep(1000);
+                await scrapeInteractiveElements(pageInstance);
+              }
+            }
+          }
+          if (!success) throw lastError;
           await sleep(1000);
           currentStep.status = 'success';
-          currentStep.logMessage = `Hovered cursor over element "${targetId}"`;
+          currentStep.logMessage = `Hovered cursor over element "${targetId}"${healedResult ? ` (healed to "${actualTargetId}")` : ''}`;
         } else if (action === 'back') {
           await pageInstance.goBack({ waitUntil: 'networkidle2', timeout: 30000 });
           await sleep(1000);
@@ -858,17 +1092,38 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
           currentStep.logMessage = `Performed browser go-back navigation`;
         } else if (action === 'key') {
           if (!text) throw new Error('Key text required for keyboard press');
-          if (targetId) {
-            const selector = `[data-context-id="${targetId}"]`;
-            const el = await pageInstance.$(selector);
-            if (!el) throw new Error(`Element ${targetId} not found`);
-            await highlightElement(selector, '#10b981', sid);
-            await el.focus();
+          let attempts = 0;
+          let success = false;
+          let lastError;
+          let actualTargetId = targetId;
+          let healedResult = false;
+          
+          while (attempts < 2 && !success) {
+            attempts++;
+            try {
+              if (targetId) {
+                const { el, actualId, healed } = await getInteractiveElementOrHeal(session, targetId, runLog);
+                actualTargetId = actualId;
+                healedResult = healed || healedResult;
+                const selector = `[data-context-id="${actualId}"]`;
+                await highlightElement(selector, '#10b981', sid);
+                await el.focus();
+              }
+              await pageInstance.keyboard.press(text);
+              success = true;
+            } catch (err) {
+              lastError = err;
+              if (attempts < 2) {
+                runLog.push(`Key press attempt ${attempts} failed: ${err.message}. Retrying...`);
+                await sleep(1000);
+                await scrapeInteractiveElements(pageInstance);
+              }
+            }
           }
-          await pageInstance.keyboard.press(text);
+          if (!success) throw lastError;
           await sleep(1000);
           currentStep.status = 'success';
-          currentStep.logMessage = `Pressed key "${text}"${targetId ? ` on element "${targetId}"` : ''}`;
+          currentStep.logMessage = `Pressed key "${text}"${targetId ? ` on element "${targetId}"${healedResult ? ` (healed to "${actualTargetId}")` : ''}` : ''}`;
         } else if (action === 'scroll') {
           const dir = text === 'up' ? 'up' : 'down';
           await pageInstance.evaluate((d) => window.scrollBy(0, d === 'up' ? -500 : 500), dir);
