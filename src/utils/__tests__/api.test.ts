@@ -15,9 +15,10 @@ describe('src/utils/api.ts', () => {
   describe('fetchModels', () => {
     it('returns fallback models for Gemini when no API key is provided', async () => {
       const models = await fetchModels('gemini');
-      expect(models).toHaveLength(2);
-      expect(models[0].id).toBe('gemini-2.5-flash');
-      expect(models[1].id).toBe('gemini-2.5-pro');
+      expect(models.length).toBeGreaterThanOrEqual(2);
+      expect(models[0].id).toBe('gemini-3.6-flash');
+      expect(models.some(m => m.id === 'gemini-3.1-pro-preview')).toBe(true);
+      expect(models.some(m => m.id === 'gemini-2.5-flash')).toBe(true);
     });
 
     it('fetches OpenAI dynamic models when URL and key are valid', async () => {

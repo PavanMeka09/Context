@@ -134,11 +134,19 @@ export const PRESET_PROMPTS: SystemPrompt[] = [
 
 // Fallback dynamic lists for offline/missing key scenarios
 export const FALLBACK_GEMINI_MODELS = [
+  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash (Default)' },
+  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash' },
+  { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite' },
+  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro (Preview)' },
+  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash-Lite' },
   { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' }
+  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite' }
 ];
 
 export const FALLBACK_OPENROUTER_MODELS = [
+  { id: 'google/gemini-3.6-flash', name: 'Google: Gemini 3.6 Flash' },
+  { id: 'google/gemini-3.5-flash', name: 'Google: Gemini 3.5 Flash' },
   { id: 'google/gemini-2.5-flash', name: 'Google: Gemini 2.5 Flash' },
   { id: 'google/gemini-2.5-pro', name: 'Google: Gemini 2.5 Pro' },
   { id: 'meta-llama/llama-3-8b-instruct:free', name: 'Llama 3 8B Instruct (Free)' },
@@ -272,7 +280,7 @@ export const Storage = {
         const parsed = JSON.parse(data);
         if (parsed && (parsed.provider as string === 'anthropic' || parsed.provider as string === 'mock')) {
           parsed.provider = 'gemini';
-          parsed.model = 'gemini-2.5-flash';
+          parsed.model = 'gemini-3.6-flash';
         }
 
         if (parsed && !parsed.localUrl) {
@@ -304,7 +312,7 @@ export const Storage = {
     return {
       provider: 'gemini',
       apiKey: '',
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.6-flash',
       localUrl: 'http://localhost:11434/v1',
       isRagEnabled: false,
       isWebSearchEnabled: false,

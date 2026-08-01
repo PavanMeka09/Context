@@ -4,6 +4,7 @@ import type { ModelMessage } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import type { Message, Settings } from './storage';
+import { FALLBACK_GEMINI_MODELS } from './storage';
 
 export interface ModelOption {
   id: string;
@@ -71,10 +72,7 @@ export async function fetchModels(provider: 'gemini' | 'openrouter' | 'ollama' |
 
   if (provider === 'gemini') {
     if (!apiKey) {
-      return [
-        { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Default)' },
-        { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (High Quality)' }
-      ];
+      return [...FALLBACK_GEMINI_MODELS];
     }
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
@@ -83,23 +81,26 @@ export async function fetchModels(provider: 'gemini' | 'openrouter' | 'ollama' |
       }
       const data = await response.json();
       if (data && Array.isArray(data.models)) {
-        return data.models
-          .filter((m: any) => m.name && m.name.includes('gemini'))
+        const models = data.models
+          .filter((m: any) => {
+            if (!m.name || !m.name.includes('gemini')) return false;
+            const methods: string[] = m.supportedGenerationMethods || [];
+            return methods.length === 0 || methods.includes('generateContent');
+          })
           .map((m: any) => {
             const cleanId = m.name.startsWith('models/') ? m.name.slice(7) : m.name;
             return {
               id: cleanId,
               name: m.displayName || cleanId
             };
-          });
+          })
+          .sort((a: ModelOption, b: ModelOption) => a.name.localeCompare(b.name));
+        if (models.length > 0) return models;
       }
     } catch (e) {
       console.warn('Error fetching Gemini models dynamically, using fallback', e);
     }
-    return [
-      { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Default)' },
-      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (High Quality)' }
-    ];
+    return [...FALLBACK_GEMINI_MODELS];
   }
 
   if (provider === 'openrouter') {
