@@ -1,11 +1,13 @@
 # Stage 1: Build the React application
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 
 WORKDIR /app
 
-# Copy package files and install dependencies
+# Copy package files and install dependencies.
+# --ignore-scripts skips onnxruntime-node's native NuGet download; the
+# browser build uses onnxruntime-web via @huggingface/transformers instead.
 COPY package*.json ./
-RUN npm install
+RUN npm install --ignore-scripts --no-audit --no-fund
 
 # Copy the rest of the application files
 COPY . .

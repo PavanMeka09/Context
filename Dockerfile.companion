@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:22-slim
 
 # Install Chromium and required system dependencies for Puppeteer
 RUN apt-get update && apt-get install -y \
@@ -15,19 +15,26 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy dependency manifests
-COPY package*.json ./
+# Skip Puppeteer's bundled Chromium download; we use system Chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Install only production dependencies
-RUN npm ci --omit=dev
+# Companion only needs server runtime deps — avoid installing the full
+# frontend tree (@huggingface/transformers / onnxruntime-node, React, etc.)
+COPY package.json ./
+RUN node -e "\
+const fs=require('fs');\
+const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));\
+const keep=new Set(['express','cors','puppeteer','node-cron','typescript']);\
+pkg.dependencies=Object.fromEntries(Object.entries(pkg.dependencies||{}).filter(([k])=>keep.has(k)));\
+delete pkg.devDependencies;\
+fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));\
+" \
+  && npm install --omit=dev --no-audit --no-fund
 
 # Copy backend companion files
 COPY server.cjs ./
 COPY server/ ./server/
-
-# Environmental configurations to bypass chromium download and point to local executable
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 EXPOSE 3001
 

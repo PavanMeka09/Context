@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # The AI Chat Application (Context)
   context:
