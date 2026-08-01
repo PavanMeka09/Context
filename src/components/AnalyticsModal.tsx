@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Activity, Server, Cpu, RefreshCw, Database, Clock, Layers } from 'lucide-react';
+import { X, Activity, Server, Cpu, RefreshCw, Database, Clock, Layers, AlertCircle } from 'lucide-react';
 import { Storage } from '../utils/storage';
 import { vectorDb } from '../utils/vectorDb';
 
@@ -38,7 +38,7 @@ interface ServerStats {
 
 export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose }) => {
   const [serverStats, setServerStats] = useState<ServerStats | null>(null);
-  const [isLoadingServer, setIsLoadingServer] = useState(false);
+  const [isLoadingServer, setIsLoadingServer] = useState(isOpen);
   const [serverError, setServerError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
@@ -99,18 +99,19 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose 
   }, []);
 
   useEffect(() => {
-    if (isOpen) {
-      let mounted = true;
-      Promise.resolve().then(() => {
-        if (mounted) {
-          fetchLocalMetrics();
-          fetchServerStats();
-        }
-      });
-      return () => {
-        mounted = false;
-      };
-    }
+    if (!isOpen) return;
+    setIsLoadingServer(true);
+    setServerError(null);
+    let mounted = true;
+    Promise.resolve().then(() => {
+      if (mounted) {
+        fetchLocalMetrics();
+        fetchServerStats();
+      }
+    });
+    return () => {
+      mounted = false;
+    };
   }, [isOpen, fetchLocalMetrics, fetchServerStats]);
 
   useEffect(() => {
@@ -141,8 +142,8 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
-      <div className="flex flex-col w-full max-w-3xl max-h-[85vh] bg-card border border-border rounded-xl shadow-2xl overflow-hidden text-card-foreground">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 animate-fade-in">
+      <div className="flex flex-col w-full max-w-3xl max-h-[85vh] bg-card border border-border rounded-lg shadow-2xl overflow-hidden text-card-foreground">
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/30">
@@ -179,6 +180,23 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
 
+          {serverError && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-destructive">
+              <div className="flex items-center gap-2 text-sm">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{serverError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => fetchServerStats()}
+                disabled={isLoadingServer}
+                className="shrink-0 rounded-lg border border-destructive/20 bg-background px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 transition disabled:opacity-50 cursor-pointer"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           {/* Service Health Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             
@@ -186,18 +204,35 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose 
             <div className="p-4 rounded-xl border border-border bg-background/50 flex flex-col justify-between">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <Server className="w-3.5 h-3.5 text-indigo-400" />
+                  <Server className="w-3.5 h-3.5 text-chart-2" />
                   Companion Server
                 </span>
-                <span className={`w-2.5 h-2.5 rounded-full ${serverStats ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                <span
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    isLoadingServer && !serverStats
+                      ? 'bg-muted-foreground/40 animate-pulse'
+                      : serverStats
+                        ? 'bg-primary animate-pulse'
+                        : 'bg-destructive'
+                  }`}
+                />
               </div>
               <div>
-                <div className="text-lg font-bold text-foreground">
-                  {serverStats ? 'Online' : 'Offline'}
-                </div>
-                <div className="text-[11px] text-muted-foreground mt-0.5">
-                  {serverStats ? `Uptime: ${formatUptime(serverStats.process.uptime)}` : (serverError || 'No connection')}
-                </div>
+                {isLoadingServer && !serverStats ? (
+                  <div className="space-y-1.5">
+                    <div className="h-6 w-20 rounded bg-muted animate-pulse" />
+                    <div className="h-3 w-32 rounded bg-muted/70 animate-pulse" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-lg font-bold text-foreground">
+                      {serverStats ? 'Online' : 'Offline'}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {serverStats ? `Uptime: ${formatUptime(serverStats.process.uptime)}` : (serverError || 'No connection')}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -205,10 +240,10 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose 
             <div className="p-4 rounded-xl border border-border bg-background/50 flex flex-col justify-between">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <Database className="w-3.5 h-3.5 text-emerald-400" />
+                  <Database className="w-3.5 h-3.5 text-chart-1" />
                   IndexedDB RAG & Chat
                 </span>
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                <span className="w-2.5 h-2.5 rounded-full bg-chart-1" />
               </div>
               <div>
                 <div className="text-lg font-bold text-foreground">
@@ -224,10 +259,10 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose 
             <div className="p-4 rounded-xl border border-border bg-background/50 flex flex-col justify-between">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  <Clock className="w-3.5 h-3.5 text-chart-4" />
                   Active Background Crons
                 </span>
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                <span className="w-2.5 h-2.5 rounded-full bg-chart-4" />
               </div>
               <div>
                 <div className="text-lg font-bold text-foreground">
@@ -246,7 +281,7 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose 
             <div className="p-5 rounded-xl border border-border bg-background/30 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <Cpu className="w-4 h-4 text-sky-400" />
+                  <Cpu className="w-4 h-4 text-chart-2" />
                   Node.js Companion Memory & Hardware
                 </h3>
                 <span className="text-xs text-muted-foreground font-mono">
@@ -278,7 +313,7 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose 
           {/* Workspace Storage Breakdown */}
           <div className="p-5 rounded-xl border border-border bg-background/30 space-y-4">
             <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <Layers className="w-4 h-4 text-purple-400" />
+              <Layers className="w-4 h-4 text-chart-3" />
               Workspace Inventory Breakdown
             </h3>
 
@@ -298,7 +333,7 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose 
                   <div className="text-xs font-medium text-foreground">RAG Vector Storage</div>
                   <div className="text-[11px] text-muted-foreground">IndexedDB pipeline</div>
                 </div>
-                <span className="text-xs font-mono font-bold text-emerald-400 px-2 py-0.5 rounded bg-emerald-500/10">
+                <span className="text-xs font-mono font-bold text-chart-1 px-2 py-0.5 rounded bg-chart-1/10">
                   {localStats.ragDocsCount} docs
                 </span>
               </div>
@@ -308,7 +343,7 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose 
                   <div className="text-xs font-medium text-foreground">Custom Prompts</div>
                   <div className="text-[11px] text-muted-foreground">System Persona presets</div>
                 </div>
-                <span className="text-xs font-mono font-bold text-indigo-400 px-2 py-0.5 rounded bg-indigo-500/10">
+                <span className="text-xs font-mono font-bold text-chart-2 px-2 py-0.5 rounded bg-chart-2/10">
                   {localStats.customPromptsCount} presets
                 </span>
               </div>
@@ -318,7 +353,7 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose 
                   <div className="text-xs font-medium text-foreground">Persistent Memories</div>
                   <div className="text-[11px] text-muted-foreground">Long-term context items</div>
                 </div>
-                <span className="text-xs font-mono font-bold text-amber-400 px-2 py-0.5 rounded bg-amber-500/10">
+                <span className="text-xs font-mono font-bold text-chart-4 px-2 py-0.5 rounded bg-chart-4/10">
                   {localStats.memoriesCount} items
                 </span>
               </div>
@@ -328,7 +363,7 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose 
                   <div className="text-xs font-medium text-foreground">Task Schedules</div>
                   <div className="text-[11px] text-muted-foreground">Cron / Interval jobs</div>
                 </div>
-                <span className="text-xs font-mono font-bold text-sky-400 px-2 py-0.5 rounded bg-sky-500/10">
+                <span className="text-xs font-mono font-bold text-chart-5 px-2 py-0.5 rounded bg-chart-5/10">
                   {localStats.schedulesCount} jobs
                 </span>
               </div>
@@ -338,7 +373,7 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({ isOpen, onClose 
                   <div className="text-xs font-medium text-foreground">Browser Screenshots</div>
                   <div className="text-[11px] text-muted-foreground">Automated task frames</div>
                 </div>
-                <span className="text-xs font-mono font-bold text-rose-400 px-2 py-0.5 rounded bg-rose-500/10">
+                <span className="text-xs font-mono font-bold text-destructive px-2 py-0.5 rounded bg-destructive/10">
                   {serverStats ? serverStats.storageStats.screenshotFiles : 0} frames
                 </span>
               </div>

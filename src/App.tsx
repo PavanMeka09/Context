@@ -20,9 +20,9 @@ const BrowserModal = lazy(() => import('./components/BrowserModal').then(m => ({
 const AnalyticsModal = lazy(() => import('./components/AnalyticsModal').then(m => ({ default: m.AnalyticsModal })));
 
 const ModalFallback = () => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs">
-    <div className="flex items-center gap-3 px-6 py-4 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 shadow-2xl">
-      <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+    <div className="flex items-center gap-3 px-6 py-4 bg-popover border border-border rounded-xl text-foreground shadow-2xl">
+      <Loader2 className="w-5 h-5 animate-spin text-primary" />
       <span className="text-sm font-medium">Loading component...</span>
     </div>
   </div>
@@ -93,6 +93,11 @@ function App() {
   // Elegant Toast alerts state
   const [toast, setToast] = useState<{ message: React.ReactNode; type: 'error' | 'success' } | null>(null);
   const toastTimerRef = useRef<number | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Refs for abort controllers and focus management
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -193,6 +198,16 @@ function App() {
         setCommandPaletteOpen(prev => !prev);
       }
 
+      // Sidebar Toggle: Ctrl+B or Cmd+B
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setIsSidebarCollapsed(prev => {
+          const next = !prev;
+          Storage.saveSidebarCollapsed(next);
+          return next;
+        });
+      }
+
       // Help Shortcut: ?
       if (e.key === '?' && !isInputFocused) {
         e.preventDefault();
@@ -201,6 +216,10 @@ function App() {
 
       // Escape key to dismiss modals
       if (e.key === 'Escape') {
+        if (confirmDialog) {
+          setConfirmDialog(null);
+          return;
+        }
         setSettingsOpen(false);
         setShortcutsOpen(false);
         setRagPanelOpen(false);
@@ -211,7 +230,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleNewChat]);
+  }, [handleNewChat, confirmDialog]);
 
   // Listen to global open browser sandbox events
   useEffect(() => {
@@ -464,19 +483,27 @@ interface SyncEvent {
   };
 
   const handleDeleteChat = (id: string) => {
-    const updatedChats = chats.filter(c => c.id !== id);
-    setChats(updatedChats);
-    Storage.deleteChat(id);
+    const chat = chats.find(c => c.id === id);
+    setConfirmDialog({
+      title: 'Delete conversation',
+      message: `Delete "${chat?.title || 'this chat'}"? This cannot be undone.`,
+      onConfirm: () => {
+        const updatedChats = chats.filter(c => c.id !== id);
+        setChats(updatedChats);
+        Storage.deleteChat(id);
 
-    if (activeChatId === id) {
-      if (updatedChats.length > 0) {
-        setActiveChatId(updatedChats[0].id);
-        Storage.saveActiveChatId(updatedChats[0].id);
-      } else {
-        setActiveChatId(null);
-        Storage.saveActiveChatId(null);
+        if (activeChatId === id) {
+          if (updatedChats.length > 0) {
+            setActiveChatId(updatedChats[0].id);
+            Storage.saveActiveChatId(updatedChats[0].id);
+          } else {
+            setActiveChatId(null);
+            Storage.saveActiveChatId(null);
+          }
+        }
+        setConfirmDialog(null);
       }
-    }
+    });
   };
 
   const handleRenameChat = (id: string, newTitle: string) => {
@@ -1169,6 +1196,19 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
   const handleDeleteMessage = (messageId: string) => {
     if (!activeChatId) return;
 
+    setConfirmDialog({
+      title: 'Delete message',
+      message: 'Delete this message and any replies in its branch? This cannot be undone.',
+      onConfirm: () => {
+        performDeleteMessage(messageId);
+        setConfirmDialog(null);
+      }
+    });
+  };
+
+  const performDeleteMessage = (messageId: string) => {
+    if (!activeChatId) return;
+
     const chatIndex = chats.findIndex(c => c.id === activeChatId);
     if (chatIndex === -1) return;
 
@@ -1359,32 +1399,27 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
 
   if (!isChatsLoaded) {
     return (
-      <div className="flex h-screen w-screen flex-col items-center justify-center bg-[#090d16] text-white">
-        <div className="relative flex flex-col items-center justify-center p-8 rounded-2xl border border-white/[0.05] bg-slate-950/40 backdrop-blur-xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
-          {/* Glowing gradient background orbit */}
-          <div className="absolute -top-20 -left-20 w-40 h-40 bg-brand-500/20 rounded-full blur-3xl" />
-          <div className="absolute -bottom-20 -right-20 w-40 h-40 bg-violet-500/20 rounded-full blur-3xl" />
+      <div className="flex h-screen w-screen flex-col items-center justify-center bg-background text-foreground">
+        <div className="relative flex flex-col items-center justify-center p-8 rounded-xl border border-border bg-card shadow-lg max-w-sm w-full mx-4 overflow-hidden">
+          <div className="absolute -top-20 -left-20 w-40 h-40 bg-primary/15 rounded-full blur-3xl" />
+          <div className="absolute -bottom-20 -right-20 w-40 h-40 bg-chart-2/10 rounded-full blur-3xl" />
           
-          {/* Logo animation */}
-          <div className="relative flex items-center justify-center h-16 w-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-violet-600 shadow-lg shadow-brand-500/10 mb-5 animate-pulse">
-            <span className="text-2xl font-black tracking-tighter text-white select-none">C</span>
-            {/* Spinning/rotating ring */}
-            <div className="absolute -inset-1.5 rounded-[18px] border-2 border-dashed border-brand-500/40 animate-[spin_20s_linear_infinite]" />
+          <div className="relative flex items-center justify-center h-16 w-16 rounded-xl bg-primary text-primary-foreground shadow-md mb-5">
+            <span className="text-2xl font-black tracking-tighter select-none">C</span>
+            <div className="absolute -inset-1.5 rounded-[18px] border-2 border-dashed border-primary/40 animate-[spin_20s_linear_infinite]" />
           </div>
           
-          <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent font-sans">Context AI</h1>
-          <p className="text-[11px] text-slate-500 tracking-widest uppercase font-bold mt-1 font-sans">Privacy-First AI Chat</p>
+          <h1 className="text-xl font-bold tracking-tight text-foreground font-sans">Context AI</h1>
+          <p className="text-[11px] text-muted-foreground tracking-widest uppercase font-bold mt-1 font-sans">Privacy-First AI Chat</p>
           
-          {/* Loading status */}
           <div className="mt-8 flex flex-col items-center gap-2 w-full">
-            <div className="h-1 w-28 bg-slate-800 rounded-full overflow-hidden">
-              <div className="h-full bg-gradient-to-r from-brand-500 to-violet-500 rounded-full animate-[loading-bar_1.5s_infinite_ease-in-out]" style={{ width: '40%' }} />
+            <div className="h-1 w-28 bg-muted rounded-full overflow-hidden">
+              <div className="h-full bg-primary rounded-full animate-[loading-bar_1.5s_infinite_ease-in-out]" style={{ width: '40%' }} />
             </div>
-            <span className="text-[10px] font-medium text-slate-400 animate-pulse font-sans">Initializing secure storage...</span>
+            <span className="text-[10px] font-medium text-muted-foreground animate-pulse font-sans">Initializing secure storage...</span>
           </div>
         </div>
         
-        {/* Simple inline animation styles */}
         <style dangerouslySetInnerHTML={{__html: `
           @keyframes loading-bar {
             0% { transform: translateX(-100%); }
@@ -1400,20 +1435,52 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
       
       {/* Dynamic Slide-in Toast notifications */}
       {toast && (
-        <div className={`fixed right-6 top-6 z-50 flex items-center gap-3 rounded-2xl border px-4 py-3.5 shadow-2xl backdrop-blur-md transition-all duration-300 animate-fade-in ${
+        <div className={`fixed right-6 top-6 z-50 flex items-center gap-3 rounded-xl border px-4 py-3.5 shadow-2xl backdrop-blur-md transition-all duration-300 animate-fade-in ${
           toast.type === 'error'
-            ? 'bg-red-950/70 border-red-800/80 text-red-200'
-            : 'bg-emerald-950/70 border-emerald-800/80 text-emerald-200'
+            ? 'bg-destructive/10 border-destructive/30 text-destructive'
+            : 'bg-primary/10 border-primary/30 text-foreground'
         }`}>
-          <AlertCircle className="h-5 w-5 shrink-0" />
+          <AlertCircle className={`h-5 w-5 shrink-0 ${toast.type === 'success' ? 'text-primary' : ''}`} />
           <span className="text-xs font-semibold select-text">{toast.message}</span>
           <button
             onClick={() => setToast(null)}
-            className="rounded p-1 hover:bg-white/10"
+            className="rounded p-1 hover:bg-accent text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             aria-label="Dismiss toast"
           >
             <X className="h-4 w-4" />
           </button>
+        </div>
+      )}
+
+      {confirmDialog && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm animate-fade-in">
+          <div className="fixed inset-0" onClick={() => setConfirmDialog(null)} />
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="confirm-dialog-title"
+            aria-describedby="confirm-dialog-desc"
+            className="relative z-10 w-full max-w-sm rounded-lg border border-border bg-card p-5 shadow-xl"
+          >
+            <h3 id="confirm-dialog-title" className="text-sm font-semibold text-foreground">{confirmDialog.title}</h3>
+            <p id="confirm-dialog-desc" className="mt-2 text-xs text-muted-foreground leading-relaxed">{confirmDialog.message}</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDialog(null)}
+                className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-accent hover:text-accent-foreground transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDialog.onConfirm}
+                className="rounded-md bg-destructive px-3 py-1.5 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1461,6 +1528,7 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
             setBrowserModalOpen(true);
           }}
           onOpenAnalytics={() => setAnalyticsOpen(true)}
+          settings={settings}
         >
           <Composer
             input={composerInput}

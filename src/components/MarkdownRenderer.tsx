@@ -58,29 +58,29 @@ const BrowserScreenshotCard: React.FC<{
   const currentSrc = `${src.split('?')[0]}?${queryParams.toString()}`;
 
   return (
-    <div className="w-full max-w-xl mx-auto rounded-xl border border-white/[0.06] bg-slate-900/60 overflow-hidden shadow-lg flex flex-col font-sans my-4 select-none">
+    <div className="w-full max-w-xl mx-auto rounded-xl border border-border bg-card overflow-hidden shadow-lg flex flex-col font-sans my-4 select-none">
       {/* Header bar */}
-      <div className="bg-slate-950/40 px-3.5 py-1.5 flex items-center justify-between border-b border-white/[0.04] text-[10px] text-slate-400">
+      <div className="bg-muted/40 px-3.5 py-1.5 flex items-center justify-between border-b border-border text-[10px] text-muted-foreground">
         <div className="flex gap-1.5 items-center shrink-0">
-          <div className="w-2 h-2 rounded-full bg-red-500/60" />
-          <div className="w-2 h-2 rounded-full bg-amber-500/60" />
-          <div className="w-2 h-2 rounded-full bg-emerald-500/60" />
-          <span className="font-semibold text-slate-350 ml-2 font-mono tracking-wide text-[9.5px]">sandbox-screenshot.png</span>
+          <div className="w-2 h-2 rounded-full bg-destructive/60" />
+          <div className="w-2 h-2 rounded-full bg-chart-4/60" />
+          <div className="w-2 h-2 rounded-full bg-primary/60" />
+          <span className="font-semibold text-muted-foreground ml-2 font-mono tracking-wide text-[9.5px]">sandbox-screenshot.png</span>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={handleRefresh}
             disabled={isRefreshing}
-            className="flex items-center gap-1 hover:text-white transition cursor-pointer text-[9px] uppercase font-bold tracking-wider text-slate-500 disabled:opacity-50"
+            className="flex items-center gap-1 hover:text-foreground transition cursor-pointer text-[9px] uppercase font-bold tracking-wider text-muted-foreground disabled:opacity-50"
             title="Refresh screenshot"
           >
             <RotateCw className={`h-2.5 w-2.5 ${isRefreshing ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
-          <span className="text-white/10 select-none">|</span>
+          <span className="text-border select-none">|</span>
           <button
             onClick={handleOpenSandbox}
-            className="flex items-center gap-1 hover:text-white transition cursor-pointer text-[9px] uppercase font-bold tracking-wider text-slate-500"
+            className="flex items-center gap-1 hover:text-foreground transition cursor-pointer text-[9px] uppercase font-bold tracking-wider text-muted-foreground"
             title="Open Sandbox Browser Panel"
           >
             <ExternalLink className="h-2.5 w-2.5" />
@@ -90,7 +90,7 @@ const BrowserScreenshotCard: React.FC<{
       </div>
       
       {/* Screenshot viewport */}
-      <div className="relative aspect-video w-full bg-slate-950/40 overflow-hidden flex items-center justify-center">
+      <div className="relative aspect-video w-full bg-muted/40 overflow-hidden flex items-center justify-center">
         <img
           src={currentSrc}
           alt={alt || 'Browser Screenshot'}
@@ -173,11 +173,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onS
                   src={src}
                   alt={alt || 'Image'}
                   onClick={() => setLightboxSrc(src)}
-                  className="max-w-full max-h-96 rounded-xl border border-white/[0.08] shadow-lg object-contain bg-slate-900/60 cursor-zoom-in transition duration-300 hover:opacity-95 hover:scale-[1.005] inline-block"
+                  className="max-w-full max-h-96 rounded-xl border border-border shadow-lg object-contain bg-card cursor-zoom-in transition duration-300 hover:opacity-95 hover:scale-[1.005] inline-block"
                   {...props}
                 />
                 {alt && (
-                  <span className="block text-[10px] text-slate-500 mt-1.5 italic font-sans">
+                  <span className="block text-[10px] text-muted-foreground mt-1.5 italic font-sans">
                     {alt}
                   </span>
                 )}
@@ -187,7 +187,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onS
           // Ensure tables are wrapped in a responsive container
           table({ children }) {
             return (
-              <div className="overflow-x-auto w-full rounded-lg border border-slate-800/80 my-4">
+              <div className="overflow-x-auto w-full rounded-lg border border-border my-4">
                 <table>{children}</table>
               </div>
             );
@@ -199,11 +199,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onS
 
       {/* Lightbox full-screen glassmorphic overlay */}
       {lightboxSrc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-md animate-fade-in select-none">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-md animate-fade-in select-none">
           {/* Backdrop Click Close */}
           <div className="fixed inset-0 cursor-zoom-out" onClick={() => setLightboxSrc(null)} />
           
-          <div className="relative max-w-5xl max-h-[85vh] overflow-hidden rounded-2xl border border-white/[0.08] bg-slate-900/90 shadow-2xl z-10 flex flex-col p-1 animate-scale-in">
+          <div className="relative max-w-5xl max-h-[85vh] overflow-hidden rounded-xl border border-border bg-card shadow-2xl z-10 flex flex-col p-1 animate-scale-in">
             <img
               src={lightboxSrc}
               alt="Zoomed View"
@@ -213,8 +213,9 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onS
             {/* Close Overlay Icon */}
             <button
               onClick={() => setLightboxSrc(null)}
-              className="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-full bg-slate-950/80 text-slate-400 hover:text-white border border-white/[0.06] hover:bg-red-500 transition-all cursor-pointer active:scale-90"
+              className="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-full bg-background/80 text-muted-foreground hover:text-destructive-foreground border border-border hover:bg-destructive transition-all cursor-pointer active:scale-90"
               title="Close image overlay (Esc)"
+              aria-label="Close lightbox"
             >
               <X className="h-4 w-4" />
             </button>
@@ -297,13 +298,13 @@ const HighlightCode: React.FC<{ code: string; language: string }> = ({ code, lan
   }
 
   const tokenColors = {
-    comment: 'text-slate-500 italic',
+    comment: 'text-muted-foreground italic',
     string: 'text-emerald-400 font-medium',
-    keyword: 'text-brand-500 font-bold',
+    keyword: 'text-primary font-bold',
     type: 'text-sky-400 font-semibold',
     function: 'text-blue-400',
     number: 'text-amber-400',
-    text: 'text-slate-200'
+    text: 'text-foreground'
   };
 
   return (
@@ -631,22 +632,22 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
   const supportsPreview = language === 'html' || language === 'svg';
 
   return (
-    <div className="developer-dark-code group relative my-4 overflow-hidden rounded-xl border border-slate-800/60 bg-slate-900/90 shadow-lg">
+    <div className="developer-dark-code group relative my-4 overflow-hidden rounded-xl border border-border bg-card shadow-lg">
       {/* Code Header Bar */}
-      <div className="flex h-10 items-center justify-between border-b border-slate-800/80 bg-slate-900/60 px-4 py-1.5 text-xs text-slate-400">
+      <div className="flex h-10 items-center justify-between border-b border-border bg-muted/50 px-4 py-1.5 text-xs text-muted-foreground">
         <div className="flex items-center gap-3">
-          <span className="font-mono font-medium tracking-wider text-slate-300">
+          <span className="font-mono font-medium tracking-wider text-foreground">
             {displayName}
           </span>
           {supportsPreview && (
-            <div className="flex rounded-lg bg-slate-950/60 p-0.5 border border-slate-800/50">
+            <div className="flex rounded-lg bg-muted p-0.5 border border-border">
               <button
                 type="button"
                 onClick={() => setActiveTab('code')}
                 className={`flex items-center gap-1 rounded-md px-2 py-0.5 font-medium transition cursor-pointer ${
                   activeTab === 'code'
-                    ? 'bg-slate-800 text-white font-semibold'
-                    : 'text-slate-500 hover:text-slate-300'
+                    ? 'bg-accent text-foreground font-semibold'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 <Code className="h-3 w-3" />
@@ -657,8 +658,8 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
                 onClick={() => setActiveTab('preview')}
                 className={`flex items-center gap-1 rounded-md px-2 py-0.5 font-medium transition cursor-pointer ${
                   activeTab === 'preview'
-                    ? 'bg-slate-800 text-white font-semibold'
-                    : 'text-slate-500 hover:text-slate-300'
+                    ? 'bg-accent text-foreground font-semibold'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 <Eye className="h-3 w-3" />
@@ -670,38 +671,38 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
         <div className="flex items-center gap-2">
           {/* Run Button (for JS/TS) */}
           {supportsRun && (
-            <div className="flex items-center gap-1 bg-slate-950/40 border border-slate-800 rounded-md p-0.5">
+            <div className="flex items-center gap-1 bg-muted/50 border border-border rounded-md p-0.5">
               <button
                 type="button"
                 onClick={handleRun}
                 disabled={isRunning}
-                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition cursor-pointer hover:bg-slate-800 hover:text-white ${
-                  isRunning ? 'text-brand-500' : 'text-slate-400'
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 transition cursor-pointer hover:bg-accent hover:text-foreground ${
+                  isRunning ? 'text-primary' : 'text-muted-foreground'
                 }`}
                 title={`Run code block in ${runTarget}`}
                 aria-label="Run code block"
               >
                 {isRunning ? (
                   <>
-                    <span className="h-3 w-3 rounded-full border-2 border-brand-500 border-t-transparent animate-spin shrink-0" />
+                    <span className="h-3 w-3 rounded-full border-2 border-primary border-t-transparent animate-spin shrink-0" />
                     <span>Running...</span>
                   </>
                 ) : (
                   <>
-                    <Play className="h-3.5 w-3.5 fill-current text-brand-500 shrink-0" />
+                    <Play className="h-3.5 w-3.5 fill-current text-primary shrink-0" />
                     <span>Run</span>
                   </>
                 )}
               </button>
-              <div className="h-4 w-[1px] bg-slate-800" />
+              <div className="h-4 w-[1px] bg-border" />
               <select
                 value={runTarget}
                 onChange={(e) => setRunTarget(e.target.value as 'sandbox' | 'system')}
-                className="bg-transparent text-[10px] text-slate-400 hover:text-white font-medium border-0 focus:ring-0 cursor-pointer pr-1 pl-1"
+                className="bg-transparent text-[10px] text-muted-foreground hover:text-foreground font-medium border-0 focus:ring-0 cursor-pointer pr-1 pl-1"
                 title="Select execution target"
               >
-                <option value="sandbox" className="bg-slate-900 text-slate-350">Sandbox</option>
-                <option value="system" className="bg-slate-900 text-slate-350">System</option>
+                <option value="sandbox" className="bg-card text-foreground">Sandbox</option>
+                <option value="system" className="bg-card text-foreground">System</option>
               </select>
             </div>
           )}
@@ -709,12 +710,12 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
           <button
             onClick={handleCopy}
             aria-label="Copy code to clipboard"
-            className="flex items-center gap-1.5 rounded-md border border-slate-800 bg-slate-950/40 px-2 py-1 transition hover:bg-slate-800 hover:text-white"
+            className="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1 transition hover:bg-accent hover:text-foreground"
           >
             {copied ? (
               <>
-                <Check className="h-3.5 w-3.5 text-emerald-500" />
-                <span className="text-emerald-500">Copied!</span>
+                <Check className="h-3.5 w-3.5 text-primary" />
+                <span className="text-primary">Copied!</span>
               </>
             ) : (
               <>
@@ -728,17 +729,17 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
 
       {/* Content Area */}
       {supportsPreview && activeTab === 'preview' ? (
-        <div className="w-full bg-slate-950/20 p-3 h-96 select-text overflow-hidden flex flex-col">
+        <div className="w-full bg-muted/30 p-3 h-96 select-text overflow-hidden flex flex-col">
           <iframe
             srcDoc={code}
             title="Live Code Preview"
             sandbox="allow-scripts"
-            className="w-full h-full border border-slate-800/80 rounded-lg bg-white shadow-inner"
+            className="w-full h-full border border-border rounded-lg bg-background shadow-inner"
           />
         </div>
       ) : (
         /* Code Content */
-        <div className="overflow-x-auto p-4 font-mono text-sm leading-relaxed text-slate-100 select-text">
+        <div className="overflow-x-auto p-4 font-mono text-sm leading-relaxed text-foreground select-text">
           <pre className="!my-0 !p-0">
             <code className={`language-${language} block`}>
               <HighlightCode code={code} language={language} />
@@ -759,13 +760,13 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
 
       {/* Terminal Console Panel */}
       {consoleOpen && (
-        <div className="border-t border-[#1c1c28] bg-[#0a0a0f] font-mono text-xs text-[#cbd5e1] shadow-inner transition-all duration-300 animate-fade-in flex flex-col max-h-60">
-          <div className="flex h-9 shrink-0 items-center justify-between border-b border-[#141420] bg-[#10101b] px-4 select-none text-[10px] uppercase font-bold tracking-wider text-slate-500">
-            <span className="flex items-center gap-1.5 text-[#94a3b8]">
-              <TerminalIcon className="h-3.5 w-3.5 text-brand-500 animate-pulse" />
+        <div className="border-t border-border bg-muted font-mono text-xs text-foreground shadow-inner transition-all duration-300 animate-fade-in flex flex-col max-h-60">
+          <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-muted/80 px-4 select-none text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <TerminalIcon className="h-3.5 w-3.5 text-primary animate-pulse" />
               <span>Console Output</span>
               {execTime !== null && (
-                <span className="text-[9px] lowercase font-normal text-[#475569]">
+                <span className="text-[9px] lowercase font-normal text-muted-foreground">
                   (in {execTime < 0.1 ? '< 0.1ms' : `${execTime.toFixed(1)}ms`})
                 </span>
               )}
@@ -776,17 +777,17 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
                   type="button"
                   disabled={isGenerating}
                   onClick={handleAutoFix}
-                  className="flex items-center gap-1 rounded bg-violet-650/80 hover:bg-violet-600 border border-violet-500/30 text-[10.5px] font-bold text-violet-300 hover:text-white px-2 py-0.5 transition cursor-pointer active:scale-95 disabled:opacity-50"
+                  className="flex items-center gap-1 rounded bg-primary/80 hover:bg-primary border border-primary/30 text-[10.5px] font-bold text-primary-foreground px-2 py-0.5 transition cursor-pointer active:scale-95 disabled:opacity-50"
                   title="Fix this execution error using AI"
                 >
-                  <Sparkles className="h-3 w-3 text-violet-400" />
+                  <Sparkles className="h-3 w-3 text-primary-foreground" />
                   <span>Fix with AI</span>
                 </button>
               )}
               <button
                 type="button"
                 onClick={() => setLogs([])}
-                className="flex items-center gap-1 rounded hover:bg-[#27273a] hover:text-white px-1.5 py-0.5 transition cursor-pointer"
+                className="flex items-center gap-1 rounded hover:bg-accent hover:text-foreground px-1.5 py-0.5 transition cursor-pointer"
                 title="Clear console"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -795,7 +796,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
               <button
                 type="button"
                 onClick={() => setConsoleOpen(false)}
-                className="flex items-center gap-1 rounded hover:bg-[#27273a] hover:text-white p-0.5 transition cursor-pointer"
+                className="flex items-center gap-1 rounded hover:bg-accent hover:text-foreground p-0.5 transition cursor-pointer"
                 title="Close console"
                 aria-label="Close console button"
               >
@@ -806,14 +807,14 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
 
           <div className="flex-1 overflow-y-auto p-4 space-y-2 select-text scrollbar-thin max-h-48">
             {logs.length === 0 ? (
-              <div className="text-[#475569] italic py-2">No output. Click "Run" to execute.</div>
+              <div className="text-muted-foreground italic py-2">No output. Click "Run" to execute.</div>
             ) : (
               logs.map((log, index) => {
                 const logColors = {
-                  log: 'text-[#d1d5db]',
-                  warn: 'text-amber-400',
-                  error: 'text-red-400 font-semibold',
-                  return: 'text-emerald-400 font-bold border-l-2 border-emerald-500/50 pl-2 bg-[#064e3b]/20 py-1 my-0.5 rounded-r'
+                  log: 'text-foreground',
+                  warn: 'text-chart-4',
+                  error: 'text-destructive font-semibold',
+                  return: 'text-primary font-bold border-l-2 border-primary/50 pl-2 bg-primary/10 py-1 my-0.5 rounded-r'
                 };
                 return (
                   <div key={index} className={`whitespace-pre-wrap leading-relaxed ${logColors[log.type]}`}>

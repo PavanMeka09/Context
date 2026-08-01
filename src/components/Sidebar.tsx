@@ -75,11 +75,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   );
 
   return (
-    <aside className={`flex h-full flex-col border-r border-border bg-card text-card-foreground ${
-      mounted ? 'transition-all duration-300 ease-in-out' : ''
-    } ${
-      isCollapsed ? 'w-0 border-r-0 opacity-0 overflow-hidden' : 'w-64 opacity-100'
-    }`}>
+    <aside
+      inert={isCollapsed ? true : undefined}
+      aria-hidden={isCollapsed}
+      className={`flex h-full flex-col border-r border-border bg-card text-card-foreground ${
+        mounted ? 'transition-all duration-300 ease-in-out' : ''
+      } ${
+        isCollapsed ? 'w-0 border-r-0 opacity-0 overflow-hidden pointer-events-none' : 'w-64 opacity-100'
+      }`}
+    >
       
       {/* Sidebar Header */}
       <div className="flex h-14 shrink-0 items-center justify-between px-5">
@@ -93,19 +97,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
         <button
           onClick={onToggleCollapse}
-          className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition active:scale-95 cursor-pointer shrink-0"
+          className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition active:scale-95 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           title="Collapse sidebar"
-          aria-label="Collapse sidebar button"
+          aria-label="Collapse sidebar"
         >
           <PanelLeftClose className="h-4 w-4" />
         </button>
       </div>
 
-      {/* Action Area: New Chat Button (Outline Style) */}
+      {/* Action Area: New Chat Button */}
       <div className="px-4 py-2 flex gap-1.5">
         <button
           onClick={onNewChat}
-          className="w-full flex items-center justify-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground py-2 text-xs font-medium text-foreground transition-all duration-200 active:scale-98 cursor-pointer shadow-sm"
+          className="w-full flex items-center justify-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground py-2 text-xs font-medium text-foreground transition-all duration-200 active:scale-[0.98] cursor-pointer shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <Plus className="h-3.5 w-3.5" />
           <span>New Chat</span>
@@ -119,6 +123,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search chats..."
+          aria-label="Search chats"
           className="w-full bg-background border border-input rounded-md pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-all duration-200"
         />
         <Search className="absolute left-7 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
@@ -141,8 +146,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             return (
               <div
                 key={chat.id}
-                onClick={() => !isEditing && onSelectChat(chat.id)}
-                className={`group relative flex items-center justify-between rounded-md px-3 py-2 text-xs transition-colors duration-200 cursor-pointer ${
+                className={`group relative flex items-center justify-between rounded-md text-xs transition-colors duration-200 ${
                   isActive
                     ? 'bg-accent text-accent-foreground font-medium'
                     : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
@@ -156,7 +160,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {isEditing ? (
                   <form
                     onSubmit={(e) => saveRename(chat.id, e)}
-                    className="flex w-full items-center gap-1"
+                    className="flex w-full items-center gap-1 px-3 py-2"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <input
@@ -172,7 +176,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       }}
                       className="w-full bg-background px-2 py-0.5 rounded text-[10px] border border-input focus:outline-none focus-visible:ring-1 focus-visible:ring-ring text-foreground font-medium"
                     />
-                    <button type="submit" className="text-emerald-600 hover:text-emerald-500" aria-label="Confirm Rename">
+                    <button type="submit" className="text-primary hover:text-primary/80" aria-label="Confirm Rename">
                       <Check className="h-3 w-3" />
                     </button>
                     <button
@@ -189,27 +193,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </form>
                 ) : (
                   <>
-                    <div className="flex items-center gap-2 min-w-0 pr-10">
+                    <button
+                      type="button"
+                      onClick={() => onSelectChat(chat.id)}
+                      className="flex w-full items-center gap-2 min-w-0 px-3 py-2 pr-16 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-md"
+                      aria-current={isActive ? 'page' : undefined}
+                    >
                       <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
                       <span className="truncate text-xs tracking-tight">{chat.title}</span>
-                    </div>
+                    </button>
 
-                    {/* Actions panel (Clean, low-profile overlay) */}
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    {/* Actions: visible on hover, focus-within, and touch */}
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200">
                       <button
+                        type="button"
                         onClick={(e) => startEditing(chat, e)}
-                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         title="Rename chat"
                         aria-label={`Rename chat ${chat.title}`}
                       >
                         <Edit2 className="h-3 w-3" />
                       </button>
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           onDeleteChat(chat.id);
                         }}
-                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive"
+                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         title="Delete chat"
                         aria-label={`Delete chat ${chat.title}`}
                       >
@@ -240,10 +251,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Action button panel */}
         <div className="flex items-center gap-1 shrink-0">
-          {/* Schedules button */}
           <button
             onClick={onOpenSchedules}
-            className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95 transition-all duration-200 cursor-pointer"
+            className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95 transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             title="Open Task Scheduler"
             aria-label="Open Task Scheduler"
           >
@@ -254,18 +264,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={() => {
               onThemeChanged(theme === 'light' ? 'dark' : 'light');
             }}
-            className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95 transition-all duration-200 cursor-pointer animate-fade-in"
+            className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95 transition-all duration-200 cursor-pointer animate-fade-in focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             title={`Switch Theme (Current: ${theme})`}
-            aria-label="Switch App Theme"
+            aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+            aria-pressed={theme === 'dark'}
           >
             {theme === 'light' && <Sun className="h-3.5 w-3.5" />}
             {theme === 'dark' && <Moon className="h-3.5 w-3.5" />}
           </button>
 
-          {/* Settings button */}
           <button
             onClick={onOpenSettings}
-            className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95 transition-all duration-200 cursor-pointer"
+            className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95 transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             title="Open settings"
             aria-label="Open settings"
           >

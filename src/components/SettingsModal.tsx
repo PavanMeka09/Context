@@ -31,17 +31,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newMemoryCategory, setNewMemoryCategory] = useState<'preference' | 'project' | 'conversation' | 'other'>('preference');
   const [diagnostics, setDiagnostics] = useState<any>(null);
   const [loadingDiagnostics, setLoadingDiagnostics] = useState(false);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
 
   const fetchDiagnostics = useCallback(async () => {
     setLoadingDiagnostics(true);
+    setDiagnosticsError(null);
     try {
       const res = await fetch('/api/system/stats');
-      if (res.ok) {
-        const data = await res.json();
-        setDiagnostics(data);
+      if (!res.ok) {
+        throw new Error(`Server returned status ${res.status}`);
       }
+      const data = await res.json();
+      setDiagnostics(data);
     } catch (e) {
       console.error('Failed to fetch system stats', e);
+      setDiagnostics(null);
+      setDiagnosticsError(e instanceof Error ? e.message : 'Failed to fetch diagnostics');
     } finally {
       setLoadingDiagnostics(false);
     }
@@ -995,8 +1000,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {connectionTestResult && (
                   <div className={`mt-2 flex items-center gap-1.5 rounded-md border px-3 py-2 text-[10px] animate-fade-in ${
                     connectionTestResult.success
-                      ? 'bg-emerald-950/20 border-emerald-900/30 text-emerald-400'
-                      : 'bg-red-950/20 border-red-900/30 text-red-400'
+                      ? 'bg-primary/10 border-primary/20 text-primary'
+                      : 'bg-destructive/10 border-destructive/20 text-destructive'
                   }`}>
                     <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                     <span>{connectionTestResult.message}</span>
@@ -1038,7 +1043,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   aria-checked={settings.isMemoryEnabled}
                 >
                   <span
-                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out ${
                       settings.isMemoryEnabled ? 'translate-x-4' : 'translate-x-0'
                     }`}
                   />
@@ -1202,7 +1207,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 )}
                 {importSuccess && (
-                  <div className="flex items-center gap-1.5 rounded-md bg-emerald-950/20 border border-emerald-900/30 p-2 text-[10px] text-emerald-400">
+                  <div className="flex items-center gap-1.5 rounded-md bg-primary/10 border border-primary/20 p-2 text-[10px] text-primary">
                     <CheckSquare className="h-3.5 w-3.5 shrink-0" />
                     <span>Backup restored successfully!</span>
                   </div>
@@ -1292,7 +1297,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               </div>
 
-              {diagnostics ? (
+              {loadingDiagnostics && !diagnostics && !diagnosticsError ? (
+                <div className="p-8 text-center text-muted-foreground text-xs flex flex-col items-center justify-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                  <span>Loading server telemetry...</span>
+                </div>
+              ) : diagnosticsError ? (
+                <div className="flex flex-col items-center justify-center gap-3 p-8 rounded-lg border border-destructive/20 bg-destructive/10 text-center">
+                  <div className="flex items-center gap-2 text-destructive text-xs">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{diagnosticsError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={fetchDiagnostics}
+                    disabled={loadingDiagnostics}
+                    className="rounded-md border border-destructive/20 bg-background px-3 py-1.5 text-[11px] font-medium text-destructive hover:bg-destructive/10 transition cursor-pointer disabled:opacity-50"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : diagnostics ? (
                 <div className="space-y-3">
                   <div className="grid grid-cols-2 gap-2.5">
                     <div className="p-3 rounded-lg border border-border bg-muted/20">
@@ -1357,12 +1382,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </button>
                   </div>
                 </div>
-              ) : (
-                <div className="p-8 text-center text-muted-foreground text-xs flex flex-col items-center justify-center gap-2">
-                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                  <span>Loading server telemetry...</span>
-                </div>
-              )}
+              ) : null}
             </div>
           )}
         </div>

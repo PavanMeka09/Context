@@ -145,9 +145,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   }, [settings, onSettingsChanged, onShowToast, onClose]);
 
   const handleSelectProvider = useCallback((prov: AppSettings['provider']) => {
-    let defaultModel = 'gemini-2.5-flash';
+    let defaultModel = 'gemini-3.6-flash';
     if (prov === 'ollama') defaultModel = 'llama3';
-    else if (prov === 'openrouter') defaultModel = 'google/gemini-2.5-flash';
+    else if (prov === 'openrouter') defaultModel = 'google/gemini-3.6-flash';
     else if (prov === 'openai') defaultModel = 'gpt-4o-mini';
 
     const nextSettings = { ...settings, provider: prov, model: defaultModel };
@@ -185,7 +185,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       id: 'nav-analytics',
       title: 'System Diagnostics & Telemetry',
       subtitle: 'Inspect companion memory, process uptime & storage',
-      icon: <Activity className="h-4 w-4 text-sky-400" />,
+      icon: <Activity className="h-4 w-4" />,
       category: 'Navigation',
       action: () => { onOpenAnalytics?.(); onClose(); }
     },
@@ -193,7 +193,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       id: 'nav-schedules',
       title: 'Open Task Scheduler',
       subtitle: 'Manage background cron tasks and recurring web scrapes',
-      icon: <Clock className="h-4 w-4 text-amber-400" />,
+      icon: <Clock className="h-4 w-4" />,
       category: 'Navigation',
       action: () => { onOpenSchedules?.(); onClose(); }
     },
@@ -201,7 +201,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       id: 'nav-browser',
       title: 'Open Browser Sandbox Live View',
       subtitle: 'Inspect background Puppeteer browser session steps',
-      icon: <Compass className="h-4 w-4 text-emerald-400" />,
+      icon: <Compass className="h-4 w-4" />,
       category: 'Navigation',
       action: () => { onOpenBrowserModal?.(); onClose(); }
     },

@@ -515,29 +515,29 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-md animate-fade-in font-sans">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm animate-fade-in font-sans">
       {/* Modal Dialog Container */}
-      <div className="relative w-full max-w-6xl h-[85vh] rounded-2xl border border-white/[0.08] bg-slate-900/90 shadow-2xl z-10 flex flex-col overflow-hidden animate-scale-in">
+      <div className="relative w-full max-w-6xl h-[85vh] rounded-xl border border-border bg-card shadow-2xl z-10 flex flex-col overflow-hidden animate-scale-in">
         
         {/* Modal Header */}
-        <div className="flex h-14 shrink-0 items-center justify-between px-6 border-b border-white/[0.08] bg-slate-900/90 select-none">
+        <div className="flex h-14 shrink-0 items-center justify-between px-6 border-b border-border bg-card select-none">
           <div className="flex items-center gap-2.5">
-            <div className="p-1 bg-brand-500/10 rounded-lg text-brand-400 border border-brand-500/20">
+            <div className="p-1 bg-primary/10 rounded-lg text-primary border border-primary/20">
               <Compass className="h-4 w-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-slate-100 leading-none">Browser Sandbox</h2>
-              <span className="text-[10px] text-slate-500 mt-1 block">Live headless Puppeteer session</span>
+              <h2 className="text-sm font-semibold text-foreground leading-none">Browser Sandbox</h2>
+              <span className="text-[10px] text-muted-foreground mt-1 block">Live headless Puppeteer session</span>
             </div>
             
-            <div className="ml-6 flex items-center gap-2 bg-slate-950/60 border border-white/[0.06] rounded-lg px-2.5 py-1 text-xs">
-              <span className="text-slate-400 font-medium">Session:</span>
+            <div className="ml-6 flex items-center gap-2 bg-muted border border-border rounded-lg px-2.5 py-1 text-xs">
+              <span className="text-muted-foreground font-medium">Session:</span>
               <select
                 value={sessionId}
                 onChange={(e) => setSessionId(e.target.value)}
-                className="bg-transparent text-slate-200 border-0 focus:ring-0 text-xs py-0 pl-1 pr-6 font-semibold cursor-pointer outline-none"
+                className="bg-transparent text-foreground border-0 focus:ring-0 text-xs py-0 pl-1 pr-6 font-semibold cursor-pointer outline-none"
               >
-                <option value="interactive" className="bg-slate-900 text-slate-200">Interactive Sandbox</option>
+                <option value="interactive" className="bg-card text-foreground">Interactive Sandbox</option>
                 
                 {/* Dynamically list active sessions on the server */}
                 {activeSessions.filter(s => s.id !== 'interactive').map((s) => {
@@ -549,7 +549,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                   }
                   
                   return (
-                    <option key={s.id} value={s.id} className="bg-slate-900 text-slate-200">
+                    <option key={s.id} value={s.id} className="bg-card text-foreground">
                       {label}
                     </option>
                   );
@@ -557,7 +557,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
 
                 {/* Fallback for selected sessionId if not in activeSessions list */}
                 {sessionId && sessionId !== 'interactive' && !activeSessions.some(s => s.id === sessionId) && (
-                  <option value={sessionId} className="bg-slate-900 text-slate-200">
+                  <option value={sessionId} className="bg-card text-foreground">
                     Session (${sessionId.startsWith('run-') || sessionId.startsWith('sched-') || sessionId.startsWith('chat-sched-') ? 'Task Run' : 'Chat Agent'})
                   </option>
                 )}
@@ -568,43 +568,43 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
               <div className="ml-2 flex items-center gap-2 select-none">
                 <div className={`border rounded px-2 py-0.5 text-[10px] font-medium flex items-center gap-1 ${
                   (browserState?.agentStatus || 'running') === 'paused'
-                    ? 'bg-blue-500/15 border-blue-500/30 text-blue-400'
-                    : 'bg-amber-500/15 border-amber-500/30 text-amber-400 animate-pulse'
+                    ? 'bg-chart-4/15 border-chart-4/30 text-chart-4'
+                    : 'bg-chart-4/15 border-chart-4/30 text-chart-4 animate-pulse'
                 }`}>
                   <span className={`h-1.5 w-1.5 rounded-full ${
-                    (browserState?.agentStatus || 'running') === 'paused' ? 'bg-blue-500' : 'bg-amber-500 animate-pulse'
+                    (browserState?.agentStatus || 'running') === 'paused' ? 'bg-chart-4' : 'bg-chart-4 animate-pulse'
                   }`} />
                   <span>Agent: {(browserState?.agentStatus || 'running').toUpperCase()}</span>
                 </div>
                 
                 {browserState?.agentStatus && browserState.agentStatus !== 'idle' && (
-                  <div className="flex items-center gap-1 bg-slate-950/60 border border-white/[0.08] rounded-lg p-0.5 animate-fade-in">
+                  <div className="flex items-center gap-1 bg-muted border border-border rounded-lg p-0.5 animate-fade-in">
                     {browserState.agentStatus === 'running' ? (
                       <button
                         onClick={() => handlePause()}
                         disabled={actionLoading}
-                        className="p-1 text-amber-400 hover:text-amber-300 hover:bg-white/5 rounded transition cursor-pointer disabled:opacity-50"
+                        className="p-1 text-chart-4 hover:text-chart-4/80 hover:bg-accent rounded transition cursor-pointer disabled:opacity-50"
                         title="Pause Agent Loop"
                       >
-                        <Pause className="h-3 w-3 fill-amber-400" />
+                        <Pause className="h-3 w-3 fill-chart-4" />
                       </button>
                     ) : (
                       <>
                         <button
                           onClick={() => handleResume()}
                           disabled={actionLoading}
-                          className="p-1 text-emerald-400 hover:text-emerald-300 hover:bg-white/5 rounded transition cursor-pointer disabled:opacity-50"
+                          className="p-1 text-primary hover:text-primary/80 hover:bg-accent rounded transition cursor-pointer disabled:opacity-50"
                           title="Resume Agent Loop"
                         >
-                          <Play className="h-3 w-3 fill-emerald-400" />
+                          <Play className="h-3 w-3 fill-primary" />
                         </button>
                         <button
                           onClick={() => handleStep()}
                           disabled={actionLoading}
-                          className="p-1 text-blue-400 hover:text-blue-300 hover:bg-white/5 rounded transition cursor-pointer disabled:opacity-50"
+                          className="p-1 text-primary hover:text-primary/80 hover:bg-accent rounded transition cursor-pointer disabled:opacity-50"
                           title="Step Agent Loop (1 Cycle)"
                         >
-                          <SkipForward className="h-3 w-3 fill-blue-450" />
+                          <SkipForward className="h-3 w-3 fill-primary" />
                         </button>
                       </>
                     )}
@@ -619,7 +619,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
               <button
                 onClick={handleCloseSession}
                 disabled={actionLoading}
-                className="flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-950/20 text-red-400 hover:bg-red-950/40 px-3 py-1.5 text-xs font-semibold transition active:scale-95 cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-lg border border-destructive/20 bg-destructive/10 text-destructive hover:bg-destructive/20 px-3 py-1.5 text-xs font-semibold transition active:scale-95 cursor-pointer disabled:opacity-50"
                 title="Terminate Puppeteer browser process to free memory"
               >
                 <Power className="h-3.5 w-3.5" />
@@ -628,7 +628,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
             )}
             <button
               onClick={onClose}
-              className="rounded-full p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition cursor-pointer active:scale-90"
+              className="rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition cursor-pointer active:scale-90"
               aria-label="Close browser modal"
             >
               <X className="h-4 w-4" />
@@ -638,15 +638,15 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
 
         {/* Tab Bar */}
         {browserState && tabs.length > 0 && (
-          <div className="flex h-10 shrink-0 items-end gap-1 px-6 bg-slate-900 border-b border-white/[0.06] overflow-x-auto scrollbar-none select-none">
+          <div className="flex h-10 shrink-0 items-end gap-1 px-6 bg-card border-b border-border overflow-x-auto scrollbar-none select-none">
             {tabs.map((tab) => (
               <div
                 key={tab.id}
                 onClick={() => handleSwitchTab(tab.id)}
                 className={`group flex items-center gap-2 px-3.5 py-1.5 text-xs rounded-t-lg font-medium max-w-[160px] transition cursor-pointer border-t border-x ${
                   tab.isActive
-                    ? 'bg-slate-950/40 border-white/[0.08] text-slate-100'
-                    : 'bg-transparent border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/[0.02]'
+                    ? 'bg-muted border-border text-foreground'
+                    : 'bg-transparent border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50'
                 }`}
               >
                 <Globe className="h-3 w-3 shrink-0 opacity-60" />
@@ -654,7 +654,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                 {tabs.length > 1 && (
                   <button
                     onClick={(e) => handleCloseTab(e, tab.id)}
-                    className="p-0.5 rounded-full hover:bg-white/10 text-slate-500 hover:text-slate-350 transition opacity-0 group-hover:opacity-100 focus:opacity-100 animate-fade-in"
+                    className="p-0.5 rounded-full hover:bg-accent text-muted-foreground hover:text-foreground transition opacity-0 group-hover:opacity-100 focus:opacity-100 animate-fade-in"
                   >
                     <X className="h-2.5 w-2.5" />
                   </button>
@@ -664,7 +664,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
             <button
               onClick={handleCreateTab}
               disabled={actionLoading}
-              className="mb-1.5 p-1 rounded hover:bg-white/5 text-slate-400 hover:text-white transition active:scale-90 cursor-pointer disabled:opacity-50"
+              className="mb-1.5 p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition active:scale-90 cursor-pointer disabled:opacity-50"
               title="Open new tab"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -674,30 +674,30 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
 
         {/* Address Bar Toolbar */}
         {browserState && (
-          <div className="flex h-12 shrink-0 items-center gap-3 px-6 border-b border-white/[0.04] bg-slate-950/20">
+          <div className="flex h-12 shrink-0 items-center gap-3 px-6 border-b border-border bg-muted/30">
             <button
               onClick={() => runAction('back')}
               disabled={actionLoading}
-              className="p-2 rounded-lg border border-white/[0.06] bg-slate-950/40 text-slate-400 hover:text-white transition active:scale-95 cursor-pointer disabled:opacity-50"
+              className="p-2 rounded-lg border border-border bg-muted text-muted-foreground hover:text-foreground transition active:scale-95 cursor-pointer disabled:opacity-50"
               title="Go back"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
             </button>
 
-            <form onSubmit={handleNavigate} className="flex-1 flex items-center gap-2 bg-slate-950/60 border border-white/[0.06] rounded-lg px-3 py-1 text-xs">
-              <Globe className="h-3.5 w-3.5 text-slate-500" />
+            <form onSubmit={handleNavigate} className="flex-1 flex items-center gap-2 bg-muted border border-border rounded-lg px-3 py-1 text-xs">
+              <Globe className="h-3.5 w-3.5 text-muted-foreground" />
               <input
                 type="text"
                 value={addressInput}
                 onChange={(e) => setAddressInput(e.target.value)}
                 placeholder="Enter URL (e.g. google.com) and press Enter"
-                className="flex-1 bg-transparent border-0 p-0 text-slate-200 focus:outline-none focus:ring-0 font-mono text-[11px]"
+                className="flex-1 bg-transparent border-0 p-0 text-foreground focus:outline-none focus:ring-0 font-mono text-[11px]"
                 disabled={actionLoading}
               />
               <button 
                 type="submit" 
                 disabled={actionLoading}
-                className="p-1 hover:bg-white/10 text-slate-400 hover:text-white rounded transition"
+                className="p-1 hover:bg-accent text-muted-foreground hover:text-foreground rounded transition"
               >
                 <ArrowRight className="h-3.5 w-3.5" />
               </button>
@@ -707,8 +707,8 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
               onClick={() => setShowConsoleDrawer(!showConsoleDrawer)}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition active:scale-95 cursor-pointer ${
                 showConsoleDrawer
-                  ? 'border-brand-500/30 bg-brand-500/10 text-brand-400'
-                  : 'border-white/[0.06] bg-slate-950/40 text-slate-400 hover:text-white'
+                  ? 'border-primary/30 bg-primary/10 text-primary'
+                  : 'border-border bg-muted text-muted-foreground hover:text-foreground'
               }`}
               title="Toggle browser developer console logs"
             >
@@ -721,8 +721,8 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
               disabled={actionLoading}
               className={`flex items-center justify-center p-2 rounded-lg border transition active:scale-95 cursor-pointer disabled:opacity-50 ${
                 showOverlays 
-                  ? 'border-brand-500/30 bg-brand-500/10 text-brand-400 hover:text-brand-350' 
-                  : 'border-white/[0.06] bg-slate-950/40 text-slate-400 hover:text-white'
+                  ? 'border-primary/30 bg-primary/10 text-primary hover:text-primary/80' 
+                  : 'border-border bg-muted text-muted-foreground hover:text-foreground'
               }`}
               title={showOverlays ? "Hide visual element overlays" : "Show visual element overlays"}
             >
@@ -732,7 +732,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
             <button
               onClick={() => fetchBrowserState(false)}
               disabled={actionLoading}
-              className="flex items-center justify-center p-2 rounded-lg border border-white/[0.06] bg-slate-950/40 text-slate-400 hover:text-white transition active:scale-95 cursor-pointer disabled:opacity-50"
+              className="flex items-center justify-center p-2 rounded-lg border border-border bg-muted text-muted-foreground hover:text-foreground transition active:scale-95 cursor-pointer disabled:opacity-50"
               title="Refresh browser view"
             >
               <RotateCw className={`h-3.5 w-3.5 ${actionLoading ? 'animate-spin' : ''}`} />
@@ -743,18 +743,18 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
         {/* Main Content Layout */}
         <div className="flex-1 flex overflow-hidden min-h-0 relative">
           {loading ? (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-sm gap-2">
-              <Loader2 className="h-8 w-8 animate-spin text-brand-500" />
-              <span className="text-xs font-semibold text-slate-400 tracking-wider">Connecting to browser...</span>
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-card/60 backdrop-blur-sm gap-2">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <span className="text-xs font-semibold text-muted-foreground tracking-wider">Connecting to browser...</span>
             </div>
           ) : error && !browserState ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4 bg-slate-950/10">
-              <div className="p-4 bg-amber-500/10 text-amber-400 rounded-full border border-amber-500/20">
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4 bg-muted/20">
+              <div className="p-4 bg-chart-4/10 text-chart-4 rounded-full border border-chart-4/20">
                 <AlertTriangle className="h-10 w-10" />
               </div>
               <div className="max-w-md">
-                <h3 className="text-slate-200 font-semibold mb-1">No Active Browser Session</h3>
-                <p className="text-xs text-slate-400 leading-relaxed mb-4">
+                <h3 className="text-foreground font-semibold mb-1">No Active Browser Session</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed mb-4">
                   {error.includes('running') 
                     ? "Make sure the Context companion server is started with 'npm run server'."
                     : "There is no active Puppeteer browser session currently running in the background. Start one to browse the web."
@@ -762,7 +762,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                 </p>
                 <button
                   onClick={handleLaunchSession}
-                  className="rounded-lg bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold px-5 py-2.5 text-xs tracking-wide shadow-lg transition active:scale-95 cursor-pointer"
+                  className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-5 py-2.5 text-xs tracking-wide shadow-lg transition active:scale-95 cursor-pointer"
                 >
                   Start Sandbox Session
                 </button>
@@ -771,14 +771,14 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
           ) : (
             <>
               {/* Left Column (Viewport & Console Drawer) */}
-              <div className="flex-1 flex flex-col min-h-0 relative bg-slate-950/40 border-r border-white/[0.04]">
+              <div className="flex-1 flex flex-col min-h-0 relative bg-muted/50 border-r border-border">
                 <div className="flex-1 p-4 flex flex-col items-center justify-center overflow-auto relative">
                   
                   {actionLoading && (
-                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/20 backdrop-blur-[1px]">
-                      <div className="bg-slate-900/90 border border-white/[0.08] shadow-2xl rounded-xl px-4 py-3 flex items-center gap-3">
-                        <Loader2 className="h-4 w-4 animate-spin text-brand-400" />
-                        <span className="text-xs font-semibold text-slate-200">Executing browser action...</span>
+                    <div className="absolute inset-0 z-20 flex items-center justify-center bg-background/20 backdrop-blur-[1px]">
+                      <div className="bg-card border border-border shadow-2xl rounded-xl px-4 py-3 flex items-center gap-3">
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        <span className="text-xs font-semibold text-foreground">Executing browser action...</span>
                       </div>
                     </div>
                   )}
@@ -787,7 +787,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                   {browserState && (
                     <div 
                       onClick={handleScreenshotClick}
-                      className="relative border border-white/[0.06] shadow-2xl rounded-lg overflow-hidden w-full max-w-full aspect-[16/10] select-none bg-slate-900 cursor-crosshair group/viewport"
+                      className="relative border border-border shadow-2xl rounded-lg overflow-hidden w-full max-w-full aspect-[16/10] select-none bg-muted cursor-crosshair group/viewport"
                     >
                       <img
                         src={browserState.screenshot || `/api/browser/screenshot?sessionId=${encodeURIComponent(sessionId)}&t=${screenshotTimestamp}`}
@@ -797,13 +797,13 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
 
                       {/* Paused Glass Overlay */}
                       {browserState?.agentStatus === 'paused' && (
-                        <div className="absolute inset-0 bg-slate-950/25 backdrop-blur-[0.5px] z-25 flex items-center justify-center pointer-events-none transition duration-200">
-                          <div className="bg-slate-900/95 border border-blue-500/20 shadow-2xl rounded-xl px-5 py-3 flex flex-col items-center gap-1">
+                        <div className="absolute inset-0 bg-background/25 backdrop-blur-[0.5px] z-25 flex items-center justify-center pointer-events-none transition duration-200">
+                          <div className="bg-card border border-chart-4/20 shadow-2xl rounded-xl px-5 py-3 flex flex-col items-center gap-1">
                             <div className="flex items-center gap-2">
-                              <Pause className="h-4 w-4 text-blue-400 fill-blue-450" />
-                              <span className="text-xs font-semibold text-slate-200">Agent is Paused on this session</span>
+                              <Pause className="h-4 w-4 text-chart-4 fill-chart-4" />
+                              <span className="text-xs font-semibold text-foreground">Agent is Paused on this session</span>
                             </div>
-                            <span className="text-[10px] text-slate-400">Interact freely or Resume/Step to proceed</span>
+                            <span className="text-[10px] text-muted-foreground">Interact freely or Resume/Step to proceed</span>
                           </div>
                         </div>
                       )}
@@ -817,8 +817,8 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                             top: `${clickIndicator.y}%`
                           }}
                         >
-                          <div className="w-full h-full border-2 border-brand-500 rounded-full bg-brand-500/20 animate-ping" />
-                          <div className="w-2.5 h-2.5 bg-brand-500 rounded-full border border-white/50 shadow-md absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                          <div className="w-full h-full border-2 border-primary rounded-full bg-primary/20 animate-ping" />
+                          <div className="w-2.5 h-2.5 bg-primary rounded-full border border-background/50 shadow-md absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
                         </div>
                       )}
 
@@ -844,8 +844,8 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                             }}
                             className={`absolute border rounded cursor-pointer transition-all duration-150 group/overlay ${
                               isSelected
-                                ? 'bg-brand-500/15 border-brand-500 ring-2 ring-brand-500/30 z-30 shadow-[0_0_8px_rgba(6,182,212,0.3)]'
-                                : 'bg-cyan-500/[0.02] border-cyan-500/20 hover:bg-cyan-500/10 hover:border-cyan-400 z-10 hover:z-20'
+                                ? 'bg-primary/15 border-primary ring-2 ring-primary/30 z-30 shadow-[0_0_8px_hsl(var(--primary)/0.3)]'
+                                : 'bg-primary/[0.02] border-primary/20 hover:bg-primary/10 hover:border-primary z-10 hover:z-20'
                             }`}
                             style={{
                               left: `${leftPct}%`,
@@ -857,7 +857,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                           >
                             {/* Floating Badge (Vimium-style index / info) */}
                             <span className={`absolute -top-5 left-0 px-1 py-0.5 rounded text-[8px] font-mono font-bold leading-none pointer-events-none scale-0 group-hover/overlay:scale-100 transition-transform origin-bottom-left whitespace-nowrap shadow-md z-50 ${
-                              isSelected ? 'bg-brand-500 text-slate-950' : 'bg-slate-900 border border-white/10 text-cyan-400'
+                              isSelected ? 'bg-primary text-primary-foreground' : 'bg-card border border-border text-primary'
                             }`}>
                               {el.text ? `${el.text.slice(0, 20)} [${el.id}]` : el.id}
                             </span>
@@ -869,13 +869,13 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
 
                   {/* Status telemetry footer */}
                   {browserState && (
-                    <div className="mt-4 flex items-center gap-4 text-[10.5px] text-slate-400 font-mono">
+                    <div className="mt-4 flex items-center gap-4 text-[10.5px] text-muted-foreground font-mono">
                       <span className="truncate max-w-[280px]">
-                        Title: <span className="text-slate-300 font-semibold">{browserState.title || 'Blank Page'}</span>
+                        Title: <span className="text-foreground font-semibold">{browserState.title || 'Blank Page'}</span>
                       </span>
-                      <span className="h-3 w-[1px] bg-white/10" />
+                      <span className="h-3 w-[1px] bg-border" />
                       <span className="truncate max-w-[280px]">
-                        URL: <span className="text-slate-300">{browserState.url || 'about:blank'}</span>
+                        URL: <span className="text-foreground">{browserState.url || 'about:blank'}</span>
                       </span>
                     </div>
                   )}
@@ -883,17 +883,17 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
 
                 {/* Console Logs Drawer */}
                 {showConsoleDrawer && (
-                  <div className="h-48 shrink-0 bg-slate-950 border-t border-white/[0.08] flex flex-col min-h-0 font-mono text-[10px] animate-slide-up">
+                  <div className="h-48 shrink-0 bg-muted border-t border-border flex flex-col min-h-0 font-mono text-[10px] animate-slide-up">
                     {/* Drawer Header */}
-                    <div className="flex h-8 items-center justify-between px-4 border-b border-white/[0.04] bg-slate-900/60 select-none">
+                    <div className="flex h-8 items-center justify-between px-4 border-b border-border bg-muted/80 select-none">
                       <div className="flex items-center gap-2">
-                        <Terminal className="h-3 w-3 text-brand-400 animate-pulse" />
-                        <span className="font-semibold text-slate-350 tracking-wide uppercase text-[9px]">Developer Console Logs</span>
+                        <Terminal className="h-3 w-3 text-primary animate-pulse" />
+                        <span className="font-semibold text-muted-foreground tracking-wide uppercase text-[9px]">Developer Console Logs</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <button
                           onClick={handleClearLogs}
-                          className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-white/5 text-slate-400 hover:text-white transition cursor-pointer"
+                          className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition cursor-pointer"
                           title="Clear console log history"
                         >
                           <Trash2 className="h-3 w-3" />
@@ -901,7 +901,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                         </button>
                         <button
                           onClick={() => setShowConsoleDrawer(false)}
-                          className="p-0.5 rounded hover:bg-white/5 text-slate-450 hover:text-slate-300 transition cursor-pointer"
+                          className="p-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition cursor-pointer"
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>
@@ -910,34 +910,34 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                     {/* Drawer Content */}
                     <div className="flex-1 overflow-y-auto p-3 space-y-1.5 scrollbar-thin">
                       {logs.length === 0 ? (
-                        <div className="text-slate-650 italic text-center py-6 text-[10.5px]">
+                        <div className="text-muted-foreground italic text-center py-6 text-[10.5px]">
                           Console is clean. No errors or messages logged yet.
                         </div>
                       ) : (
                         logs.map((log, idx) => {
-                          let textClass = 'text-slate-300';
+                          let textClass = 'text-foreground';
                           let bgClass = '';
                           if (log.type === 'error') {
-                            textClass = 'text-red-400 font-semibold';
-                            bgClass = 'bg-red-500/[0.03] border-l-2 border-red-500/80 px-2 py-0.5';
+                            textClass = 'text-destructive font-semibold';
+                            bgClass = 'bg-destructive/[0.03] border-l-2 border-destructive/80 px-2 py-0.5';
                           } else if (log.type === 'warning') {
-                            textClass = 'text-amber-400';
-                            bgClass = 'bg-amber-500/[0.02] border-l-2 border-amber-500/80 px-2 py-0.5';
+                            textClass = 'text-chart-4';
+                            bgClass = 'bg-chart-4/[0.02] border-l-2 border-chart-4/80 px-2 py-0.5';
                           } else if (log.type === 'network_error') {
-                            textClass = 'text-orange-450 font-semibold';
-                            bgClass = 'bg-orange-500/[0.03] border-l-2 border-orange-500/80 px-2 py-0.5';
+                            textClass = 'text-destructive font-semibold';
+                            bgClass = 'bg-destructive/[0.03] border-l-2 border-destructive/80 px-2 py-0.5';
                           }
                           
                           return (
                             <div key={idx} className={`flex flex-col gap-0.5 leading-relaxed break-all ${bgClass}`}>
                               <div className="flex items-start gap-2">
-                                <span className="text-slate-550 select-none shrink-0 font-light text-[9.5px]">
+                                <span className="text-muted-foreground select-none shrink-0 font-light text-[9.5px]">
                                   {new Date(log.timestamp).toLocaleTimeString()}
                                 </span>
                                 <span className={textClass}>{log.text}</span>
                               </div>
                               {log.url && (
-                                <span className="text-[8.5px] text-slate-500 pl-14 truncate">
+                                <span className="text-[8.5px] text-muted-foreground pl-14 truncate">
                                   Source: {log.url}
                                 </span>
                               )}
@@ -949,14 +949,14 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                     </div>
 
                     {/* Interactive CLI Console Input Form */}
-                    <form onSubmit={handleEvalConsole} className="flex gap-1.5 border-t border-white/[0.04] p-2 bg-slate-950/60 select-text shrink-0">
-                      <span className="text-[10px] text-brand-400 font-bold self-center font-mono pl-1">&gt;</span>
+                    <form onSubmit={handleEvalConsole} className="flex gap-1.5 border-t border-border p-2 bg-muted/80 select-text shrink-0">
+                      <span className="text-[10px] text-primary font-bold self-center font-mono pl-1">&gt;</span>
                       <input
                         type="text"
                         value={consoleInput}
                         onChange={(e) => setConsoleInput(e.target.value)}
                         placeholder="Evaluate JavaScript in active page..."
-                        className="flex-1 bg-transparent border-0 p-0 text-slate-200 focus:outline-none focus:ring-0 font-mono text-[10.5px]"
+                        className="flex-1 bg-transparent border-0 p-0 text-foreground focus:outline-none focus:ring-0 font-mono text-[10.5px]"
                         disabled={actionLoading}
                       />
                     </form>
@@ -965,14 +965,14 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
               </div>
 
               {/* Interaction Panel (Right Side) */}
-              <div className="w-80 border-l border-white/[0.08] bg-slate-950/30 flex flex-col shrink-0">
+              <div className="w-80 border-l border-border bg-muted/30 flex flex-col shrink-0">
                 
                 {/* Scroll & Extract Actions Header */}
-                <div className="p-4 border-b border-white/[0.06] bg-slate-950/20 flex gap-2">
+                <div className="p-4 border-b border-border bg-muted/30 flex gap-2">
                   <button
                     onClick={() => executeScroll('up')}
                     disabled={actionLoading}
-                    className="flex-1 flex items-center justify-center gap-1 p-2 rounded-lg border border-white/[0.06] bg-slate-950/40 text-[10.5px] font-semibold text-slate-300 hover:text-white transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                    className="flex-1 flex items-center justify-center gap-1 p-2 rounded-lg border border-border bg-muted text-[10.5px] font-semibold text-foreground hover:text-foreground transition active:scale-95 disabled:opacity-50 cursor-pointer"
                     title="Scroll page up"
                   >
                     <ChevronUp className="h-3.5 w-3.5" />
@@ -982,7 +982,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                   <button
                     onClick={() => executeScroll('down')}
                     disabled={actionLoading}
-                    className="flex-1 flex items-center justify-center gap-1 p-2 rounded-lg border border-white/[0.06] bg-slate-950/40 text-[10.5px] font-semibold text-slate-300 hover:text-white transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                    className="flex-1 flex items-center justify-center gap-1 p-2 rounded-lg border border-border bg-muted text-[10.5px] font-semibold text-foreground hover:text-foreground transition active:scale-95 disabled:opacity-50 cursor-pointer"
                     title="Scroll page down"
                   >
                     <ChevronDown className="h-3.5 w-3.5" />
@@ -992,7 +992,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                   <button
                     onClick={executeExtract}
                     disabled={actionLoading}
-                    className="p-2 rounded-lg border border-white/[0.06] bg-slate-950/40 text-slate-300 hover:text-white transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                    className="p-2 rounded-lg border border-border bg-muted text-foreground hover:text-foreground transition active:scale-95 disabled:opacity-50 cursor-pointer"
                     title="Extract textual data from current webpage"
                   >
                     <FileText className="h-3.5 w-3.5" />
@@ -1000,24 +1000,24 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                 </div>
 
                 {/* Elements Search Bar */}
-                <div className="p-3 border-b border-white/[0.04] bg-slate-950/10 relative">
+                <div className="p-3 border-b border-border bg-muted/20 relative">
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search interactive elements..."
-                    className="w-full bg-slate-950 border border-white/[0.06] rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-300 placeholder:text-slate-500 focus:outline-none"
+                    className="w-full bg-muted border border-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
                   />
-                  <Search className="absolute left-6 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500 pointer-events-none" />
+                  <Search className="absolute left-6 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                 </div>
 
                 {/* Element list box */}
                 <div className="flex-1 overflow-y-auto p-3 space-y-1.5 scrollbar-thin">
-                  <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest px-1 pb-1">
+                  <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest px-1 pb-1">
                     Interactive Elements ({filteredElements.length})
                   </div>
                   {filteredElements.length === 0 ? (
-                    <div className="text-[10.5px] italic text-slate-650 py-4 text-center">
+                    <div className="text-[10.5px] italic text-muted-foreground py-4 text-center">
                       {searchQuery ? 'No elements match' : 'No interactive elements found on this page'}
                     </div>
                   ) : (
@@ -1029,15 +1029,15 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                             onClick={() => handleElementClick(el)}
                             className={`w-full flex flex-col text-left p-2.5 rounded-lg border transition-all text-xs cursor-pointer ${
                               isSelected
-                                ? 'bg-brand-500/10 border-brand-500/40 text-brand-300 font-medium'
-                                : 'bg-white/[0.005] border-white/[0.02] text-slate-300 hover:bg-white/[0.02] hover:border-white/[0.05]'
+                                ? 'bg-primary/10 border-primary/40 text-primary font-medium'
+                                : 'bg-muted/20 border-border text-foreground hover:bg-accent hover:border-border'
                             }`}
                           >
                             <span className="font-semibold truncate max-w-full">
                               {el.text}
                             </span>
-                            <div className="flex items-center gap-1.5 mt-1 text-[9px] font-mono text-slate-500 uppercase">
-                              <span className="text-[8px] bg-slate-900 border border-white/[0.04] px-1 rounded text-slate-400">
+                            <div className="flex items-center gap-1.5 mt-1 text-[9px] font-mono text-muted-foreground uppercase">
+                              <span className="text-[8px] bg-card border border-border px-1 rounded text-muted-foreground">
                                 {el.tagName}
                               </span>
                               <span>{el.id}</span>
@@ -1046,12 +1046,12 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
 
                           {/* Selected Element Action Window */}
                           {isSelected && (
-                            <div className="mt-1 border-b border-x border-brand-500/20 bg-brand-950/10 rounded-b-lg p-2.5 flex flex-col gap-2 animate-scale-in">
+                            <div className="mt-1 border-b border-x border-primary/20 bg-primary/5 rounded-b-lg p-2.5 flex flex-col gap-2 animate-scale-in">
                               <div className="flex gap-2">
                                 <button
                                   onClick={executeClickAction}
                                   disabled={actionLoading}
-                                  className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-brand-500 text-slate-950 font-bold text-[10.5px] transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                                  className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded bg-primary text-primary-foreground font-bold text-[10.5px] transition active:scale-95 disabled:opacity-50 cursor-pointer"
                                 >
                                   <MousePointer className="h-3 w-3" />
                                   <span>Click</span>
@@ -1059,19 +1059,19 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                               </div>
 
                               {el.tagName === 'input' || el.tagName === 'textarea' ? (
-                                <form onSubmit={executeTypeAction} className="flex gap-1.5 border-t border-white/[0.03] pt-2 mt-1">
+                                <form onSubmit={executeTypeAction} className="flex gap-1.5 border-t border-border pt-2 mt-1">
                                   <input
                                     type="text"
                                     value={typeText}
                                     onChange={(e) => setTypeText(e.target.value)}
                                     placeholder="Type value..."
-                                    className="flex-1 bg-slate-950 border border-white/[0.08] rounded px-2 py-1 text-[10.5px] text-slate-300 focus:outline-none focus:border-brand-500"
+                                    className="flex-1 bg-muted border border-border rounded px-2 py-1 text-[10.5px] text-foreground focus:outline-none focus:border-primary"
                                     disabled={actionLoading}
                                   />
                                   <button
                                     type="submit"
                                     disabled={actionLoading || !typeText.trim()}
-                                    className="flex items-center justify-center p-1.5 rounded bg-brand-500/10 hover:bg-brand-500 text-brand-400 hover:text-slate-950 border border-brand-500/20 transition active:scale-95 disabled:opacity-30 cursor-pointer"
+                                    className="flex items-center justify-center p-1.5 rounded bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground border border-primary/20 transition active:scale-95 disabled:opacity-30 cursor-pointer"
                                     title="Type text value"
                                   >
                                     <Keyboard className="h-3.5 w-3.5" />

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, Calendar, Clock, Play, Trash2, Plus, 
   ToggleLeft, ToggleRight, CheckCircle2, AlertTriangle, Loader2,
-  ChevronDown, ChevronUp, History, ClipboardList, Info
+  ChevronDown, ChevronUp, History, ClipboardList, Info, Download, Upload
 } from 'lucide-react';
 import type { Chat } from '../utils/storage';
 
@@ -72,6 +72,8 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'schedules' | 'history'>('schedules');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Form states
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -99,15 +101,65 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
     }
   };
 
+  const schedulesImportRef = useRef<HTMLInputElement | null>(null);
+
+  const handleExportSchedules = async () => {
+    try {
+      const res = await fetch('/api/schedules/export');
+      if (!res.ok) throw new Error(`Status ${res.status}`);
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `context-schedules-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      onShowToast('Schedules backup exported successfully.', 'success');
+    } catch (e) {
+      console.error('Failed to export schedules', e);
+      onShowToast('Failed to export schedules backup.', 'error');
+    }
+  };
+
+  const handleImportSchedules = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const res = await fetch('/api/schedules/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsed)
+      });
+      if (!res.ok) throw new Error('Import API failed');
+      onShowToast('Schedules and runs imported successfully.', 'success');
+      fetchSchedules();
+      fetchRuns();
+    } catch (err) {
+      console.error('Import schedules failed', err);
+      onShowToast('Invalid schedules backup JSON file.', 'error');
+    } finally {
+      if (schedulesImportRef.current) schedulesImportRef.current.value = '';
+    }
+  };
+
   const fetchSchedules = async () => {
     try {
+      setFetchError(null);
       const res = await fetch('/api/schedules');
       if (res.ok) {
         const data = await res.json();
         setSchedules(data);
+      } else {
+        setFetchError(`Failed to load schedules (${res.status})`);
       }
     } catch (e) {
       console.error('Failed to load schedules', e);
+      setFetchError('Failed to load schedules. Is the server running?');
     }
   };
 
@@ -121,6 +173,13 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
     } catch (e) {
       console.error('Failed to load runs history', e);
     }
+  };
+
+  const loadPanelData = async () => {
+    setIsFetching(true);
+    setFetchError(null);
+    await Promise.all([fetchSchedules(), fetchRuns()]);
+    setIsFetching(false);
   };
 
   // Listen for real-time run updates via custom SSE events
@@ -160,8 +219,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
   useEffect(() => {
     if (isOpen) {
       const timer = setTimeout(() => {
-        fetchSchedules();
-        fetchRuns();
+        loadPanelData();
       }, 0);
 
       const interval = setInterval(() => {
@@ -321,13 +379,38 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
             <Clock className="h-5 w-5 text-primary" />
             <h2 className="text-sm font-bold tracking-wider uppercase text-foreground">Task Scheduling</h2>
           </div>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-accent text-muted-foreground hover:text-foreground transition cursor-pointer"
-            title="Close Panel"
-          >
-            <X className="h-4.5 w-4.5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <input
+              type="file"
+              ref={schedulesImportRef}
+              onChange={handleImportSchedules}
+              accept=".json"
+              className="hidden"
+            />
+            <button
+              onClick={() => schedulesImportRef.current?.click()}
+              className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded border border-border hover:bg-accent text-muted-foreground hover:text-foreground transition cursor-pointer"
+              title="Import Schedules JSON backup"
+            >
+              <Upload className="h-3.5 w-3.5" />
+              <span>Import</span>
+            </button>
+            <button
+              onClick={handleExportSchedules}
+              className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded border border-border hover:bg-accent text-muted-foreground hover:text-foreground transition cursor-pointer"
+              title="Export Schedules JSON backup"
+            >
+              <Download className="h-3.5 w-3.5" />
+              <span>Export</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-accent text-muted-foreground hover:text-foreground transition cursor-pointer"
+              title="Close Panel"
+            >
+              <X className="h-4.5 w-4.5" />
+            </button>
+          </div>
         </div>
 
         {/* Navigation Tabs */}
@@ -485,7 +568,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                     aria-checked={isWebSearchEnabled}
                   >
                     <span
-                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out ${
                         isWebSearchEnabled ? 'translate-x-4' : 'translate-x-0'
                       }`}
                     />
@@ -519,7 +602,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
               /* Schedules Listing */
               <div className="space-y-3">
                 <div className="flex justify-between items-center pb-2">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Active Jobs ({schedules.length})</span>
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Active Jobs ({schedules.length})</span>
                   <button
                     onClick={() => setIsFormOpen(true)}
                     className="flex items-center gap-1.5 text-xs bg-primary hover:bg-primary/90 text-primary-foreground px-3 py-1.5 rounded-md font-bold transition cursor-pointer"
@@ -529,7 +612,24 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                   </button>
                 </div>
 
-                {schedules.length === 0 ? (
+                {isFetching && schedules.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-2">
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    <span className="text-xs text-muted-foreground">Loading schedules...</span>
+                  </div>
+                ) : fetchError && schedules.length === 0 ? (
+                  <div className="text-center py-10 border border-dashed border-destructive/30 rounded-xl bg-destructive/5">
+                    <AlertTriangle className="h-8 w-8 text-destructive mx-auto mb-2 opacity-70" />
+                    <span className="text-xs font-semibold text-destructive block">{fetchError}</span>
+                    <button
+                      type="button"
+                      onClick={loadPanelData}
+                      className="mt-3 text-[10px] font-bold uppercase tracking-wider text-primary hover:underline cursor-pointer"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : schedules.length === 0 ? (
                   <div className="text-center py-10 border border-dashed border-border rounded-xl">
                     <Calendar className="h-8 w-8 text-muted-foreground mx-auto mb-2 opacity-50" />
                     <span className="text-xs font-semibold text-muted-foreground block">No active task schedules found.</span>
@@ -539,7 +639,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                   schedules.map(sched => (
                     <div
                       key={sched.id}
-                      className="p-4 border border-white/[0.04] bg-muted/10 hover:bg-muted/15 rounded-xl transition duration-200"
+                      className="p-4 border border-border bg-muted/10 hover:bg-muted/15 rounded-xl transition duration-200"
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex flex-col min-w-0 pr-4">
@@ -550,7 +650,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                               {sched.agentMode || 'standard'}
                             </span>
                             {sched.isWebSearchEnabled && (
-                              <span className="text-[8.5px] uppercase font-bold px-1.5 py-0.5 rounded border border-blue-500/20 text-blue-400 bg-blue-500/10">
+                              <span className="text-[8.5px] uppercase font-bold px-1.5 py-0.5 rounded border border-chart-2/20 text-chart-2 bg-chart-2/10">
                                 Web Search
                               </span>
                             )}
@@ -589,7 +689,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                           </button>
                           <button
                             onClick={() => handleDelete(sched.id)}
-                            className="p-1.5 hover:bg-accent rounded hover:text-red-500 transition cursor-pointer"
+                            className="p-1.5 hover:bg-accent rounded hover:text-destructive transition cursor-pointer"
                             title="Delete"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -598,7 +698,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                       </div>
 
                       {/* Runtime metadata indicators */}
-                      <div className="mt-3.5 pt-2 border-t border-white/[0.015] grid grid-cols-2 text-[9px] font-bold uppercase tracking-wider text-muted-foreground leading-none">
+                      <div className="mt-3.5 pt-2 border-t border-border grid grid-cols-2 text-[9px] font-bold uppercase tracking-wider text-muted-foreground leading-none">
                         <div>Last run: <span className="font-mono lowercase text-foreground">{sched.lastRun ? new Date(sched.lastRun).toLocaleTimeString() : 'never'}</span></div>
                         <div className="text-right">Next run: <span className="font-mono lowercase text-foreground">{sched.isActive && sched.nextRun ? (sched.nextRun.startsWith('See') ? 'cron' : new Date(sched.nextRun).toLocaleTimeString()) : 'paused'}</span></div>
                       </div>
@@ -611,7 +711,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
             /* History Runs Log */
             <div className="space-y-3">
               <div className="flex justify-between items-center pb-2">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Runs Log History ({runs.length})</span>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Runs Log History ({runs.length})</span>
                 <button
                   onClick={fetchRuns}
                   className="text-xs text-primary hover:text-primary/80 font-bold transition cursor-pointer"
@@ -631,7 +731,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                   return (
                     <div
                       key={run.id}
-                      className="border border-white/[0.04] bg-muted/15 rounded-xl p-3.5 hover:bg-muted/20 transition duration-150"
+                      className="border border-border bg-muted/15 rounded-xl p-3.5 hover:bg-muted/20 transition duration-150"
                     >
                       <div className="flex justify-between items-start cursor-pointer select-none" onClick={() => handleToggleRun(run.id)}>
                         <div className="flex flex-col min-w-0 pr-4">
@@ -643,20 +743,20 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
 
                         <div className="flex items-center gap-2">
                           {run.status === 'success' && (
-                            <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-400 border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 rounded-full uppercase leading-none">
+                            <span className="flex items-center gap-1 text-[9px] font-bold text-primary border border-primary/20 bg-primary/10 px-2 py-0.5 rounded-full uppercase leading-none">
                               <CheckCircle2 className="h-3 w-3 shrink-0" />
                               SUCCESS
                             </span>
                           )}
                           {run.status === 'failed' && (
-                            <span className="flex items-center gap-1 text-[9px] font-bold text-red-400 border border-red-500/20 bg-red-500/10 px-2 py-0.5 rounded-full uppercase leading-none">
+                            <span className="flex items-center gap-1 text-[9px] font-bold text-destructive border border-destructive/20 bg-destructive/10 px-2 py-0.5 rounded-full uppercase leading-none">
                               <AlertTriangle className="h-3 w-3 shrink-0" />
                               FAILED
                             </span>
                           )}
                           {run.status === 'running' && (
                             <div className="flex items-center gap-1.5">
-                              <span className="flex items-center gap-1 text-[9px] font-bold text-amber-400 border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 rounded-full uppercase leading-none animate-pulse">
+                              <span className="flex items-center gap-1 text-[9px] font-bold text-chart-4 border border-chart-4/20 bg-chart-4/10 px-2 py-0.5 rounded-full uppercase leading-none animate-pulse">
                                 <Loader2 className="h-3 w-3 animate-spin shrink-0" />
                                 RUNNING
                               </span>
@@ -665,7 +765,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                                   e.stopPropagation();
                                   handleCancelRun(run.id);
                                 }}
-                                className="text-[9px] font-bold text-red-400 hover:text-red-300 border border-red-500/20 hover:border-red-500/40 bg-red-500/10 hover:bg-red-500/20 px-2 py-0.5 rounded-full uppercase transition duration-150 cursor-pointer"
+                                className="text-[9px] font-bold text-destructive hover:text-destructive border border-destructive/20 hover:border-destructive/40 bg-destructive/10 hover:bg-destructive/20 px-2 py-0.5 rounded-full uppercase transition duration-150 cursor-pointer"
                                 title="Cancel executing run"
                               >
                                 Cancel
@@ -687,7 +787,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                         const isBrowserTask = !!run.browserSession || (schedule ? schedule.agentMode === 'browser' : false);
                         
                         return (
-                          <div className="mt-3.5 pt-3.5 border-t border-white/[0.03] space-y-3 font-mono text-[10px] leading-relaxed text-slate-350">
+                          <div className="mt-3.5 pt-3.5 border-t border-border space-y-3 font-mono text-[10px] leading-relaxed text-muted-foreground">
                             {isBrowserTask && onOpenBrowserModal && run.status === 'running' && (
                               <div className="flex justify-end select-none">
                                 <button
@@ -695,7 +795,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                                     e.stopPropagation();
                                     onOpenBrowserModal(run.id);
                                   }}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-brand-500/20 bg-brand-500/10 hover:bg-brand-500 text-brand-400 hover:text-slate-950 font-bold font-sans text-xs transition active:scale-95 cursor-pointer"
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/20 bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground font-bold font-sans text-xs transition active:scale-95 cursor-pointer"
                                 >
                                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                   <span>Monitor Live Browser Session</span>
@@ -716,8 +816,8 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                                       return (
                                         <div key={step.id} className="space-y-1">
                                           {step.thought && (
-                                            <div className="text-[10px] text-brand-400 italic bg-brand-500/5 border border-brand-500/10 rounded-lg px-2.5 py-1.5 pl-6 relative leading-normal">
-                                              <span className="absolute left-2 text-brand-500">💡</span>
+                                            <div className="text-[10px] text-primary italic bg-primary/5 border border-primary/10 rounded-lg px-2.5 py-1.5 pl-6 relative leading-normal">
+                                              <span className="absolute left-2 text-primary">💡</span>
                                               {step.thought}
                                             </div>
                                           )}
@@ -725,27 +825,27 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                                             onClick={() => setSelectedRunStepId(isSelected ? null : step.id)}
                                             className={`flex items-center justify-between text-[10.5px] border rounded-lg px-2.5 py-1.5 cursor-pointer transition-all ${
                                               isSelected
-                                                ? 'bg-brand-500/10 border-brand-500/40 text-brand-300 font-semibold'
-                                                : 'bg-white/[0.005] border-white/[0.015] text-slate-350 hover:bg-white/[0.02] hover:border-white/[0.05]'
+                                                ? 'bg-primary/10 border-primary/40 text-primary font-semibold'
+                                                : 'bg-muted/20 border-border text-muted-foreground hover:bg-muted/40 hover:border-border'
                                             }`}
                                           >
                                             <div className="flex items-center gap-2">
                                               <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${
                                                 step.status === 'success' 
-                                                  ? 'bg-emerald-500' 
+                                                  ? 'bg-primary' 
                                                   : step.status === 'error'
-                                                    ? 'bg-red-500'
-                                                    : 'bg-amber-500 animate-pulse'
+                                                    ? 'bg-destructive'
+                                                    : 'bg-chart-4 animate-pulse'
                                               }`} />
                                               <span className="font-mono text-[9.5px] truncate max-w-[200px]">
                                                 [{idx + 1}] {step.logMessage || step.action.toUpperCase()}
                                               </span>
                                             </div>
                                             <div className="flex items-center gap-1">
-                                              <span className="text-[8.5px] font-bold text-slate-500 uppercase">
+                                              <span className="text-[8.5px] font-bold text-muted-foreground uppercase">
                                                 {step.status}
                                               </span>
-                                              {isSelected && <span className="text-[9px] text-brand-400">👁️</span>}
+                                              {isSelected && <span className="text-[9px] text-primary">👁️</span>}
                                             </div>
                                           </div>
                                         </div>
@@ -754,20 +854,20 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                                   </div>
 
                                   {/* Screenshot Viewer Panel */}
-                                  <div className="border border-white/[0.06] bg-slate-950/40 rounded-xl overflow-hidden flex flex-col items-center justify-center p-2.5 min-h-[160px] relative select-none">
+                                  <div className="border border-border bg-muted/40 rounded-xl overflow-hidden flex flex-col items-center justify-center p-2.5 min-h-[160px] relative select-none">
                                     {selectedRunStepId ? (
                                       <div className="w-full flex flex-col items-center">
                                         <img
                                           src={`/api/browser/screenshot?stepId=${selectedRunStepId}`}
                                           alt="Step State Screenshot"
-                                          className="w-full h-auto max-h-48 object-contain rounded border border-white/[0.04] bg-slate-900"
+                                          className="w-full h-auto max-h-48 object-contain rounded border border-border bg-card"
                                         />
-                                        <div className="text-[8.5px] text-slate-500 font-mono mt-1.5 text-center truncate w-full">
+                                        <div className="text-[8.5px] text-muted-foreground font-mono mt-1.5 text-center truncate w-full">
                                           Screenshot for Step: {selectedRunStepId}
                                         </div>
                                       </div>
                                     ) : (
-                                      <div className="text-[10px] text-slate-500 italic text-center px-4 py-8">
+                                      <div className="text-[10px] text-muted-foreground italic text-center px-4 py-8">
                                         Select a step on the left to preview the live browser viewport screenshot at that moment.
                                       </div>
                                     )}
@@ -777,19 +877,19 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                             )}
 
                             {run.output && (
-                              <div className="bg-slate-950/40 border border-white/[0.03] rounded-lg p-2.5 font-mono">
+                              <div className="bg-muted/40 border border-border rounded-lg p-2.5 font-mono">
                                 <div className="font-bold text-[8.5px] uppercase text-muted-foreground mb-1 leading-none select-none font-sans">Output / Summary</div>
                                 <pre className="whitespace-pre-wrap max-h-36 overflow-y-auto scrollbar-thin select-text text-foreground">{run.output}</pre>
                               </div>
                             )}
                           
                             {run.log && run.log.length > 0 && (
-                              <div className="bg-slate-950/20 border border-white/[0.015] rounded-lg p-2.5">
+                              <div className="bg-muted/20 border border-border rounded-lg p-2.5">
                                 <div className="font-bold text-[8.5px] uppercase text-muted-foreground mb-1 leading-none select-none flex items-center gap-1 font-sans">
                                   <ClipboardList className="h-3 w-3" />
                                   <span>Execution Logs</span>
                                 </div>
-                                <div className="space-y-1 max-h-32 overflow-y-auto scrollbar-thin text-slate-400 font-mono">
+                                <div className="space-y-1 max-h-32 overflow-y-auto scrollbar-thin text-muted-foreground font-mono">
                                   {run.log.map((logMsg, lIdx) => (
                                     <div key={lIdx}>&gt; {logMsg}</div>
                                   ))}

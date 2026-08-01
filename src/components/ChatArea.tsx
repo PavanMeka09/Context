@@ -256,7 +256,8 @@ const QuestionCard: React.FC<QuestionCardProps> = ({
             onClick={() => onAnswer('Skip')}
             disabled={isGenerating}
             title="Skip question"
-            className="text-muted-foreground hover:text-foreground rounded p-0.5 transition cursor-pointer disabled:opacity-30"
+            aria-label="Skip question"
+            className="text-muted-foreground hover:text-foreground rounded p-0.5 transition cursor-pointer disabled:opacity-30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             <X className="h-4 w-4" />
           </button>
@@ -641,7 +642,7 @@ export const RagStatusBadge: React.FC<RagStatusBadgeProps> = ({
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="flex h-6 w-6 items-center justify-center rounded bg-muted border border-border text-foreground">
-            <Check className="h-3.5 w-3.5 text-emerald-500" strokeWidth={2.5} />
+            <Check className="h-3.5 w-3.5 text-primary" strokeWidth={2.5} />
           </div>
           <div className="flex flex-col min-w-0">
             <span className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground leading-none">Semantic Match Completed</span>
@@ -704,6 +705,7 @@ interface ChatAreaProps {
   onSwitchBranch?: (messageId: string) => void;
   onOpenBrowserModal?: (sessionId?: string) => void;
   onOpenAnalytics?: () => void;
+  settings?: { provider: string; model: string };
   children?: React.ReactNode;
 }
 
@@ -719,6 +721,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onSwitchBranch,
   onOpenBrowserModal,
   onOpenAnalytics,
+  settings,
   children
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -842,26 +845,40 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
   const starterPrompts = [
     {
+      title: 'Summarize a document',
+      icon: <FileText className="h-3.5 w-3.5 text-foreground" />,
+      prompt: 'Help me summarize a long document into clear key points and action items. Ask me to paste the text or upload a file.'
+    },
+    {
+      title: 'Plan my week',
+      icon: <CheckSquare className="h-3.5 w-3.5 text-foreground" />,
+      prompt: 'Help me plan my week. Ask about my priorities, deadlines, and energy levels, then propose a realistic schedule.'
+    },
+    {
       title: 'Explain hooks',
       icon: <Terminal className="h-3.5 w-3.5 text-foreground" />,
       prompt: 'Explain how React server-side streaming hooks work and why they improve UX. Provide a detailed code example.'
     },
     {
-      title: 'Optimize queries',
-      icon: <CheckSquare className="h-3.5 w-3.5 text-foreground" />,
-      prompt: 'Optimize this TypeScript filtering utility function for performance:\n\n```typescript\nfunction filterUsers(users: any[]) {\n  return users.filter(u => u.active).map(u => u.name);\n}\n```'
-    },
-    {
-      title: 'Draft PRD specs',
-      icon: <FileText className="h-3.5 w-3.5 text-foreground" />,
-      prompt: 'Draft an elegant Product Requirements Document (PRD) template for a lightweight mobile-friendly notes app.'
-    },
-    {
-      title: 'API Authorization',
+      title: 'Draft a PRD',
       icon: <HelpCircle className="h-3.5 w-3.5 text-foreground" />,
-      prompt: 'List top 5 security practices when implementing user authorization headers on a node/express REST API.'
+      prompt: 'Draft a concise Product Requirements Document (PRD) template for a lightweight mobile-friendly notes app.'
     }
   ];
+
+  const getProviderLabel = () => {
+    if (!settings) return null;
+    if (settings.provider === 'gemini') return 'Gemini';
+    if (settings.provider === 'ollama') return 'Ollama';
+    if (settings.provider === 'openai') return 'OpenAI';
+    return 'OpenRouter';
+  };
+
+  const getModelLabel = () => {
+    if (!settings?.model) return null;
+    const parts = settings.model.split('/');
+    return parts[parts.length - 1] || settings.model;
+  };
 
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-background text-foreground relative">
@@ -891,38 +908,47 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             <div className="relative select-none">
               <button
                 onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
-                className="flex items-center gap-1.5 rounded-lg border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground px-2.5 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm"
+                className="flex items-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground px-2.5 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 title="Export conversation"
+                aria-label="Export conversation"
+                aria-expanded={exportDropdownOpen}
+                aria-haspopup="menu"
               >
-                <Download className="h-3.5 w-3.5 text-indigo-400" />
+                <Download className="h-3.5 w-3.5 text-primary" />
                 <span className="hidden sm:inline">Export</span>
                 <ChevronDown className="h-3 w-3 opacity-60" />
               </button>
 
               {exportDropdownOpen && (
-                <div className="absolute right-0 top-full mt-1.5 w-44 rounded-lg border border-border bg-popover p-1 shadow-xl z-30 text-popover-foreground animate-fade-in">
-                  <button
-                    onClick={() => exportConversation('md')}
-                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs hover:bg-accent text-foreground transition"
-                  >
-                    <FileText className="h-3.5 w-3.5 text-indigo-400" />
-                    <span>Markdown (.md)</span>
-                  </button>
-                  <button
-                    onClick={() => exportConversation('txt')}
-                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs hover:bg-accent text-foreground transition"
-                  >
-                    <FileText className="h-3.5 w-3.5 text-emerald-400" />
-                    <span>Plain Text (.txt)</span>
-                  </button>
-                  <button
-                    onClick={() => exportConversation('json')}
-                    className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs hover:bg-accent text-foreground transition"
-                  >
-                    <Database className="h-3.5 w-3.5 text-amber-400" />
-                    <span>JSON Raw (.json)</span>
-                  </button>
-                </div>
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setExportDropdownOpen(false)} />
+                  <div role="menu" className="absolute right-0 top-full mt-1.5 w-44 rounded-lg border border-border bg-popover p-1 shadow-xl z-30 text-popover-foreground animate-fade-in">
+                    <button
+                      role="menuitem"
+                      onClick={() => { exportConversation('md'); setExportDropdownOpen(false); }}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs hover:bg-accent text-foreground transition"
+                    >
+                      <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>Markdown (.md)</span>
+                    </button>
+                    <button
+                      role="menuitem"
+                      onClick={() => { exportConversation('txt'); setExportDropdownOpen(false); }}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs hover:bg-accent text-foreground transition"
+                    >
+                      <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>Plain Text (.txt)</span>
+                    </button>
+                    <button
+                      role="menuitem"
+                      onClick={() => { exportConversation('json'); setExportDropdownOpen(false); }}
+                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs hover:bg-accent text-foreground transition"
+                    >
+                      <Database className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>JSON Raw (.json)</span>
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -930,11 +956,11 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           {onOpenAnalytics && (
             <button
               onClick={onOpenAnalytics}
-              className="flex items-center gap-1.5 rounded-lg border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground p-2 sm:px-2.5 sm:py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm"
+              className="flex items-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground p-2 sm:px-2.5 sm:py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               title="System Diagnostics & Telemetry"
               aria-label="System Diagnostics & Telemetry"
             >
-              <Activity className="h-3.5 w-3.5 text-sky-400" />
+              <Activity className="h-3.5 w-3.5 text-chart-2" />
               <span className="hidden md:inline">Telemetry</span>
             </button>
           )}
@@ -942,15 +968,16 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           {onOpenBrowserModal && (
             <button
               onClick={() => onOpenBrowserModal(chat?.id || undefined)}
-              className="flex items-center gap-1.5 rounded-lg border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground px-3 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm"
+              className="flex items-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground px-3 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               title="Open Sandbox Browser Live View"
+              aria-label="Open Browser Sandbox"
             >
               <Compass className="h-3.5 w-3.5 text-primary" />
               <span>Browser Sandbox</span>
               {chat?.messages.some(m => m.browserSession && (m.browserSession.status === 'running' || m.browserSession.status === 'paused')) && (
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
                 </span>
               )}
             </button>
@@ -975,19 +1002,32 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               Your conversations are private and stored locally.
             </p>
 
+            {settings && getProviderLabel() && (
+              <div className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 py-1 text-[10px] font-medium text-muted-foreground select-none">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                <span className="uppercase tracking-wider font-bold">{getProviderLabel()}</span>
+                <span className="text-border">·</span>
+                <span className="text-foreground font-semibold truncate max-w-[160px]">{getModelLabel()}</span>
+              </div>
+            )}
+
             {/* suggestion chips */}
             <div className="mt-8 flex flex-wrap justify-center gap-2 select-none max-w-lg">
               {starterPrompts.map((card, i) => (
                 <button
                   key={i}
                   onClick={() => onSendMessage(card.prompt)}
-                  className="flex items-center gap-2 rounded-full border border-input bg-background hover:bg-accent hover:text-accent-foreground px-3.5 py-1.5 text-xs text-muted-foreground transition-all duration-200 cursor-pointer"
+                  className="flex items-center gap-2 rounded-full border border-input bg-background hover:bg-accent hover:text-accent-foreground px-3.5 py-1.5 text-xs text-muted-foreground transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
                   {card.icon}
                   <span>{card.title}</span>
                 </button>
               ))}
             </div>
+
+            <p className="mt-6 text-[10px] text-muted-foreground/80 select-none">
+              Press Enter to send · Shift+Enter for newline
+            </p>
           </div>
         ) : (
           
@@ -1038,6 +1078,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                               value={editInputValue}
                               onChange={(e) => setEditInputValue(e.target.value)}
                               rows={Math.max(2, editInputValue.split('\n').length)}
+                              className="w-full bg-transparent border-0 p-0 text-foreground focus:outline-none focus:ring-0 resize-none font-sans leading-relaxed select-text text-sm"
                               style={{ resize: 'none' }}
                               autoFocus
                               onKeyDown={(e) => {
@@ -1104,13 +1145,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
                       {/* Sibling navigation and actions */}
                       {!isEditing && (
-                        <div className="mt-1.5 flex items-center justify-between w-full select-none opacity-0 group-hover:opacity-100 transition-opacity duration-200 px-1">
+                        <div className="mt-1.5 flex items-center justify-between w-full select-none opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200 px-1">
                           {hasSiblings ? (
                             <div className="flex items-center gap-1 text-[9px] font-bold text-muted-foreground select-none">
                               <button
                                 onClick={() => currentSiblingIndex > 0 && onSwitchBranch?.(siblings[currentSiblingIndex - 1])}
                                 disabled={currentSiblingIndex === 0}
-                                className={`rounded p-0.5 transition cursor-pointer ${
+                                className={`rounded p-0.5 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                                   currentSiblingIndex === 0 ? 'opacity-20 cursor-not-allowed' : 'hover:bg-accent text-muted-foreground hover:text-foreground'
                                 }`}
                                 aria-label="Previous version"
@@ -1123,7 +1164,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                               <button
                                 onClick={() => currentSiblingIndex < siblings.length - 1 && onSwitchBranch?.(siblings[currentSiblingIndex + 1])}
                                 disabled={currentSiblingIndex === siblings.length - 1}
-                                className={`rounded p-0.5 transition cursor-pointer ${
+                                className={`rounded p-0.5 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                                   currentSiblingIndex === siblings.length - 1 ? 'opacity-20 cursor-not-allowed' : 'hover:bg-accent text-muted-foreground hover:text-foreground'
                                 }`}
                                 aria-label="Next version"
@@ -1138,11 +1179,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                           <div className="flex items-center gap-1.5 ml-auto text-muted-foreground">
                             <button
                               onClick={() => handleCopyMessage(msg.id, msg.content)}
-                              className="rounded p-1 hover:bg-accent hover:text-foreground transition cursor-pointer"
+                              className="rounded p-1 hover:bg-accent hover:text-foreground transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                               title="Copy message"
+                              aria-label="Copy message"
                             >
                               {copiedId === msg.id ? (
-                                <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                <Check className="h-3.5 w-3.5 text-primary" />
                               ) : (
                                 <Copy className="h-3.5 w-3.5" />
                               )}
@@ -1150,16 +1192,18 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
                             <button
                               onClick={() => startEditingMessage(msg)}
-                              className="rounded p-1 hover:bg-accent hover:text-foreground transition cursor-pointer"
+                              className="rounded p-1 hover:bg-accent hover:text-foreground transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                               title="Edit message"
+                              aria-label="Edit message"
                             >
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
 
                             <button
                               onClick={() => onDeleteMessage(msg.id)}
-                              className="rounded p-1 hover:bg-accent hover:text-destructive transition cursor-pointer"
+                              className="rounded p-1 hover:bg-accent hover:text-destructive transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                               title="Delete message"
+                              aria-label="Delete message"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -1301,13 +1345,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
                       {/* Assistant actions */}
                       {!isEditing && (
-                        <div className="mt-1 flex items-center gap-3 select-none opacity-0 group-hover:opacity-100 transition-opacity duration-200 px-1 text-muted-foreground">
+                        <div className="mt-1 flex items-center gap-3 select-none opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200 px-1 text-muted-foreground">
                           {hasSiblings && (
                             <div className="flex items-center gap-1 text-[9px] font-bold select-none mr-2">
                               <button
                                 onClick={() => currentSiblingIndex > 0 && onSwitchBranch?.(siblings[currentSiblingIndex - 1])}
                                 disabled={currentSiblingIndex === 0}
-                                className={`rounded p-0.5 transition cursor-pointer ${
+                                className={`rounded p-0.5 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                                   currentSiblingIndex === 0 ? 'opacity-20 cursor-not-allowed' : 'hover:bg-accent text-muted-foreground hover:text-foreground'
                                 }`}
                                 aria-label="Previous version"
@@ -1320,7 +1364,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                               <button
                                 onClick={() => currentSiblingIndex < siblings.length - 1 && onSwitchBranch?.(siblings[currentSiblingIndex + 1])}
                                 disabled={currentSiblingIndex === siblings.length - 1}
-                                className={`rounded p-0.5 transition cursor-pointer ${
+                                className={`rounded p-0.5 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                                   currentSiblingIndex === siblings.length - 1 ? 'opacity-20 cursor-not-allowed' : 'hover:bg-accent text-muted-foreground hover:text-foreground'
                                 }`}
                                 aria-label="Next version"
@@ -1333,12 +1377,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                           <div className="flex items-center gap-1.5">
                             <button
                               onClick={() => handleToggleSpeech(msg.id, msg.content)}
-                              className={`rounded p-1 transition cursor-pointer ${
+                              className={`rounded p-1 transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                                 speakingMessageId === msg.id
                                   ? 'bg-primary/20 text-primary animate-pulse'
                                   : 'hover:bg-accent hover:text-foreground'
                               }`}
                               title={speakingMessageId === msg.id ? "Stop reading aloud" : "Read aloud (Text-to-Speech)"}
+                              aria-label={speakingMessageId === msg.id ? "Stop reading aloud" : "Read aloud"}
+                              aria-pressed={speakingMessageId === msg.id}
                             >
                               {speakingMessageId === msg.id ? (
                                 <VolumeX className="h-3.5 w-3.5 text-primary" />
@@ -1349,11 +1395,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
                             <button
                               onClick={() => handleCopyMessage(msg.id, msg.content)}
-                              className="rounded p-1 hover:bg-accent hover:text-foreground transition cursor-pointer"
+                              className="rounded p-1 hover:bg-accent hover:text-foreground transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                               title="Copy response"
+                              aria-label="Copy response"
                             >
                               {copiedId === msg.id ? (
-                                <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                <Check className="h-3.5 w-3.5 text-primary" />
                               ) : (
                                 <Copy className="h-3.5 w-3.5" />
                               )}
@@ -1361,8 +1408,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
                             <button
                               onClick={() => startEditingMessage(msg)}
-                              className="rounded p-1 hover:bg-accent hover:text-foreground transition cursor-pointer"
+                              className="rounded p-1 hover:bg-accent hover:text-foreground transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                               title="Edit response"
+                              aria-label="Edit response"
                             >
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
@@ -1371,8 +1419,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                               <button
                                 onClick={onRegenerateResponse}
                                 disabled={isGenerating}
-                                className="rounded p-1 hover:bg-accent hover:text-foreground transition disabled:opacity-50 cursor-pointer"
+                                className="rounded p-1 hover:bg-accent hover:text-foreground transition disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                                 title="Regenerate response"
+                                aria-label="Regenerate response"
                               >
                                 <RotateCw className={`h-3.5 w-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
                               </button>
@@ -1380,8 +1429,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
                             <button
                               onClick={() => onDeleteMessage(msg.id)}
-                              className="rounded p-1 hover:bg-accent hover:text-destructive transition cursor-pointer"
+                              className="rounded p-1 hover:bg-accent hover:text-destructive transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                               title="Delete response"
+                              aria-label="Delete response"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -1398,22 +1448,20 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       </div>
 
       {/* Composer Container */}
-      <footer className="flex flex-col items-center shrink-0 w-full bg-background">
+      <footer className="relative flex flex-col items-center shrink-0 w-full bg-background">
+        {showScrollButton && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute -top-10 left-1/2 -translate-x-1/2 z-30 flex h-8 px-3 items-center justify-center gap-1.5 rounded-full border border-border bg-popover text-popover-foreground hover:bg-accent hover:text-accent-foreground shadow-md transition-all text-[10px] font-semibold uppercase tracking-wider select-none cursor-pointer animate-fade-in focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            title="Scroll to bottom"
+            aria-label="Scroll to bottom"
+          >
+            <ChevronDown className="h-3.5 w-3.5 text-primary animate-bounce" />
+            <span>New Messages Below</span>
+          </button>
+        )}
         {children}
       </footer>
-
-      {/* Floating Jump to Bottom Button */}
-      {showScrollButton && (
-        <button
-          onClick={scrollToBottom}
-          className="absolute bottom-[92px] left-1/2 -translate-x-1/2 z-30 flex h-8 px-3 items-center justify-center gap-1.5 rounded-full border border-border bg-popover text-popover-foreground hover:bg-accent hover:text-accent-foreground shadow-md transition-all text-[10px] font-semibold uppercase tracking-wider select-none cursor-pointer animate-fade-in"
-          title="Scroll to bottom"
-          aria-label="Scroll to bottom button"
-        >
-          <ChevronDown className="h-3.5 w-3.5 text-primary animate-bounce" />
-          <span>New Messages Below</span>
-        </button>
-      )}
 
     </div>
   );

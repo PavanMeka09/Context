@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Keyboard, MessageSquare, Search, HelpCircle, Terminal } from 'lucide-react';
+import { X, Keyboard, MessageSquare, Search, HelpCircle, Terminal, PanelLeft } from 'lucide-react';
 
 interface ShortcutsModalProps {
   isOpen: boolean;
@@ -21,6 +21,12 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
       macKeys: ['⌘', 'Shift', 'N'],
       desc: 'Create a new conversation session',
       icon: <MessageSquare className="h-4 w-4 text-foreground" />
+    },
+    {
+      keys: ['Ctrl', 'B'],
+      macKeys: ['⌘', 'B'],
+      desc: 'Toggle sidebar',
+      icon: <PanelLeft className="h-4 w-4 text-foreground" />
     },
     {
       keys: ['Ctrl', '/'],
@@ -55,7 +61,10 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
             <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 border border-primary/20 text-primary">
               <Keyboard className="h-3.5 w-3.5" />
             </div>
-            <h2 className="font-sans text-xs font-semibold tracking-wide text-foreground">Keyboard Navigation</h2>
+            <div>
+              <h2 className="font-sans text-xs font-semibold tracking-wide text-foreground">Keyboard Navigation</h2>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Quick keys for common actions across the app.</p>
+            </div>
           </div>
           <button
             onClick={onClose}

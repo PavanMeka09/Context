@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { vectorDb } from '../utils/vectorDb';
-import type { VectorDocument } from '../utils/vectorDb';
-import { X, Trash2, Plus, Download, Loader2, FileText, Database, Globe } from 'lucide-react';
+import type { VectorDocument, VectorChunk } from '../utils/vectorDb';
+import { X, Trash2, Plus, Download, Loader2, FileText, Database, Globe, Search } from 'lucide-react';
 import { extractTextFromPdf } from '../utils/pdf';
 
 interface RAGPanelProps {
@@ -20,6 +20,7 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
   onError
 }) => {
   const [documents, setDocuments] = useState<VectorDocument[]>([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [modelStatus, setModelStatus] = useState<string>('idle');
   const [modelProgress, setModelProgress] = useState<number>(0);
   const [isUploading, setIsUploading] = useState(false);
@@ -28,13 +29,23 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
   const [isScraping, setIsScraping] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // RAG Query Debugger state
+  const [testQuery, setTestQuery] = useState('');
+  const [testSearchMode, setTestSearchMode] = useState<'hybrid' | 'vector' | 'keyword'>('hybrid');
+  const [testResults, setTestResults] = useState<Array<{ chunk: VectorChunk; score: number; matchType?: string }>>([]);
+  const [isTestingQuery, setIsTestingQuery] = useState(false);
+  const [testSearchCompleted, setTestSearchCompleted] = useState(false);
+
   const loadDocuments = useCallback(async () => {
+    setIsLoadingDocuments(true);
     try {
       const docs = await vectorDb.getDocuments();
       setDocuments(docs);
     } catch (e) {
       console.error('Failed to load local docs', e);
       onError('Failed to load local document registry.');
+    } finally {
+      setIsLoadingDocuments(false);
     }
   }, [onError]);
 
@@ -228,6 +239,30 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
     }
   };
 
+  const handleTestSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!testQuery.trim()) return;
+
+    setIsTestingQuery(true);
+    setTestSearchCompleted(false);
+    try {
+      if (modelStatus === 'idle') {
+        vectorDb.preloadModel();
+      }
+      const results = await vectorDb.searchHybridChunks(testQuery.trim(), {
+        limit: 4,
+        mode: testSearchMode
+      });
+      setTestResults(results);
+    } catch (err) {
+      console.error('RAG test search failed', err);
+      onError('Failed to execute RAG similarity test search.');
+    } finally {
+      setIsTestingQuery(false);
+      setTestSearchCompleted(true);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -267,7 +302,7 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
               aria-checked={isRagEnabled}
             >
               <span
-                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out ${
                   isRagEnabled ? 'translate-x-4' : 'translate-x-0'
                 }`}
               />
@@ -280,7 +315,7 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
               <span className="font-semibold text-muted-foreground uppercase tracking-wider">Embeddings Model Weight</span>
               <span className={`font-bold px-2 py-0.5 rounded-full ${
                 modelStatus === 'ready' 
-                  ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' 
+                  ? 'bg-primary/10 text-primary border border-primary/20' 
                   : modelStatus === 'loading'
                     ? 'bg-primary/10 text-primary border border-primary/20 animate-pulse'
                     : modelStatus === 'error'
@@ -428,7 +463,19 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
               </div>
             </div>
 
-            {documents.length === 0 ? (
+            {isLoadingDocuments ? (
+              <div className="space-y-1.5" aria-busy="true" aria-label="Loading indexed documents">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 animate-pulse">
+                    <div className="h-3.5 w-3.5 shrink-0 rounded bg-muted" />
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="h-2.5 w-3/4 rounded bg-muted" />
+                      <div className="h-2 w-1/2 rounded bg-muted" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : documents.length === 0 ? (
               <div className="rounded-md border border-border bg-card p-6 text-center select-none">
                 <FileText className="h-5 w-5 text-muted-foreground mx-auto mb-1.5" />
                 <p className="text-[10px] text-muted-foreground italic">No local documents indexed in memory yet.</p>
@@ -453,6 +500,70 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* RAG Query Debugger & Similarity Tester */}
+          <div className="rounded-lg border border-border bg-muted/20 p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground select-none">
+                <Search className="h-3 w-3 text-primary" />
+                <span>Test RAG Semantic Retrieval</span>
+              </div>
+              <select
+                value={testSearchMode}
+                onChange={(e) => setTestSearchMode(e.target.value as 'hybrid' | 'vector' | 'keyword')}
+                className="bg-background border border-input rounded text-[9px] font-semibold px-1.5 py-0.5 text-foreground focus:outline-none"
+              >
+                <option value="hybrid">Hybrid (RRF)</option>
+                <option value="vector">Vector Only</option>
+                <option value="keyword">BM25 Keyword</option>
+              </select>
+            </div>
+
+            <form onSubmit={handleTestSearch} className="flex gap-2">
+              <input
+                type="text"
+                value={testQuery}
+                onChange={(e) => setTestQuery(e.target.value)}
+                placeholder="Enter test prompt query..."
+                disabled={isTestingQuery}
+                className="flex-1 bg-background border border-input rounded-md px-2.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={isTestingQuery || !testQuery.trim()}
+                className="flex h-7 px-3 shrink-0 items-center justify-center rounded-md bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-bold transition cursor-pointer active:scale-95 shadow-sm"
+              >
+                {isTestingQuery ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span>Search</span>}
+              </button>
+            </form>
+
+            {testSearchCompleted && testResults.length === 0 && !isTestingQuery && (
+              <div className="rounded-md border border-border bg-card p-4 text-center select-none">
+                <Search className="h-4 w-4 text-muted-foreground mx-auto mb-1.5" />
+                <p className="text-[10px] font-semibold text-muted-foreground">No matches</p>
+                <p className="text-[9px] text-muted-foreground/80 mt-0.5">No indexed chunks matched your test query.</p>
+              </div>
+            )}
+
+            {testResults.length > 0 && (
+              <div className="space-y-1.5 pt-1 max-h-40 overflow-y-auto">
+                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Top Matches ({testResults.length})</span>
+                {testResults.map((res, i) => (
+                  <div key={i} className="p-2 rounded border border-border bg-card text-card-foreground text-[10px] space-y-1">
+                    <div className="flex items-center justify-between font-semibold">
+                      <span className="text-foreground truncate max-w-[200px]">{res.chunk.docName}</span>
+                      <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                        {Math.min(100, Math.max(0, res.score * 100)).toFixed(1)}% match ({res.matchType || 'hybrid'})
+                      </span>
+                    </div>
+                    <p className="text-muted-foreground line-clamp-2 italic font-mono text-[9px] leading-tight">
+                      "{res.chunk.text}"
+                    </p>
                   </div>
                 ))}
               </div>

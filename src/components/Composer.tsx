@@ -74,6 +74,7 @@ export const Composer: React.FC<ComposerProps> = ({
 
   const [promptDropdownOpen, setPromptDropdownOpen] = useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
+  const [toolsDropdownOpen, setToolsDropdownOpen] = useState(false);
 
   const getActivePromptName = () => {
     const all = [...PRESET_PROMPTS, ...customPrompts];
@@ -401,7 +402,10 @@ export const Composer: React.FC<ComposerProps> = ({
                 type="button"
                 onClick={() => setPromptDropdownOpen(!promptDropdownOpen)}
                 title={`Active Persona: ${getActivePromptName()}`}
-                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer ${
+                aria-label="Select persona"
+                aria-expanded={promptDropdownOpen}
+                aria-haspopup="menu"
+                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                   activePromptId !== 'preset-general'
                     ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/95'
                     : 'border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
@@ -472,46 +476,122 @@ export const Composer: React.FC<ComposerProps> = ({
             {/* Separator line */}
             <div className="w-[1px] h-4 bg-border mx-0.5" />
 
-            {/* Docs (RAG) Toggle */}
+            {/* Tools: collapsed menu on small screens, inline on md+ */}
+            <div className="relative md:hidden">
+              <button
+                type="button"
+                onClick={() => setToolsDropdownOpen(!toolsDropdownOpen)}
+                title="Tools"
+                aria-label="Tools"
+                aria-expanded={toolsDropdownOpen}
+                aria-haspopup="menu"
+                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                  settings.isRagEnabled || settings.isWebSearchEnabled || settings.isBrowserAgentEnabled
+                    ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/95'
+                    : 'border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
+                }`}
+              >
+                <Search className="h-3.5 w-3.5" />
+                <span>Tools</span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </button>
+              {toolsDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setToolsDropdownOpen(false)} />
+                  <div role="menu" className="absolute left-0 bottom-8.5 z-30 w-44 rounded-md border border-border bg-popover p-1 shadow-md animate-fade-in">
+                    <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border mb-1">
+                      Context Tools
+                    </div>
+                    <button
+                      role="menuitem"
+                      type="button"
+                      onClick={() => { toggleSearch(); setToolsDropdownOpen(false); }}
+                      className={`flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
+                        settings.isRagEnabled ? 'bg-accent text-accent-foreground font-semibold' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                      }`}
+                    >
+                      <Search className="h-3.5 w-3.5" />
+                      <span className="flex-1">Docs (RAG)</span>
+                      {settings.isRagEnabled && <Check className="h-3.5 w-3.5 text-primary" />}
+                    </button>
+                    <button
+                      role="menuitem"
+                      type="button"
+                      onClick={() => { toggleWebSearch(); setToolsDropdownOpen(false); }}
+                      className={`flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
+                        settings.isWebSearchEnabled ? 'bg-accent text-accent-foreground font-semibold' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                      }`}
+                    >
+                      <Globe className="h-3.5 w-3.5" />
+                      <span className="flex-1">Web Search</span>
+                      {settings.isWebSearchEnabled && <Check className="h-3.5 w-3.5 text-primary" />}
+                    </button>
+                    <button
+                      role="menuitem"
+                      type="button"
+                      onClick={() => { toggleBrowserAgent(); setToolsDropdownOpen(false); }}
+                      className={`flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
+                        settings.isBrowserAgentEnabled ? 'bg-accent text-accent-foreground font-semibold' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                      }`}
+                    >
+                      <Compass className="h-3.5 w-3.5" />
+                      <span className="flex-1">Browser</span>
+                      {settings.isBrowserAgentEnabled && <Check className="h-3.5 w-3.5 text-primary" />}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Docs (RAG) Toggle — md+ */}
             <button
               type="button"
               onClick={toggleSearch}
               title={settings.isRagEnabled ? "Disable Local Docs context (RAG)" : "Enable Local Docs context (RAG)"}
-              className={`flex h-7 w-7 items-center justify-center rounded-md transition-all cursor-pointer ${
+              aria-label="Toggle Docs RAG"
+              aria-pressed={settings.isRagEnabled}
+              className={`hidden md:flex h-7 items-center gap-1.5 rounded-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                 settings.isRagEnabled
-                  ? 'border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
-                  : 'border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
+                  ? 'px-2 border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
+                  : 'w-7 justify-center border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
               }`}
             >
               <Search className="h-3.5 w-3.5" />
+              {settings.isRagEnabled && <span className="text-[10px] font-semibold">Docs</span>}
             </button>
 
-            {/* Web Search (SearXNG) Toggle */}
+            {/* Web Search Toggle — md+ */}
             <button
               type="button"
               onClick={toggleWebSearch}
               title={settings.isWebSearchEnabled ? "Disable Web Search (SearXNG)" : "Enable Web Search (SearXNG)"}
-              className={`flex h-7 w-7 items-center justify-center rounded-md transition-all cursor-pointer ${
+              aria-label="Toggle Web Search"
+              aria-pressed={settings.isWebSearchEnabled}
+              className={`hidden md:flex h-7 items-center gap-1.5 rounded-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                 settings.isWebSearchEnabled
-                  ? 'border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
-                  : 'border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
+                  ? 'px-2 border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
+                  : 'w-7 justify-center border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
               }`}
             >
               <Globe className="h-3.5 w-3.5" />
+              {settings.isWebSearchEnabled && <span className="text-[10px] font-semibold">Web</span>}
             </button>
 
-            {/* Browser Agent Toggle */}
+            {/* Browser Agent Toggle — md+ */}
             <button
               type="button"
               onClick={toggleBrowserAgent}
               title={settings.isBrowserAgentEnabled ? "Disable Browser Agent" : "Enable Browser Agent (Automate browser tasks)"}
-              className={`flex h-7 w-7 items-center justify-center rounded-md transition-all cursor-pointer ${
+              aria-label="Toggle Browser Agent"
+              aria-pressed={settings.isBrowserAgentEnabled}
+              className={`hidden md:flex h-7 items-center gap-1.5 rounded-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                 settings.isBrowserAgentEnabled
-                  ? 'border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
-                  : 'border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
+                  ? 'px-2 border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
+                  : 'w-7 justify-center border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
               }`}
             >
               <Compass className="h-3.5 w-3.5" />
+              {settings.isBrowserAgentEnabled && <span className="text-[10px] font-semibold">Browser</span>}
             </button>
 
             {/* Separator line */}
@@ -523,7 +603,10 @@ export const Composer: React.FC<ComposerProps> = ({
                 type="button"
                 onClick={() => setThinkingDropdownOpen(!thinkingDropdownOpen)}
                 title={`Thinking Level: ${settings.thinkingLevel || 'off'}`}
-                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer ${
+                aria-label="Thinking level"
+                aria-expanded={thinkingDropdownOpen}
+                aria-haspopup="menu"
+                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                   settings.thinkingLevel && settings.thinkingLevel !== 'off'
                     ? 'border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
                     : 'border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
@@ -539,13 +622,14 @@ export const Composer: React.FC<ComposerProps> = ({
               {thinkingDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-20" onClick={() => setThinkingDropdownOpen(false)} />
-                  <div className="absolute left-0 bottom-8.5 z-30 w-36 rounded-md border border-border bg-popover p-1 shadow-md animate-fade-in">
+                  <div role="menu" className="absolute left-0 bottom-8.5 z-30 w-36 rounded-md border border-border bg-popover p-1 shadow-md animate-fade-in">
                     <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border mb-1">
                       Thinking Level
                     </div>
                     {(['off', 'low', 'medium', 'high'] as const).map((level) => (
                       <button
                         key={level}
+                        role="menuitem"
                         type="button"
                         onClick={() => {
                           const updatedSettings = { ...settings, thinkingLevel: level };
@@ -584,7 +668,8 @@ export const Composer: React.FC<ComposerProps> = ({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               title="Attach files (text/images)"
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground transition-all cursor-pointer"
+              aria-label="Attach files"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
               <Paperclip className="h-3.5 w-3.5" />
             </button>
@@ -594,6 +679,8 @@ export const Composer: React.FC<ComposerProps> = ({
               type="button"
               onClick={toggleRecording}
               disabled={!isSpeechSupported}
+              aria-label={isRecording ? "Stop voice typing" : "Voice typing"}
+              aria-pressed={isRecording}
               title={
                 !isSpeechSupported 
                   ? "Speech recognition is not supported in this browser" 
@@ -601,7 +688,7 @@ export const Composer: React.FC<ComposerProps> = ({
                     ? "Stop voice typing" 
                     : "Voice typing"
               }
-              className={`flex h-7 w-7 items-center justify-center rounded-md transition-all ${
+              className={`flex h-7 w-7 items-center justify-center rounded-md transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                 !isSpeechSupported
                   ? 'opacity-35 cursor-not-allowed border border-input text-muted-foreground bg-transparent'
                   : isRecording
