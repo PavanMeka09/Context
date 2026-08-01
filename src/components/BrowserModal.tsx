@@ -38,6 +38,7 @@ interface BrowserModalProps {
   activeChatTitle?: string;
   initialSessionId?: string;
   isBrowserAgentRunning?: boolean;
+  onShowToast?: (msg: string, type: 'success' | 'error') => void;
 }
 
 export const BrowserModal: React.FC<BrowserModalProps> = ({ 
@@ -46,7 +47,8 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
   activeChatId,
   activeChatTitle,
   initialSessionId,
-  isBrowserAgentRunning
+  isBrowserAgentRunning,
+  onShowToast
 }) => {
   const [sessionId, setSessionId] = useState<string>(initialSessionId || 'interactive');
   const [prevInitialSessionId, setPrevInitialSessionId] = useState(initialSessionId);
@@ -316,7 +318,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       setSelectedElement(null);
       setTypeText('');
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to complete action');
+      onShowToast?.(err instanceof Error ? err.message : 'Failed to complete action', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -334,7 +336,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       if (!res.ok) throw new Error('Failed to switch tab');
       await fetchBrowserState(false);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to switch tab');
+      onShowToast?.(err instanceof Error ? err.message : 'Failed to switch tab', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -352,7 +354,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       if (!res.ok) throw new Error('Failed to close tab');
       await fetchBrowserState(false);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to close tab');
+      onShowToast?.(err instanceof Error ? err.message : 'Failed to close tab', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -369,7 +371,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       if (!res.ok) throw new Error('Failed to create tab');
       await fetchBrowserState(false);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to create tab');
+      onShowToast?.(err instanceof Error ? err.message : 'Failed to create tab', 'error');
     } finally {
       setActionLoading(false);
     }
@@ -463,7 +465,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       setSelectedElement(null);
       setTypeText('');
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : 'Failed to execute click');
+      onShowToast?.(err instanceof Error ? err.message : 'Failed to execute click', 'error');
     } finally {
       setActionLoading(false);
     }

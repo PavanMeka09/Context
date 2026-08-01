@@ -166,7 +166,7 @@ export const Composer: React.FC<ComposerProps> = ({
 
   const toggleRecording = async () => {
     if (!recognitionRef.current) {
-      alert('Speech Recognition is not supported or permitted in this browser.');
+      onError?.('Speech Recognition is not supported or permitted in this browser.');
       return;
     }
 

@@ -1675,6 +1675,7 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
               activeChatTitle={activeChat?.title}
               initialSessionId={browserModalSessionId}
               isBrowserAgentRunning={isGenerating && !!activeChat?.messages.some(m => m.browserSession && (m.browserSession.status === 'running' || m.browserSession.status === 'paused'))}
+              onShowToast={showToast}
             />
           </Suspense>
         </ErrorBoundary>
