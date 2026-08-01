@@ -1,0 +1,111 @@
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { Composer } from '../Composer';
+import React from 'react';
+import type { Settings } from '../../utils/storage';
+
+describe('Composer Component', () => {
+  const mockSettings: Settings = {
+    provider: 'gemini',
+    apiKey: 'test-key',
+    model: 'gemini-2.5-flash',
+    isRagEnabled: false,
+    isWebSearchEnabled: false,
+    thinkingLevel: 'off',
+    isMemoryEnabled: true,
+    isBrowserAgentEnabled: false
+  };
+
+  const createRef = () => React.createRef<HTMLTextAreaElement>();
+
+  it('renders input placeholder', () => {
+    render(
+      <Composer
+        input=""
+        onChangeInput={vi.fn()}
+        onSend={vi.fn()}
+        isGenerating={false}
+        onStop={vi.fn()}
+        inputRef={createRef()}
+        settings={mockSettings}
+        activePromptId="preset-general"
+        onSelectPromptId={vi.fn()}
+        customPrompts={[]}
+      />
+    );
+
+    expect(screen.getByPlaceholderText('Ask anything...')).toBeDefined();
+  });
+
+  it('calls onChangeInput when typing in textarea', () => {
+    const handleChangeInput = vi.fn();
+
+    render(
+      <Composer
+        input=""
+        onChangeInput={handleChangeInput}
+        onSend={vi.fn()}
+        isGenerating={false}
+        onStop={vi.fn()}
+        inputRef={createRef()}
+        settings={mockSettings}
+        activePromptId="preset-general"
+        onSelectPromptId={vi.fn()}
+        customPrompts={[]}
+      />
+    );
+
+    const textarea = screen.getByPlaceholderText('Ask anything...');
+    fireEvent.change(textarea, { target: { value: 'Hello Assistant' } });
+
+    expect(handleChangeInput).toHaveBeenCalledWith('Hello Assistant');
+  });
+
+  it('triggers onSend when Enter is pressed without Shift', () => {
+    const handleSend = vi.fn();
+
+    render(
+      <Composer
+        input="Write code"
+        onChangeInput={vi.fn()}
+        onSend={handleSend}
+        isGenerating={false}
+        onStop={vi.fn()}
+        inputRef={createRef()}
+        settings={mockSettings}
+        activePromptId="preset-general"
+        onSelectPromptId={vi.fn()}
+        customPrompts={[]}
+      />
+    );
+
+    const textarea = screen.getByPlaceholderText('Ask anything...');
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
+
+    expect(handleSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows Stop button when isGenerating is true', () => {
+    const handleStop = vi.fn();
+
+    render(
+      <Composer
+        input="Thinking..."
+        onChangeInput={vi.fn()}
+        onSend={vi.fn()}
+        isGenerating={true}
+        onStop={handleStop}
+        inputRef={createRef()}
+        settings={mockSettings}
+        activePromptId="preset-general"
+        onSelectPromptId={vi.fn()}
+        customPrompts={[]}
+      />
+    );
+
+    const stopBtn = screen.getByText('Stop generating');
+    fireEvent.click(stopBtn);
+
+    expect(handleStop).toHaveBeenCalledTimes(1);
+  });
+});

@@ -6,19 +6,27 @@ env.allowLocalModels = false;
 
 const MODEL_NAME = 'Xenova/all-MiniLM-L6-v2';
 let extractor: any = null;
+let extractorPromise: Promise<any> | null = null;
 
 async function getExtractor(progress_callback?: (progress: number) => void) {
   if (extractor) return extractor;
+  if (extractorPromise) return extractorPromise;
 
-  extractor = await pipeline('feature-extraction', MODEL_NAME, {
+  extractorPromise = pipeline('feature-extraction', MODEL_NAME, {
     progress_callback: (data: any) => {
       if (data.status === 'progress') {
         progress_callback?.(data.progress);
       }
     }
+  }).then((loadedExtractor) => {
+    extractor = loadedExtractor;
+    return extractor;
+  }).catch((err) => {
+    extractorPromise = null;
+    throw err;
   });
 
-  return extractor;
+  return extractorPromise;
 }
 
 self.addEventListener('message', async (event) => {
@@ -50,7 +58,23 @@ self.addEventListener('message', async (event) => {
 
       // Generate embedding with mean pooling and unit-length normalization
       const output = await extractor(text, { pooling: 'mean', normalize: true });
-      const embedding = Array.from(output.data);
+      
+      let embedding;
+      if (Array.isArray(text)) {
+        const dims = output.dims; // e.g. [batchSize, embeddingSize]
+        const batchSize = dims[0];
+        const embeddingSize = dims[1];
+        const data = output.data;
+        const embeddings = [];
+        for (let i = 0; i < batchSize; i++) {
+          const start = i * embeddingSize;
+          const end = start + embeddingSize;
+          embeddings.push(Array.from(data.subarray(start, end)));
+        }
+        embedding = embeddings;
+      } else {
+        embedding = Array.from(output.data);
+      }
 
       self.postMessage({ type: 'result', id, embedding });
     } catch (err: any) {

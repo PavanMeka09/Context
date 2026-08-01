@@ -18,6 +18,7 @@ export interface TaskSchedule {
   isActive: boolean;
   agentMode: 'standard' | 'browser';
   isWebSearchEnabled?: boolean;
+  webhookUrl?: string;
   lastRun?: string;
   nextRun?: string;
   createdAt: string;
@@ -32,6 +33,23 @@ export interface ExecutionRun {
   status: 'running' | 'success' | 'failed';
   output?: string;
   log?: string[];
+  browserSession?: {
+    url: string;
+    title: string;
+    status: 'idle' | 'running' | 'paused' | 'completed' | 'failed';
+    steps: {
+      id: string;
+      thought?: string;
+      action: string;
+      targetId?: string;
+      text?: string;
+      url?: string;
+      status: 'pending' | 'success' | 'error';
+      logMessage?: string;
+      timestamp: string;
+    }[];
+    screenshotTimestamp: number;
+  };
 }
 
 interface SchedulesPanelProps {
@@ -69,6 +87,17 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
 
   // Expanded runs logs state
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [selectedRunStepId, setSelectedRunStepId] = useState<string | null>(null);
+
+  const handleToggleRun = (runId: string) => {
+    if (expandedRunId === runId) {
+      setExpandedRunId(null);
+      setSelectedRunStepId(null);
+    } else {
+      setExpandedRunId(runId);
+      setSelectedRunStepId(null);
+    }
+  };
 
   const fetchSchedules = async () => {
     try {
@@ -145,6 +174,23 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
       };
     }
   }, [isOpen]);
+
+  const handleCancelRun = async (runId: string) => {
+    try {
+      const res = await fetch(`/api/schedules/runs/${runId}/cancel`, {
+        method: 'POST'
+      });
+      if (res.ok) {
+        onShowToast('Cancellation signal sent to running task.', 'success');
+      } else {
+        const data = await res.json();
+        onShowToast(data.error || 'Failed to cancel task.', 'error');
+      }
+    } catch (e) {
+      console.error('Failed to cancel run', e);
+      onShowToast('Failed to contact server to cancel task.', 'error');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -587,7 +633,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                       key={run.id}
                       className="border border-white/[0.04] bg-muted/15 rounded-xl p-3.5 hover:bg-muted/20 transition duration-150"
                     >
-                      <div className="flex justify-between items-start cursor-pointer select-none" onClick={() => setExpandedRunId(isExpanded ? null : run.id)}>
+                      <div className="flex justify-between items-start cursor-pointer select-none" onClick={() => handleToggleRun(run.id)}>
                         <div className="flex flex-col min-w-0 pr-4">
                           <span className="text-xs font-bold text-foreground truncate">{run.scheduleTitle}</span>
                           <span className="text-[9px] text-muted-foreground font-mono mt-1 lowercase">
@@ -609,10 +655,22 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                             </span>
                           )}
                           {run.status === 'running' && (
-                            <span className="flex items-center gap-1 text-[9px] font-bold text-amber-400 border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 rounded-full uppercase leading-none animate-pulse">
-                              <Loader2 className="h-3 w-3 animate-spin shrink-0" />
-                              RUNNING
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="flex items-center gap-1 text-[9px] font-bold text-amber-400 border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 rounded-full uppercase leading-none animate-pulse">
+                                <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                                RUNNING
+                              </span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCancelRun(run.id);
+                                }}
+                                className="text-[9px] font-bold text-red-400 hover:text-red-300 border border-red-500/20 hover:border-red-500/40 bg-red-500/10 hover:bg-red-500/20 px-2 py-0.5 rounded-full uppercase transition duration-150 cursor-pointer"
+                                title="Cancel executing run"
+                              >
+                                Cancel
+                              </button>
+                            </div>
                           )}
 
                           {isExpanded ? (
@@ -626,11 +684,11 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                       {/* Expanded View for logs and details */}
                       {isExpanded && (() => {
                         const schedule = schedules.find(s => s.id === run.scheduleId);
-                        const isBrowserTask = schedule ? schedule.agentMode === 'browser' : false;
+                        const isBrowserTask = !!run.browserSession || (schedule ? schedule.agentMode === 'browser' : false);
                         
                         return (
-                          <div className="mt-3.5 pt-3.5 border-t border-white/[0.03] space-y-3 font-mono text-[10px] leading-relaxed text-slate-300">
-                            {isBrowserTask && onOpenBrowserModal && (
+                          <div className="mt-3.5 pt-3.5 border-t border-white/[0.03] space-y-3 font-mono text-[10px] leading-relaxed text-slate-350">
+                            {isBrowserTask && onOpenBrowserModal && run.status === 'running' && (
                               <div className="flex justify-end select-none">
                                 <button
                                   onClick={(e) => {
@@ -639,34 +697,99 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
                                   }}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-brand-500/20 bg-brand-500/10 hover:bg-brand-500 text-brand-400 hover:text-slate-950 font-bold font-sans text-xs transition active:scale-95 cursor-pointer"
                                 >
-                                  {run.status === 'running' ? (
-                                    <>
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                      <span>Monitor Live Browser Session</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span>Inspect Browser Session / History</span>
-                                    </>
-                                  )}
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  <span>Monitor Live Browser Session</span>
                                 </button>
                               </div>
                             )}
 
+                            {run.browserSession && run.browserSession.steps && run.browserSession.steps.length > 0 && (
+                              <div className="space-y-2.5 font-sans mt-3">
+                                <div className="font-bold text-[8.5px] font-mono uppercase text-muted-foreground leading-none select-none">
+                                  Browser Automation Walkthrough ({run.browserSession.steps.length} Steps)
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                                  {/* Steps List */}
+                                  <div className="space-y-2 max-h-56 overflow-y-auto scrollbar-thin pr-1 text-left">
+                                    {run.browserSession.steps.map((step, idx: number) => {
+                                      const isSelected = selectedRunStepId === step.id;
+                                      return (
+                                        <div key={step.id} className="space-y-1">
+                                          {step.thought && (
+                                            <div className="text-[10px] text-brand-400 italic bg-brand-500/5 border border-brand-500/10 rounded-lg px-2.5 py-1.5 pl-6 relative leading-normal">
+                                              <span className="absolute left-2 text-brand-500">💡</span>
+                                              {step.thought}
+                                            </div>
+                                          )}
+                                          <div
+                                            onClick={() => setSelectedRunStepId(isSelected ? null : step.id)}
+                                            className={`flex items-center justify-between text-[10.5px] border rounded-lg px-2.5 py-1.5 cursor-pointer transition-all ${
+                                              isSelected
+                                                ? 'bg-brand-500/10 border-brand-500/40 text-brand-300 font-semibold'
+                                                : 'bg-white/[0.005] border-white/[0.015] text-slate-350 hover:bg-white/[0.02] hover:border-white/[0.05]'
+                                            }`}
+                                          >
+                                            <div className="flex items-center gap-2">
+                                              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                                                step.status === 'success' 
+                                                  ? 'bg-emerald-500' 
+                                                  : step.status === 'error'
+                                                    ? 'bg-red-500'
+                                                    : 'bg-amber-500 animate-pulse'
+                                              }`} />
+                                              <span className="font-mono text-[9.5px] truncate max-w-[200px]">
+                                                [{idx + 1}] {step.logMessage || step.action.toUpperCase()}
+                                              </span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                              <span className="text-[8.5px] font-bold text-slate-500 uppercase">
+                                                {step.status}
+                                              </span>
+                                              {isSelected && <span className="text-[9px] text-brand-400">👁️</span>}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+
+                                  {/* Screenshot Viewer Panel */}
+                                  <div className="border border-white/[0.06] bg-slate-950/40 rounded-xl overflow-hidden flex flex-col items-center justify-center p-2.5 min-h-[160px] relative select-none">
+                                    {selectedRunStepId ? (
+                                      <div className="w-full flex flex-col items-center">
+                                        <img
+                                          src={`/api/browser/screenshot?stepId=${selectedRunStepId}`}
+                                          alt="Step State Screenshot"
+                                          className="w-full h-auto max-h-48 object-contain rounded border border-white/[0.04] bg-slate-900"
+                                        />
+                                        <div className="text-[8.5px] text-slate-500 font-mono mt-1.5 text-center truncate w-full">
+                                          Screenshot for Step: {selectedRunStepId}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="text-[10px] text-slate-500 italic text-center px-4 py-8">
+                                        Select a step on the left to preview the live browser viewport screenshot at that moment.
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
                             {run.output && (
-                            <div className="bg-slate-950/40 border border-white/[0.03] rounded-lg p-2.5">
-                              <div className="font-bold text-[8.5px] uppercase text-muted-foreground mb-1 leading-none select-none">Output / Summary</div>
-                              <pre className="whitespace-pre-wrap max-h-36 overflow-y-auto scrollbar-thin select-text text-foreground">{run.output}</pre>
-                            </div>
-                          )}
+                              <div className="bg-slate-950/40 border border-white/[0.03] rounded-lg p-2.5 font-mono">
+                                <div className="font-bold text-[8.5px] uppercase text-muted-foreground mb-1 leading-none select-none font-sans">Output / Summary</div>
+                                <pre className="whitespace-pre-wrap max-h-36 overflow-y-auto scrollbar-thin select-text text-foreground">{run.output}</pre>
+                              </div>
+                            )}
                           
                             {run.log && run.log.length > 0 && (
                               <div className="bg-slate-950/20 border border-white/[0.015] rounded-lg p-2.5">
-                                <div className="font-bold text-[8.5px] uppercase text-muted-foreground mb-1 leading-none select-none flex items-center gap-1">
+                                <div className="font-bold text-[8.5px] uppercase text-muted-foreground mb-1 leading-none select-none flex items-center gap-1 font-sans">
                                   <ClipboardList className="h-3 w-3" />
                                   <span>Execution Logs</span>
                                 </div>
-                                <div className="space-y-1 max-h-32 overflow-y-auto scrollbar-thin text-slate-400">
+                                <div className="space-y-1 max-h-32 overflow-y-auto scrollbar-thin text-slate-400 font-mono">
                                   {run.log.map((logMsg, lIdx) => (
                                     <div key={lIdx}>&gt; {logMsg}</div>
                                   ))}

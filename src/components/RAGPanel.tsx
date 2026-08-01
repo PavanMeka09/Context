@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { vectorDb } from '../utils/vectorDb';
 import type { VectorDocument } from '../utils/vectorDb';
-import { X, Trash2, Plus, Download, Loader2, FileText, Database } from 'lucide-react';
+import { X, Trash2, Plus, Download, Loader2, FileText, Database, Globe } from 'lucide-react';
+import { extractTextFromPdf } from '../utils/pdf';
 
 interface RAGPanelProps {
   isOpen: boolean;
@@ -22,6 +23,9 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
   const [modelStatus, setModelStatus] = useState<string>('idle');
   const [modelProgress, setModelProgress] = useState<number>(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatusMsg, setUploadStatusMsg] = useState('Processing & Indexing...');
+  const [urlInput, setUrlInput] = useState('');
+  const [isScraping, setIsScraping] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadDocuments = useCallback(async () => {
@@ -33,6 +37,54 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
       onError('Failed to load local document registry.');
     }
   }, [onError]);
+
+  const handleUrlIndex = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const url = urlInput.trim();
+    if (!url) return;
+
+    try {
+      new URL(url);
+    } catch {
+      onError('Please enter a valid absolute URL (including http:// or https://).');
+      return;
+    }
+
+    setIsScraping(true);
+
+    if (modelStatus === 'idle') {
+      vectorDb.preloadModel();
+    }
+
+    try {
+      const response = await fetch('/api/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Scraping failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data.success || !data.content) {
+        throw new Error('Scraped content is empty or scrape failed.');
+      }
+
+      const docTitle = data.title ? `${data.title} (${url})` : url;
+      await vectorDb.addDocument(docTitle, data.content);
+      setUrlInput('');
+      await loadDocuments();
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to scrape and index URL.';
+      console.error('URL index failed', err);
+      onError(errorMsg);
+    } finally {
+      setIsScraping(false);
+    }
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -57,6 +109,7 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
     if (!files || files.length === 0) return;
 
     setIsUploading(true);
+    setUploadStatusMsg('Processing & Indexing...');
     
     // Auto preload model when user selects a file
     if (modelStatus === 'idle') {
@@ -66,13 +119,42 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
+        const nameLower = file.name.toLowerCase();
         
         // Exclude unsupported large binary file extensions
         if (file.type.startsWith('image/') || file.type.startsWith('video/') || file.type.startsWith('audio/')) {
-          throw new Error('Only text-based formats (like .txt, .md, .json) are supported for semantic indexing.');
+          throw new Error('Only text-based formats (like .txt, .md, .json, .html) and PDFs (.pdf) are supported for semantic indexing.');
         }
 
-        const content = await file.text();
+        const allowedExtensions = ['.txt', '.md', '.json', '.html', '.htm', '.pdf'];
+        const hasAllowedExtension = allowedExtensions.some(ext => nameLower.endsWith(ext));
+        
+        if (!hasAllowedExtension) {
+          throw new Error(`Unsupported file type: "${file.name}". Only text files (.txt, .md, .json, .html) and PDFs (.pdf) are supported.`);
+        }
+
+        let content = '';
+        if (nameLower.endsWith('.pdf')) {
+          content = await extractTextFromPdf(file, (msg) => setUploadStatusMsg(msg));
+        } else {
+          content = await file.text();
+        }
+
+        // Strip HTML tags for clean prose index text
+        if (nameLower.endsWith('.html') || nameLower.endsWith('.htm')) {
+          try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(content, 'text/html');
+            const noise = doc.querySelectorAll('script, style, noscript, iframe, head, footer, nav, header, [role="banner"], [role="navigation"], [role="contentinfo"]');
+            noise.forEach(el => el.remove());
+            content = doc.body.textContent || doc.body.innerText || '';
+            content = content.replace(/\s+/g, ' ').trim();
+          } catch (htmlErr) {
+            console.error('Failed to parse uploaded HTML file content, using raw text fallback', htmlErr);
+          }
+        }
+
+        setUploadStatusMsg(`Calculating embeddings for ${file.name}...`);
         await vectorDb.addDocument(file.name, content);
       }
       
@@ -83,9 +165,46 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
       onError(errorMsg);
     } finally {
       setIsUploading(false);
+      setUploadStatusMsg('Processing & Indexing...');
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+    }
+  };
+
+  const backupFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleExportRAG = async () => {
+    try {
+      const data = await vectorDb.exportDatabaseJSON();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `context-rag-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('RAG export failed', e);
+      onError('Failed to export RAG database backup.');
+    }
+  };
+
+  const handleImportRAGFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      await vectorDb.importDatabaseJSON(parsed);
+      await loadDocuments();
+    } catch (err) {
+      console.error('RAG import failed', err);
+      onError(err instanceof Error ? err.message : 'Invalid backup JSON file.');
+    } finally {
+      if (backupFileInputRef.current) backupFileInputRef.current.value = '';
     }
   };
 
@@ -218,36 +337,95 @@ export const RAGPanel: React.FC<RAGPanelProps> = ({
               type="file"
               ref={fileInputRef}
               multiple
+              accept=".txt,.md,.json,.html,.htm,.pdf"
               onChange={handleFileUpload}
               className="hidden"
             />
             {isUploading ? (
               <div className="text-center space-y-2">
                 <Loader2 className="h-5 w-5 text-primary animate-spin mx-auto" />
-                <span className="text-[10px] font-semibold text-foreground block">Processing & Indexing...</span>
+                <span className="text-[10px] font-semibold text-foreground block">{uploadStatusMsg}</span>
                 <span className="text-[8px] text-muted-foreground block">Chunking and embedding document on CPU/GPU</span>
               </div>
             ) : (
               <div className="text-center space-y-1.5">
                 <Plus className="h-4 w-4 text-muted-foreground mx-auto" />
                 <span className="text-[10px] font-semibold text-foreground block">Upload Documents to Memory</span>
-                <span className="text-[8px] text-muted-foreground block">Supports .txt, .md, .json up to 5MB</span>
+                <span className="text-[8px] text-muted-foreground block">Supports .txt, .md, .json, .html, .pdf up to 5MB</span>
               </div>
             )}
           </div>
 
-          {/* Document list */}
+          {/* Index from Web URL */}
+          <form onSubmit={handleUrlIndex} className="rounded-lg border border-border bg-muted/20 p-3.5 space-y-2.5">
+            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground select-none">
+              <Globe className="h-3 w-3 text-primary" />
+              <span>Or Index Web Page URL</span>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                placeholder="https://example.com/documentation"
+                disabled={isScraping || isUploading}
+                className="flex-1 bg-background border border-input rounded-md px-2.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary focus-visible:ring-1 disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={isScraping || isUploading || !urlInput.trim()}
+                className="flex h-7 px-3 shrink-0 items-center justify-center rounded-md bg-primary hover:bg-primary/90 disabled:opacity-50 text-primary-foreground text-xs font-bold transition cursor-pointer active:scale-95 shadow-sm"
+              >
+                {isScraping ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <span>Index URL</span>
+                )}
+              </button>
+            </div>
+          </form>
+
+          {/* Document list & Export/Import Controls */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider text-muted-foreground px-1 border-b border-border pb-1">
               <span>Indexed Documents ({documents.length})</span>
-              {documents.length > 0 && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  ref={backupFileInputRef}
+                  onChange={handleImportRAGFile}
+                  accept=".json"
+                  className="hidden"
+                />
                 <button
-                  onClick={handleClearAll}
-                  className="text-destructive hover:underline font-bold"
+                  type="button"
+                  onClick={() => backupFileInputRef.current?.click()}
+                  className="text-primary hover:underline font-bold transition cursor-pointer"
+                  title="Import RAG database JSON backup"
                 >
-                  Clear All
+                  Import
                 </button>
-              )}
+                <span className="text-border">•</span>
+                <button
+                  type="button"
+                  onClick={handleExportRAG}
+                  className="text-primary hover:underline font-bold transition cursor-pointer"
+                  title="Export full RAG database JSON backup"
+                >
+                  Export
+                </button>
+                {documents.length > 0 && (
+                  <>
+                    <span className="text-border">•</span>
+                    <button
+                      onClick={handleClearAll}
+                      className="text-destructive hover:underline font-bold cursor-pointer"
+                    >
+                      Clear All
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
 
             {documents.length === 0 ? (

@@ -344,6 +344,15 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
   const supportsRun = language === 'javascript' || language === 'typescript' || language === 'python';
 
   const handleRun = async () => {
+    if (runTarget === 'system') {
+      const confirmRun = window.confirm(
+        "WARNING: You are about to run this code directly on your local system ('System' execution target).\n\n" +
+        "This gives the script access to your local files and system shell. Only execute code you trust.\n\n" +
+        "Do you want to proceed?"
+      );
+      if (!confirmRun) return;
+    }
+
     setLogs([]);
     setExecTime(null);
     setIsRunning(true);

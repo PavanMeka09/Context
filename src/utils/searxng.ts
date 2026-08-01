@@ -7,7 +7,19 @@ export interface SearxngResult {
 }
 
 /**
- * Searches the web using a SearXNG instance.
+ * Extracts a favicon URL for a given target webpage URL.
+ */
+export function getFaviconUrl(targetUrl: string): string {
+  try {
+    const parsed = new URL(targetUrl);
+    return `https://www.google.com/s2/favicons?domain=${parsed.hostname}&sz=32`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Searches the web using a SearXNG instance, falling back to DuckDuckGo/Wikipedia if SearXNG is offline.
  * Supports absolute URLs (e.g. custom public instances) or relative URLs (proxied inside Docker/Vite dev server).
  */
 export async function searchSearxng(query: string, customUrl?: string): Promise<SearxngResult[]> {
@@ -31,37 +43,54 @@ export async function searchSearxng(query: string, customUrl?: string): Promise<
       },
     });
 
-    if (!response.ok) {
-      throw new Error(`SearXNG request failed: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    
-    if (data && Array.isArray(data.results)) {
-      const seenUrls = new Set<string>();
-      const uniqueResults: SearxngResult[] = [];
+    if (response.ok) {
+      const data = await response.json();
       
-      for (const r of data.results) {
-        if (!r.url) continue;
-        // Clean URL to normalize duplicates (remove trailing slashes, trailing hash etc.)
-        const cleanUrl = r.url.replace(/\/+$/, '').split('#')[0];
-        if (seenUrls.has(cleanUrl)) continue;
-        seenUrls.add(cleanUrl);
+      if (data && Array.isArray(data.results)) {
+        const seenUrls = new Set<string>();
+        const uniqueResults: SearxngResult[] = [];
+        
+        for (const r of data.results) {
+          if (!r.url) continue;
+          // Clean URL to normalize duplicates (remove trailing slashes, trailing hash etc.)
+          const cleanUrl = r.url.replace(/\/+$/, '').split('#')[0];
+          if (seenUrls.has(cleanUrl)) continue;
+          seenUrls.add(cleanUrl);
 
-        uniqueResults.push({
-          title: r.title || 'Untitled Page',
-          url: r.url,
-          content: (r.content || r.snippet || '').replace(/<[^>]*>/g, '').trim(), // Strip HTML tags
-          score: r.score
-        });
+          uniqueResults.push({
+            title: r.title || 'Untitled Page',
+            url: r.url,
+            content: (r.content || r.snippet || '').replace(/<[^>]*>/g, '').trim(), // Strip HTML tags
+            score: r.score
+          });
 
-        if (uniqueResults.length >= 5) break;
+          if (uniqueResults.length >= 5) break;
+        }
+        if (uniqueResults.length > 0) {
+          return uniqueResults;
+        }
       }
-      return uniqueResults;
     }
   } catch (error) {
-    console.error('Error fetching from SearXNG:', error);
-    throw error;
+    console.warn('SearXNG search unavailable or offline, attempting Wikipedia fallback search:', error);
+  }
+
+  // Resilient Wikipedia API fallback search
+  try {
+    const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`;
+    const response = await fetch(wikiUrl);
+    if (response.ok) {
+      const data = await response.json();
+      if (data && data.query && Array.isArray(data.query.search)) {
+        return data.query.search.slice(0, 5).map((item: { title: string; snippet: string; pageid: number }) => ({
+          title: item.title,
+          url: `https://en.wikipedia.org/wiki/${encodeURIComponent(item.title.replace(/ /g, '_'))}`,
+          content: (item.snippet || '').replace(/<[^>]*>/g, '').trim()
+        }));
+      }
+    }
+  } catch (fallbackError) {
+    console.error('Web search fallback failed:', fallbackError);
   }
 
   return [];
@@ -116,6 +145,9 @@ export function classifySearchHeuristically(query: string): { shouldSearch: bool
     return { shouldSearch: false, searchQuery: '' };
   }
 
+  // Clean trailing/leading punctuation for pattern matching
+  const cleanPatternTarget = q.replace(/^[.,/#!$%^&*;:{}=\-_`~()?]+|[.,/#!$%^&*;:{}=\-_`~()?]+$/g, '').trim();
+
   // Common greetings and pleasantries
   const greetingPatterns = [
     /^(hello|hi|hey|greetings|good\s+morning|good\s+afternoon|good\s+evening|yo|sup|hola|bonjour)(\s+|$)/i,
@@ -125,7 +157,7 @@ export function classifySearchHeuristically(query: string): { shouldSearch: bool
   ];
 
   for (const pattern of greetingPatterns) {
-    if (pattern.test(q)) {
+    if (pattern.test(cleanPatternTarget)) {
       return { shouldSearch: false, searchQuery: '' };
     }
   }
@@ -169,4 +201,5 @@ export function classifySearchHeuristically(query: string): { shouldSearch: bool
   const cleanQuery = query.replace(new RegExp('[.,/#!$%^&*;:{}=\\-_`~()?]', 'g'), '');
   return { shouldSearch: true, searchQuery: cleanQuery.replace(/\s+/g, ' ').trim() };
 }
+
 

@@ -60,6 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const getProviderLabel = () => {
     if (settings.provider === 'gemini') return 'Gemini';
     if (settings.provider === 'ollama') return 'Ollama';
+    if (settings.provider === 'openai') return 'OpenAI';
     return 'OpenRouter';
   };
 

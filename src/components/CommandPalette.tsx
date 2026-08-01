@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { 
   Search, Terminal, MessageSquare, Sparkles, Globe, 
   Settings, Key, Layers, Palette, ChevronRight, CornerDownLeft, 
-  Check, ArrowLeft, EyeOff, Loader2
+  Check, ArrowLeft, EyeOff, Loader2, Activity, Clock, Compass
 } from 'lucide-react';
 import type { Chat, Settings as AppSettings, SystemPrompt } from '../utils/storage';
 import { Storage, PRESET_PROMPTS } from '../utils/storage';
@@ -26,6 +26,9 @@ interface CommandPaletteProps {
   onToggleSettings: () => void;
   onToggleRAG: () => void;
   onShowToast: (msg: string, type: 'success' | 'error') => void;
+  onOpenAnalytics?: () => void;
+  onOpenSchedules?: () => void;
+  onOpenBrowserModal?: () => void;
 }
 
 type ScreenType = 'main' | 'models' | 'providers' | 'personas' | 'chats' | 'themes';
@@ -57,7 +60,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onToggleSidebar,
   onToggleSettings,
   onToggleRAG,
-  onShowToast
+  onShowToast,
+  onOpenAnalytics,
+  onOpenSchedules,
+  onOpenBrowserModal
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeScreen, setActiveScreen] = useState<ScreenType>('main');
@@ -72,14 +78,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   // Focus input on mount
   useEffect(() => {
+    let timer: NodeJS.Timeout;
     if (isOpen) {
-      setTimeout(() => {
+      timer = setTimeout(() => {
         inputRef.current?.focus();
         setSearchQuery('');
         setActiveScreen('main');
         setSelectedIndex(0);
       }, 50);
     }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [isOpen]);
 
   // Click outside listener
@@ -99,30 +109,21 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   // Fetch dynamic models for models submenu
   useEffect(() => {
-    if (activeScreen === 'models') {
-      const timer = setTimeout(() => setIsLoadingModels(true), 0);
-      let isCurrent = true;
-
-      fetchModels(settings.provider, settings.apiKey, settings.localUrl)
-        .then(models => {
-          if (isCurrent) {
-            setAvailableModels(models);
-            setIsLoadingModels(false);
-          }
-        })
-        .catch(err => {
-          console.error('Error loading models in Command Palette:', err);
-          if (isCurrent) {
-            setIsLoadingModels(false);
-          }
-        });
-
-      return () => {
-        isCurrent = false;
-        clearTimeout(timer);
-      };
+    let active = true;
+    if (isOpen && activeScreen === 'models') {
+      Promise.resolve().then(() => {
+        if (!active) return;
+        setIsLoadingModels(true);
+        fetchModels(settings.provider, settings.apiKey, settings.localUrl)
+          .then(models => { if (active) setAvailableModels(models); })
+          .catch(() => { if (active) setAvailableModels([]); })
+          .finally(() => { if (active) setIsLoadingModels(false); });
+      });
     }
-  }, [activeScreen, settings.provider, settings.apiKey, settings.localUrl]);
+    return () => {
+      active = false;
+    };
+  }, [isOpen, activeScreen, settings.provider, settings.apiKey, settings.localUrl]);
 
   // Core navigation, activation and settings hooks
   const handleToggleWebSearch = useCallback(() => {
@@ -143,11 +144,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     onClose();
   }, [settings, onSettingsChanged, onShowToast, onClose]);
 
-  const handleSelectProvider = useCallback((prov: 'gemini' | 'openrouter' | 'ollama') => {
-    let defaultModel = '';
-    if (prov === 'gemini') defaultModel = 'gemini-2.5-flash';
-    else if (prov === 'ollama') defaultModel = 'llama3';
+  const handleSelectProvider = useCallback((prov: AppSettings['provider']) => {
+    let defaultModel = 'gemini-2.5-flash';
+    if (prov === 'ollama') defaultModel = 'llama3';
     else if (prov === 'openrouter') defaultModel = 'google/gemini-2.5-flash';
+    else if (prov === 'openai') defaultModel = 'gpt-4o-mini';
 
     const nextSettings = { ...settings, provider: prov, model: defaultModel };
     Storage.saveSettings(nextSettings);
@@ -179,6 +180,30 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       category: 'Navigation',
       action: () => { onNewChat(); onClose(); },
       shortcut: ['Ctrl', 'Shift', 'N']
+    },
+    {
+      id: 'nav-analytics',
+      title: 'System Diagnostics & Telemetry',
+      subtitle: 'Inspect companion memory, process uptime & storage',
+      icon: <Activity className="h-4 w-4 text-sky-400" />,
+      category: 'Navigation',
+      action: () => { onOpenAnalytics?.(); onClose(); }
+    },
+    {
+      id: 'nav-schedules',
+      title: 'Open Task Scheduler',
+      subtitle: 'Manage background cron tasks and recurring web scrapes',
+      icon: <Clock className="h-4 w-4 text-amber-400" />,
+      category: 'Navigation',
+      action: () => { onOpenSchedules?.(); onClose(); }
+    },
+    {
+      id: 'nav-browser',
+      title: 'Open Browser Sandbox Live View',
+      subtitle: 'Inspect background Puppeteer browser session steps',
+      icon: <Compass className="h-4 w-4 text-emerald-400" />,
+      category: 'Navigation',
+      action: () => { onOpenBrowserModal?.(); onClose(); }
     },
     {
       id: 'nav-settings',
@@ -266,7 +291,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       category: 'Appearance',
       action: () => { setActiveScreen('themes'); setSearchQuery(''); setSelectedIndex(0); }
     },
-  ], [settings, theme, onNewChat, onClose, onToggleSettings, onToggleRAG, onToggleSidebar, handleToggleWebSearch, handleToggleRAGInstant]);
+  ], [settings, theme, onNewChat, onClose, onToggleSettings, onToggleRAG, onToggleSidebar, onOpenAnalytics, onOpenBrowserModal, onOpenSchedules, handleToggleWebSearch, handleToggleRAGInstant]);
 
   // Derived submenus items
   const subCommands = useMemo<CommandItem[]>(() => {
@@ -274,6 +299,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       case 'providers':
         return ([
           { id: 'prov-gemini', title: 'Google Gemini API', icon: <Check className={`h-4 w-4 ${settings.provider === 'gemini' ? '' : 'opacity-0'}`} />, category: 'AI Providers', action: () => handleSelectProvider('gemini') },
+          { id: 'prov-openai', title: 'OpenAI (Compatible)', icon: <Check className={`h-4 w-4 ${settings.provider === 'openai' ? '' : 'opacity-0'}`} />, category: 'AI Providers', action: () => handleSelectProvider('openai') },
           { id: 'prov-openrouter', title: 'OpenRouter API', icon: <Check className={`h-4 w-4 ${settings.provider === 'openrouter' ? '' : 'opacity-0'}`} />, category: 'AI Providers', action: () => handleSelectProvider('openrouter') },
           { id: 'prov-ollama', title: 'Local Ollama API', icon: <Check className={`h-4 w-4 ${settings.provider === 'ollama' ? '' : 'opacity-0'}`} />, category: 'AI Providers', action: () => handleSelectProvider('ollama') }
         ] as const).map(c => ({ ...c, subtitle: 'Select active API provider', action: c.action as () => void }));

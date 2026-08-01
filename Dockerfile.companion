@@ -3,6 +3,7 @@ FROM node:20-slim
 # Install Chromium and required system dependencies for Puppeteer
 RUN apt-get update && apt-get install -y \
     chromium \
+    python3 \
     fonts-ipafont-gothic \
     fonts-wqy-zenhei \
     fonts-thai-tlwg \
@@ -22,11 +23,15 @@ RUN npm ci --omit=dev
 
 # Copy backend companion files
 COPY server.cjs ./
+COPY server/ ./server/
 
 # Environmental configurations to bypass chromium download and point to local executable
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 EXPOSE 3001
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://localhost:3001/api/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"
 
 CMD ["node", "server.cjs"]

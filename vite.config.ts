@@ -22,5 +22,28 @@ export default defineConfig({
         changeOrigin: true,
       }
     }
+  },
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@huggingface') || id.includes('onnxruntime')) {
+              return 'vendor-transformers';
+            }
+            if (id.includes('react-markdown') || id.includes('remark-gfm')) {
+              return 'vendor-markdown';
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-icons';
+            }
+            if (id.includes('radix-ui')) {
+              return 'vendor-radix';
+            }
+          }
+        }
+      }
+    }
   }
 })

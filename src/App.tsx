@@ -1,62 +1,33 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { Composer } from './components/Composer';
-import { SettingsModal } from './components/SettingsModal';
-import { ShortcutsModal } from './components/ShortcutsModal';
-import { RAGPanel } from './components/RAGPanel';
-import { CommandPalette } from './components/CommandPalette';
-import { SchedulesPanel } from './components/SchedulesPanel';
-import { BrowserModal } from './components/BrowserModal';
 import { vectorDb } from './utils/vectorDb';
 import { PRESET_PROMPTS, Storage, reconstructActivePath, upgradeChatToTree } from './utils/storage';
 import type { Chat, Message, MessageNode, Settings, SystemPrompt, Attachment, BrowserSessionData } from './utils/storage';
-import { streamChatCompletion, generateTextCompletion } from './utils/api';
+import { streamChatCompletion } from './utils/api';
 import { searchSearxng, classifySearchHeuristically } from './utils/searxng';
-import { AlertCircle, X } from 'lucide-react';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { AlertCircle, X, Loader2 } from 'lucide-react';
 
-// Robust JSON Parser helper to recover from conversational LLM outputs, markdown code blocks, or minor syntax issues
-function safeJsonParse(text: string): unknown {
-  if (!text) throw new Error('Empty response');
-  let cleaned = text.trim();
+// Code splitting for modal components to optimize initial chunk size
+const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const ShortcutsModal = lazy(() => import('./components/ShortcutsModal').then(m => ({ default: m.ShortcutsModal })));
+const RAGPanel = lazy(() => import('./components/RAGPanel').then(m => ({ default: m.RAGPanel })));
+const CommandPalette = lazy(() => import('./components/CommandPalette').then(m => ({ default: m.CommandPalette })));
+const SchedulesPanel = lazy(() => import('./components/SchedulesPanel').then(m => ({ default: m.SchedulesPanel })));
+const BrowserModal = lazy(() => import('./components/BrowserModal').then(m => ({ default: m.BrowserModal })));
+const AnalyticsModal = lazy(() => import('./components/AnalyticsModal').then(m => ({ default: m.AnalyticsModal })));
 
-  // Strip markdown code block markers
-  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '');
-  cleaned = cleaned.replace(/\s*```$/, '');
-  cleaned = cleaned.trim();
+const ModalFallback = () => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs">
+    <div className="flex items-center gap-3 px-6 py-4 bg-slate-900 border border-slate-800 rounded-xl text-slate-200 shadow-2xl">
+      <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+      <span className="text-sm font-medium">Loading component...</span>
+    </div>
+  </div>
+);
 
-  try {
-    return JSON.parse(cleaned);
-  } catch (e) {
-    // If standard parse fails, try to extract first outer curly brace pair
-    const firstBrace = cleaned.indexOf('{');
-    const lastBrace = cleaned.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-      const candidate = cleaned.slice(firstBrace, lastBrace + 1);
-      try {
-        return JSON.parse(candidate);
-      } catch {
-        // Try cleaning common issues like trailing commas or single quotes around keys/values
-        const dynamicJson = candidate
-          // Replace single quotes with double quotes around property keys and values
-          .replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, '"$1"')
-          // Remove trailing commas before closing braces/brackets
-          .replace(/,\s*([\]}])/g, '$1');
-        
-        try {
-          return JSON.parse(dynamicJson);
-        } catch (deepErr) {
-          throw new Error(`Failed to parse LLM JSON: ${(e as Error).message}. Dynamic cleanup failed: ${(deepErr as Error).message}. Raw text: ${text}`, {
-            cause: deepErr
-          });
-        }
-      }
-    }
-    throw new Error(`Failed to parse LLM JSON: ${(e as Error).message}. Raw text: ${text}`, {
-      cause: e
-    });
-  }
-}
 
 function addMessageToTree(chat: Chat, message: Message, parentId: string | null): Chat {
   const upgradedChat = upgradeChatToTree(chat);
@@ -96,20 +67,12 @@ function addMessageToTree(chat: Chat, message: Message, parentId: string | null)
 }
 
 function App() {
-  const [chats, setChats] = useState<Chat[]>(() => Storage.getChats());
+  const [chats, setChats] = useState<Chat[]>([]);
   const [settings, setSettings] = useState<Settings>(() => Storage.getSettings());
   const [customPrompts, setCustomPrompts] = useState<SystemPrompt[]>(() => Storage.getCustomPrompts());
   const [activePromptId, setActivePromptId] = useState<string>(() => Storage.getActivePromptId());
-  const [activeChatId, setActiveChatId] = useState<string | null>(() => {
-    const savedChats = Storage.getChats();
-    const savedActiveChatId = Storage.getActiveChatId();
-    if (savedActiveChatId && savedChats.some(c => c.id === savedActiveChatId)) {
-      return savedActiveChatId;
-    } else if (savedChats.length > 0) {
-      return savedChats[0].id;
-    }
-    return null;
-  });
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [isChatsLoaded, setIsChatsLoaded] = useState(false);
   
   // Composer states
   const [composerInput, setComposerInput] = useState('');
@@ -120,6 +83,7 @@ function App() {
   const [schedulesOpen, setSchedulesOpen] = useState(false);
   const [browserModalOpen, setBrowserModalOpen] = useState(false);
   const [browserModalSessionId, setBrowserModalSessionId] = useState<string>('interactive');
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
 
   // Preference and accessibility states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => Storage.getSidebarCollapsed());
@@ -134,13 +98,22 @@ function App() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Sync active chat id in localStorage if it wasn't saved yet but defaulted
+  // Load chats asynchronously on mount
   useEffect(() => {
-    const savedChats = Storage.getChats();
-    const savedActiveChatId = Storage.getActiveChatId();
-    if (savedChats.length > 0 && (!savedActiveChatId || !savedChats.some(c => c.id === savedActiveChatId))) {
-      Storage.saveActiveChatId(savedChats[0].id);
-    }
+    const initChats = async () => {
+      const savedChats = await Storage.getChats();
+      setChats(savedChats);
+      
+      const savedActiveChatId = Storage.getActiveChatId();
+      if (savedActiveChatId && savedChats.some(c => c.id === savedActiveChatId)) {
+        setActiveChatId(savedActiveChatId);
+      } else if (savedChats.length > 0) {
+        setActiveChatId(savedChats[0].id);
+        Storage.saveActiveChatId(savedChats[0].id);
+      }
+      setIsChatsLoaded(true);
+    };
+    initChats();
   }, []);
 
   // Theme Sync Effect
@@ -183,7 +156,7 @@ function App() {
     const updatedChats = [newChat, ...chats];
     setChats(updatedChats);
     setActiveChatId(newChat.id);
-    Storage.saveChatsImmediately(updatedChats);
+    Storage.saveChat(newChat);
     Storage.saveActiveChatId(newChat.id);
     setComposerInput('');
     
@@ -306,6 +279,7 @@ interface SyncEvent {
         const events: SyncEvent[] = await res.json();
         if (events.length === 0) return;
 
+        let finalChats: Chat[] = [];
         setChats(prevChats => {
           let updatedChats = [...prevChats];
 
@@ -336,9 +310,18 @@ interface SyncEvent {
             }
           });
 
-          Storage.saveChatsImmediately(updatedChats);
+          finalChats = updatedChats;
           return updatedChats;
         });
+
+        if (finalChats.length > 0) {
+          for (const event of events) {
+            const updatedChat = finalChats.find(c => c.id === event.chatId);
+            if (updatedChat) {
+              await Storage.saveChat(updatedChat);
+            }
+          }
+        }
 
         showToast(`Synced ${events.length} background task execution results!`, 'success');
       } catch (err) {
@@ -359,6 +342,7 @@ interface SyncEvent {
 
         if (type === 'schedule-sync') {
           const syncEvent = data as SyncEvent;
+          let updatedChat: Chat | undefined;
           setChats(prevChats => {
             let updatedChats = [...prevChats];
             const chatIndex = updatedChats.findIndex(c => c.id === syncEvent.chatId);
@@ -370,6 +354,7 @@ interface SyncEvent {
               chat = addMessageToTree(chat, syncEvent.userMsg, parentId);
               chat = addMessageToTree(chat, syncEvent.assistantMsg, syncEvent.userMsg.id);
               updatedChats[chatIndex] = chat;
+              updatedChat = chat;
             } else {
               const emptyChat: Chat = {
                 id: syncEvent.chatId,
@@ -384,13 +369,67 @@ interface SyncEvent {
               chat = addMessageToTree(chat, syncEvent.userMsg, null);
               chat = addMessageToTree(chat, syncEvent.assistantMsg, syncEvent.userMsg.id);
               updatedChats = [chat, ...updatedChats];
+              updatedChat = chat;
             }
 
-            Storage.saveChatsImmediately(updatedChats);
             return updatedChats;
           });
+          if (updatedChat) {
+            Storage.saveChat(updatedChat);
+          }
 
           showToast(`Synced background task execution results!`, 'success');
+        } else if (type === 'browser-agent-update') {
+          const update = data as {
+            sessionId: string;
+            messageId: string;
+            url: string;
+            title: string;
+            status: 'running' | 'paused' | 'completed' | 'failed';
+            steps: BrowserSessionData['steps'];
+            screenshotTimestamp: number;
+            text?: string;
+          };
+
+          let updatedChat: Chat | undefined;
+          setChats(prevChats => {
+            const finalChats = prevChats.map(c => {
+              if (c.id === update.sessionId) {
+                const upgraded = upgradeChatToTree(c);
+                const tree = { ...upgraded.messageTree };
+                if (tree[update.messageId]) {
+                  tree[update.messageId] = {
+                    ...tree[update.messageId],
+                    content: update.text || '',
+                    browserSession: {
+                      url: update.url,
+                      title: update.title,
+                      status: update.status,
+                      steps: update.steps,
+                      screenshotTimestamp: update.screenshotTimestamp
+                    }
+                  };
+                }
+                const messages = reconstructActivePath(tree, upgraded.activeLeafId);
+                updatedChat = {
+                  ...upgraded,
+                  messageTree: tree,
+                  messages,
+                  updatedAt: new Date().toISOString()
+                };
+                return updatedChat;
+              }
+              return c;
+            });
+            return finalChats;
+          });
+          if (updatedChat) {
+            Storage.saveChat(updatedChat);
+          }
+
+          if (update.status === 'completed' || update.status === 'failed') {
+            setIsGenerating(false);
+          }
         }
 
         // Dispatch events globally so other components (e.g. BrowserModal, SchedulesPanel) can listen in
@@ -427,7 +466,7 @@ interface SyncEvent {
   const handleDeleteChat = (id: string) => {
     const updatedChats = chats.filter(c => c.id !== id);
     setChats(updatedChats);
-    Storage.saveChatsImmediately(updatedChats);
+    Storage.deleteChat(id);
 
     if (activeChatId === id) {
       if (updatedChats.length > 0) {
@@ -441,17 +480,32 @@ interface SyncEvent {
   };
 
   const handleRenameChat = (id: string, newTitle: string) => {
-    const updatedChats = chats.map(c =>
-      c.id === id ? { ...c, title: newTitle, updatedAt: new Date().toISOString() } : c
-    );
+    let renamedChat: Chat | undefined;
+    const updatedChats = chats.map(c => {
+      if (c.id === id) {
+        renamedChat = { ...c, title: newTitle, updatedAt: new Date().toISOString() };
+        return renamedChat;
+      }
+      return c;
+    });
     setChats(updatedChats);
-    Storage.saveChatsImmediately(updatedChats);
+    if (renamedChat) {
+      Storage.saveChat(renamedChat);
+    }
   };
 
   const handleStopGenerating = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       setIsGenerating(false);
+    }
+    const activeChat = chats.find(c => c.id === activeChatId);
+    if (activeChat && activeChat.messages.some(m => m.browserSession && (m.browserSession.status === 'running' || m.browserSession.status === 'paused'))) {
+      fetch('/api/browser/agent/abort', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: activeChatId })
+      }).catch(err => console.error('Failed to abort backend browser agent:', err));
     }
   };
 
@@ -512,24 +566,18 @@ interface SyncEvent {
     // Retrieve the user query (the last message in the active path)
     const userQuery = activeChat.messages[activeChat.messages.length - 1]?.content || '';
 
-    // Asynchronously gather contexts
-    let ragContext = '';
-    if (settings.isRagEnabled && userQuery) {
-      try {
-        const matches = await vectorDb.searchSimilarChunks(userQuery);
-        if (matches.length > 0) {
-          ragContext = matches.map(m => `--- [Document: ${m.chunk.docName} (Similarity: ${(m.score * 100).toFixed(0)}%)] ---\n${m.chunk.text}`).join('\n\n');
-        }
-      } catch (err) {
-        console.error('Failed to perform local RAG similarity search:', err);
-      }
-    }
-
     // Create stream message placeholder
     const streamMessageId = `msg-stream-${Date.now()}`;
-    const initialContent = settings.isWebSearchEnabled && userQuery
-      ? `<search_status query="${userQuery.replace(/"/g, '&quot;')}" status="searching" />`
-      : '';
+    let initialContent = '';
+    
+    if (settings.isRagEnabled && userQuery) {
+      const currentModelStatus = vectorDb.getStatus();
+      const statusAttr = currentModelStatus === 'loading' ? 'loading_model' : 'searching';
+      initialContent += `<rag_status query="${userQuery.replace(/"/g, '&quot;')}" status="${statusAttr}" />\n`;
+    }
+    if (settings.isWebSearchEnabled && userQuery) {
+      initialContent += `<search_status query="${userQuery.replace(/"/g, '&quot;')}" status="searching" />`;
+    }
 
     const placeholderMessage: Message = {
       id: streamMessageId,
@@ -546,6 +594,101 @@ interface SyncEvent {
       c.id === targetChatId ? chatWithPlaceholder : c
     );
     setChats(chatsWithPlaceholder);
+
+    let ragContext = '';
+    let ragTagPrefix = '';
+    let unsubStatus: (() => void) | null = null;
+    let unsubProgress: (() => void) | null = null;
+
+    if (settings.isRagEnabled && userQuery) {
+      try {
+        unsubStatus = vectorDb.subscribeStatus((status) => {
+          setChats(prevChats =>
+            prevChats.map(c => {
+              if (c.id === targetChatId) {
+                const upgraded = upgradeChatToTree(c);
+                const tree = { ...upgraded.messageTree };
+                if (tree[streamMessageId]) {
+                  const content = tree[streamMessageId].content;
+                  const newStatus = status === 'loading' ? 'loading_model' : 'searching';
+                  const updatedContent = content.replace(/<rag_status\s+query="([^"]*)"\s+status="([^"]*)"/i, `<rag_status query="$1" status="${newStatus}"`);
+                  tree[streamMessageId] = {
+                    ...tree[streamMessageId],
+                    content: updatedContent
+                  };
+                }
+                const messages = reconstructActivePath(tree, upgraded.activeLeafId);
+                return { ...upgraded, messageTree: tree, messages };
+              }
+              return c;
+            })
+          );
+        });
+
+        unsubProgress = vectorDb.subscribeProgress((progress) => {
+          setChats(prevChats =>
+            prevChats.map(c => {
+              if (c.id === targetChatId) {
+                const upgraded = upgradeChatToTree(c);
+                const tree = { ...upgraded.messageTree };
+                if (tree[streamMessageId]) {
+                  const content = tree[streamMessageId].content;
+                  let updatedContent: string;
+                  if (content.includes('progress=')) {
+                    updatedContent = content.replace(/progress="([^"]*)"/i, `progress="${progress.toFixed(0)}"`);
+                  } else {
+                    updatedContent = content.replace(/<rag_status\s+query="([^"]*)"\s+status="([^"]*)"/i, `<rag_status query="$1" status="$2" progress="${progress.toFixed(0)}"`);
+                  }
+                  tree[streamMessageId] = {
+                    ...tree[streamMessageId],
+                    content: updatedContent
+                  };
+                }
+                const messages = reconstructActivePath(tree, upgraded.activeLeafId);
+                return { ...upgraded, messageTree: tree, messages };
+              }
+              return c;
+            })
+          );
+        });
+
+        const matches = await vectorDb.searchSimilarChunks(userQuery);
+        if (matches.length > 0) {
+          ragContext = matches.map(m => `--- [Document: ${m.chunk.docName} (Similarity: ${(m.score * 100).toFixed(0)}%)] ---\n${m.chunk.text}`).join('\n\n');
+        }
+        ragTagPrefix = `<rag_status query="${userQuery.replace(/"/g, '&quot;')}" status="done">${JSON.stringify(
+          matches.map(m => ({ docName: m.chunk.docName, score: m.score, text: m.chunk.text }))
+        )}</rag_status>\n\n`;
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Semantic search failed';
+        console.error('Failed to perform local RAG similarity search:', err);
+        ragTagPrefix = `<rag_status query="${userQuery.replace(/"/g, '&quot;')}" status="failed" error="${errorMsg}"></rag_status>\n\n`;
+      } finally {
+        if (unsubStatus) unsubStatus();
+        if (unsubProgress) unsubProgress();
+      }
+
+      // Update placeholder with final RAG status tag prefix in tree
+      setChats(prevChats =>
+        prevChats.map(c => {
+          if (c.id === targetChatId) {
+            const upgraded = upgradeChatToTree(c);
+            const tree = { ...upgraded.messageTree };
+            if (tree[streamMessageId]) {
+              const currentContent = tree[streamMessageId].content;
+              const updatedContent = currentContent.replace(/<rag_status[\s\S]*?<\/rag_status>|<rag_status\s*[^>]*\/>/i, ragTagPrefix);
+              tree[streamMessageId] = {
+                ...tree[streamMessageId],
+                content: updatedContent
+              };
+            }
+            const messages = reconstructActivePath(tree, upgraded.activeLeafId);
+            return { ...upgraded, messageTree: tree, messages };
+          }
+          return c;
+        })
+      );
+    }
 
     let searchTagPrefix = '';
     let webSearchContext = '';
@@ -565,7 +708,7 @@ interface SyncEvent {
                 if (tree[streamMessageId]) {
                   tree[streamMessageId] = {
                     ...tree[streamMessageId],
-                    content: `<search_status query="${searchQuery.replace(/"/g, '&quot;')}" status="searching" />`
+                    content: ragTagPrefix + `<search_status query="${searchQuery.replace(/"/g, '&quot;')}" status="searching" />`
                   };
                 }
                 const messages = reconstructActivePath(tree, upgraded.activeLeafId);
@@ -590,7 +733,7 @@ interface SyncEvent {
                     if (tree[streamMessageId]) {
                       tree[streamMessageId] = {
                         ...tree[streamMessageId],
-                        content: `<search_status query="${searchQuery.replace(/"/g, '&quot;')}" status="scraping" />`
+                        content: ragTagPrefix + `<search_status query="${searchQuery.replace(/"/g, '&quot;')}" status="scraping" />`
                       };
                     }
                     const messages = reconstructActivePath(tree, upgraded.activeLeafId);
@@ -656,7 +799,7 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
             if (tree[streamMessageId]) {
               tree[streamMessageId] = {
                 ...tree[streamMessageId],
-                content: searchTagPrefix
+                content: ragTagPrefix + searchTagPrefix
               };
             }
             const messages = reconstructActivePath(tree, upgraded.activeLeafId);
@@ -699,7 +842,7 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
                 if (tree[streamMessageId]) {
                   tree[streamMessageId] = {
                     ...tree[streamMessageId],
-                    content: searchTagPrefix + accumulatedContent
+                    content: ragTagPrefix + searchTagPrefix + accumulatedContent
                   };
                 }
                 const messages = reconstructActivePath(tree, upgraded.activeLeafId);
@@ -715,6 +858,7 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
         },
         onDone: (finalText: string) => {
           setIsGenerating(false);
+          let updatedChat: Chat | undefined;
           setChats(prevChats => {
             const finalChats = prevChats.map(c => {
               if (c.id === targetChatId) {
@@ -723,23 +867,27 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
                 if (tree[streamMessageId]) {
                   tree[streamMessageId] = {
                     ...tree[streamMessageId],
-                    content: searchTagPrefix + finalText,
+                    content: ragTagPrefix + searchTagPrefix + finalText,
                     timestamp: new Date().toISOString()
                   };
                 }
                 const messages = reconstructActivePath(tree, upgraded.activeLeafId);
-                return {
+                updatedChat = {
                   ...upgraded,
                   messageTree: tree,
                   messages,
                   updatedAt: new Date().toISOString()
                 };
+                return updatedChat;
               }
               return c;
             });
-            Storage.saveChatsImmediately(finalChats);
             return finalChats;
           });
+
+          if (updatedChat) {
+            Storage.saveChat(updatedChat);
+          }
 
           if (settings.isMemoryEnabled) {
             import('./utils/memory').then(({ extractAndSaveMemories }) => {
@@ -755,6 +903,7 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
           setIsGenerating(false);
           showToast(errorMsg, 'error');
           
+          let updatedChat: Chat | undefined;
           // Remove placeholder and restore chat session
           setChats(prevChats => {
             const rolledBackChats = prevChats.map(c => {
@@ -773,18 +922,21 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
                 const activeLeaf = parentId;
                 const messages = reconstructActivePath(tree, activeLeaf);
                 
-                return {
+                updatedChat = {
                   ...upgraded,
                   messageTree: tree,
                   activeLeafId: activeLeaf,
                   messages
                 };
+                return updatedChat;
               }
               return c;
             });
-            Storage.saveChatsImmediately(rolledBackChats);
             return rolledBackChats;
           });
+          if (updatedChat) {
+            Storage.saveChat(updatedChat);
+          }
           abortControllerRef.current = null;
         }
       },
@@ -821,58 +973,37 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
 
     // Add placeholder to tree
     const parentId = activeChat.activeLeafId || null;
-    let currentChat = addMessageToTree(activeChat, placeholderMessage, parentId);
+    const currentChat = addMessageToTree(activeChat, placeholderMessage, parentId);
     
     setChats(prevChats =>
       prevChats.map(c => (c.id === targetChatId ? currentChat : c))
     );
 
-    let currentUrl: string;
-    let currentTitle: string;
-    const steps: BrowserSessionData['steps'] = [];
-    let loopCount = 0;
-    const maxLoops = 15;
-    let isFinished = false;
-    let extractedContext = '';
-
-    // Launch/ensure browser session
     try {
-      const initRes = await fetch(`/api/browser/state?sessionId=${encodeURIComponent(targetChatId)}`);
-      if (!initRes.ok) {
-        if (initRes.status === 500) {
-          try {
-            const errData = await initRes.json();
-            throw new Error(errData.error || 'Puppeteer failed to launch');
-          } catch {
-            throw new Error('Browser server internal error (500)');
-          }
-        } else {
-          throw new Error(`Browser companion server is not running (HTTP ${initRes.status}). Please start it with "npm run server".`);
-        }
+      const response = await fetch('/api/browser/agent/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: targetChatId,
+          messageId: streamMessageId,
+          userGoal,
+          settings
+        }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Failed to start browser agent on backend');
       }
-      const initState = await initRes.json();
-      currentUrl = initState.url || '';
-      currentTitle = initState.title || 'Blank Page';
-      
-      placeholderMessage.browserSession = {
-        url: currentUrl,
-        title: currentTitle,
-        status: 'running',
-        steps: [],
-        screenshotTimestamp: Date.now()
-      };
-      
-      currentChat = addMessageToTree(activeChat, placeholderMessage, parentId);
-      setChats(prevChats =>
-        prevChats.map(c => (c.id === targetChatId ? currentChat : c))
-      );
     } catch (e) {
       const error = e as Error;
-      console.error('Failed to connect to browser server', error);
+      console.error('Failed to start browser agent on backend:', error);
       setIsGenerating(false);
-      showToast(error.message || 'Browser companion server is not running. Please start it with "npm run server".', 'error');
+      showToast(error.message || 'Browser companion server failed to start the agent loop.', 'error');
       
-      // Rollback chat session
+      let updatedChat: Chat | undefined;
+      // Rollback chat session (remove placeholder message)
       setChats(prevChats => {
         const rolledBackChats = prevChats.map(c => {
           if (c.id === targetChatId) {
@@ -890,286 +1021,22 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
             const activeLeaf = parentId;
             const messages = reconstructActivePath(tree, activeLeaf);
             
-            return {
+            updatedChat = {
               ...upgraded,
               messageTree: tree,
               activeLeafId: activeLeaf,
               messages
             };
+            return updatedChat;
           }
           return c;
         });
-        Storage.saveChatsImmediately(rolledBackChats);
         return rolledBackChats;
       });
-      return;
-    }
-
-    while (!isFinished && loopCount < maxLoops) {
-      if (controller.signal.aborted) {
-        throw new Error('Automation stopped by user');
-      }
-      loopCount++;
-      
-      try {
-        // 1. Fetch current browser state
-        const stateRes = await fetch(`/api/browser/state?sessionId=${encodeURIComponent(targetChatId)}`);
-        if (!stateRes.ok) throw new Error('Failed to fetch browser state');
-        const browserState = await stateRes.json();
-        currentUrl = browserState.url;
-        currentTitle = browserState.title;
-        interface InteractiveElement {
-          id: string;
-          tagName: string;
-          type: string;
-          text: string;
-        }
-        const elements = (browserState.elements || []) as InteractiveElement[];
-        const elementsForLlm = elements.map((el) => ({
-          id: el.id,
-          tagName: el.tagName,
-          type: el.type,
-          text: el.text
-        }));
-
-        // Generate step history context for the LLM
-        const formattedSteps = steps.map((s, idx) => {
-          return `- Step ${idx + 1}: Thought: "${s.thought}" -> Action: ${s.action}${s.targetId ? ` on element "${s.targetId}"` : ''}${s.text ? ` with "${s.text}"` : ''}${s.url ? ` to "${s.url}"` : ''} (${s.status === 'success' ? 'Success' : `Failed: ${s.logMessage || 'unknown error'}`})`;
-        }).join('\n');
-
-        // 2. Prompt LLM to choose next action
-        const systemPrompt = `You are Context's Browser Agent. Your task is to achieve the user's goal by executing step-by-step browser actions.
-Goal: "${userGoal}"
-Current URL: ${currentUrl || 'about:blank'}
-Page Title: ${currentTitle || 'No Title'}
-
-List of interactive elements on the current page:
-${JSON.stringify(elementsForLlm, null, 2)}
-
-${extractedContext ? `Extracted Page Text Context:\n${extractedContext}\n` : ''}
-
-${steps.length > 0 ? `Execution History of Previous Steps:\n${formattedSteps}\n` : ''}
-
-Available Actions:
-1. { "action": "navigate", "url": "https://..." }
-2. { "action": "click", "targetId": "element-id-from-list" }
-3. { "action": "type", "targetId": "element-id-from-list", "text": "text to type" }
-4. { "action": "hover", "targetId": "element-id-from-list" }
-5. { "action": "back" }
-6. { "action": "key", "targetId": "element-id-from-list", "text": "keyName" }
-7. { "action": "scroll", "text": "up" | "down" }
-8. { "action": "wait", "text": "milliseconds" }
-9. { "action": "extract" } - Extract text content from the current page.
-10. { "action": "done", "text": "Final detailed answer / summary of what you accomplished" }
-11. { "action": "fail", "text": "Error explanation / why it was not possible to complete the task" }
-
-Select the next single action to take. Provide your thought process (concise, written in third-person, e.g. "I will click the 'Sign In' button") and the next action in JSON format:
-{
-  "thought": "Thought text...",
-  "action": "click" | "navigate" | "type" | "hover" | "back" | "key" | "scroll" | "wait" | "extract" | "done" | "fail",
-  "targetId": "context-el-...",
-  "text": "...",
-  "url": "..."
-}
-
-Respond ONLY with a JSON object. Do not include markdown code block wrappers (like \`\`\`json). No explanations, no text before or after the JSON.`;
-
-        const screenshot = browserState.screenshot || '';
-
-        const llmResponse = await generateTextCompletion(
-          settings,
-          [{
-            id: `browser-loop-${loopCount}`,
-            role: 'user',
-            content: `What is the next action to take to achieve my goal?`,
-            timestamp: new Date().toISOString(),
-            attachments: screenshot ? [{
-              id: `screenshot-${loopCount}`,
-              name: 'screenshot.png',
-              type: 'image/png',
-              data: screenshot,
-              size: 0
-            }] : []
-          }],
-          systemPrompt
-        );
-
-        if (!llmResponse) throw new Error('Empty response from LLM');
-
-        const decision = safeJsonParse(llmResponse) as {
-          thought?: string;
-          action: string;
-          targetId?: string;
-          text?: string;
-          url?: string;
-        };
-        if (!decision || !decision.action) throw new Error('Invalid JSON decision format from LLM');
-
-        // 3. Add step to list as pending
-        const stepId = `step-${loopCount}-${Date.now()}`;
-        const newStep: {
-          id: string;
-          thought?: string;
-          action: string;
-          targetId?: string;
-          text?: string;
-          url?: string;
-          status: 'pending' | 'success' | 'error';
-          logMessage?: string;
-          timestamp: string;
-        } = {
-          id: stepId,
-          thought: decision.thought || 'Executing next step...',
-          action: decision.action,
-          targetId: decision.targetId,
-          text: decision.text,
-          url: decision.url,
-          status: 'pending',
-          timestamp: new Date().toISOString()
-        };
-        steps.push(newStep);
-
-        // Update UI state
-        placeholderMessage.browserSession = {
-          url: currentUrl,
-          title: currentTitle,
-          status: 'running',
-          steps: [...steps],
-          screenshotTimestamp: Date.now()
-        };
-        currentChat = addMessageToTree(activeChat, placeholderMessage, parentId);
-        setChats(prevChats =>
-          prevChats.map(c => (c.id === targetChatId ? currentChat : c))
-        );
-
-        // 4. Handle exit conditions (done/fail)
-        if (decision.action === 'done' || decision.action === 'fail') {
-          isFinished = true;
-          newStep.status = 'success';
-          newStep.logMessage = decision.action === 'done' ? 'Completed task' : 'Failed task';
-
-          placeholderMessage.content = decision.text || (decision.action === 'done' ? 'Browser automation task completed successfully.' : 'Browser automation failed.');
-          placeholderMessage.browserSession = {
-            url: currentUrl,
-            title: currentTitle,
-            status: decision.action === 'done' ? 'completed' : 'failed',
-            steps: [...steps],
-            screenshotTimestamp: Date.now()
-          };
-
-          currentChat = addMessageToTree(activeChat, placeholderMessage, parentId);
-          setChats(prevChats => {
-            const finalChats = prevChats.map(c => (c.id === targetChatId ? currentChat : c));
-            Storage.saveChatsImmediately(finalChats);
-            return finalChats;
-          });
-
-          fetch('/api/browser/close', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: targetChatId })
-          }).catch(err => console.error(err));
-          abortControllerRef.current = null;
-          break;
-        }
-
-        // 5. Execute action via API request
-        try {
-          const actionRes = await fetch('/api/browser/action', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: decision.action,
-              targetId: decision.targetId,
-              text: decision.text,
-              url: decision.url,
-              stepId: stepId,
-              sessionId: targetChatId
-            })
-          });
-
-          if (!actionRes.ok) {
-            const errData = await actionRes.json();
-            throw new Error(errData.error || 'Action execution failed');
-          }
-
-          const actionResult = await actionRes.json();
-          
-          newStep.status = 'success';
-          newStep.logMessage = actionResult.logMessage;
-          
-          if (decision.action === 'extract' && actionResult.data) {
-            extractedContext += `\n[Page Data from ${actionResult.url || currentUrl}]:\n${actionResult.data.slice(0, 1500)}\n`;
-          }
-
-          currentUrl = actionResult.url || currentUrl;
-          currentTitle = actionResult.title || currentTitle;
-        } catch (stepErr) {
-          console.error(`Step error:`, stepErr);
-          const err = stepErr as Error;
-          newStep.status = 'error';
-          newStep.logMessage = err.message || 'Action execution failed';
-        }
-
-        placeholderMessage.browserSession = {
-          url: currentUrl,
-          title: currentTitle,
-          status: 'running',
-          steps: [...steps],
-          screenshotTimestamp: Date.now()
-        };
-        currentChat = addMessageToTree(activeChat, placeholderMessage, parentId);
-        setChats(prevChats =>
-          prevChats.map(c => (c.id === targetChatId ? currentChat : c))
-        );
-
-        await new Promise(r => setTimeout(r, 1000));
-
-      } catch (err) {
-        const error = err as Error;
-        console.error('Error during browser automation step:', error);
-        
-        if (steps.length > 0) {
-          steps[steps.length - 1].status = 'error';
-          steps[steps.length - 1].logMessage = `Error: ${error.message || 'Unknown error occurred'}`;
-        } else {
-          steps.push({
-            id: `error-${Date.now()}`,
-            thought: 'An error occurred during execution.',
-            action: 'error',
-            status: 'error',
-            logMessage: error.message || 'Unknown error',
-            timestamp: new Date().toISOString()
-          });
-        }
-
-        placeholderMessage.content = `Browser automation failed: ${error.message || 'Unknown error'}`;
-        placeholderMessage.browserSession = {
-          url: currentUrl,
-          title: currentTitle,
-          status: 'failed',
-          steps: [...steps],
-          screenshotTimestamp: Date.now()
-        };
-
-        currentChat = addMessageToTree(activeChat, placeholderMessage, parentId);
-        setChats(prevChats => {
-          const finalChats = prevChats.map(c => (c.id === targetChatId ? currentChat : c));
-          Storage.saveChatsImmediately(finalChats);
-          return finalChats;
-        });
-
-        fetch('/api/browser/close', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId: targetChatId })
-        }).catch(closeErr => console.error(closeErr));
-        abortControllerRef.current = null;
-        break;
+      if (updatedChat) {
+        Storage.saveChat(updatedChat);
       }
     }
-
-    setIsGenerating(false);
   };
 
   const handleSendMessage = async (textToSend?: string, attachmentsToSend?: Attachment[]) => {
@@ -1208,6 +1075,7 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
 
     // Update active chat title if it's default
     const chatIndex = currentChats.findIndex(c => c.id === currentChatId);
+    let updatedChat: Chat | undefined;
     if (chatIndex !== -1) {
       const activeChat = currentChats[chatIndex];
       if (activeChat.messages.length === 0 && activeChat.title.startsWith('New Conversation')) {
@@ -1217,12 +1085,14 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
       
       const upgraded = upgradeChatToTree(activeChat);
       const parentId = upgraded.activeLeafId || null;
-      const updatedChat = addMessageToTree(upgraded, userMessage, parentId);
+      updatedChat = addMessageToTree(upgraded, userMessage, parentId);
       currentChats[chatIndex] = updatedChat;
     }
 
     setChats(currentChats);
-    Storage.saveChatsImmediately(currentChats);
+    if (updatedChat) {
+      Storage.saveChat(updatedChat);
+    }
     setComposerInput('');
 
     // Trigger completion stream
@@ -1268,7 +1138,7 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
       );
       
       setChats(updatedChats);
-      Storage.saveChatsImmediately(updatedChats);
+      Storage.saveChat(updatedChat);
       return;
     }
 
@@ -1289,7 +1159,7 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
     );
 
     setChats(updatedChats);
-    Storage.saveChatsImmediately(updatedChats);
+    Storage.saveChat(upgradedChat);
 
     // Re-trigger streaming response
     await triggerStreamingResponse(updatedChats, activeChatId);
@@ -1365,7 +1235,7 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
     );
 
     setChats(updatedChats);
-    Storage.saveChatsImmediately(updatedChats);
+    Storage.saveChat(updatedChat);
   };
 
   // Message Regeneration: Truncate last assistant reply and retry
@@ -1404,7 +1274,7 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
     );
 
     setChats(updatedChats);
-    Storage.saveChatsImmediately(updatedChats);
+    Storage.saveChat(updatedChat);
 
     // Now trigger completion under parentId
     await triggerStreamingResponse(updatedChats, activeChatId);
@@ -1423,6 +1293,7 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
   const handleSwitchBranch = (messageId: string) => {
     if (!activeChatId) return;
 
+    let updatedChat: Chat | undefined;
     setChats(prevChats => {
       const updatedChats = prevChats.map(c => {
         if (c.id === activeChatId) {
@@ -1434,26 +1305,29 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
           const newActiveLeafId = findActiveLeaf(messageId, tree);
           const messages = reconstructActivePath(tree, newActiveLeafId);
           
-          return {
+          updatedChat = {
             ...upgraded,
             activeLeafId: newActiveLeafId,
             messages,
             updatedAt: new Date().toISOString()
           };
+          return updatedChat;
         }
         return c;
       });
-      Storage.saveChatsImmediately(updatedChats);
       return updatedChats;
     });
+    if (updatedChat) {
+      Storage.saveChat(updatedChat);
+    }
   };
 
   const handlePromptsChanged = () => {
     setCustomPrompts(Storage.getCustomPrompts());
   };
 
-  const handleBackupImported = () => {
-    const savedChats = Storage.getChats();
+  const handleBackupImported = async () => {
+    const savedChats = await Storage.getChats();
     const savedSettings = Storage.getSettings();
     const savedPrompts = Storage.getCustomPrompts();
     const savedActiveChatId = Storage.getActiveChatId();
@@ -1482,6 +1356,44 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
 
   const activeChat = chats.find(c => c.id === activeChatId) || null;
   const userPrompts = activeChat?.messages.filter(m => m.role === 'user').map(m => m.content) || [];
+
+  if (!isChatsLoaded) {
+    return (
+      <div className="flex h-screen w-screen flex-col items-center justify-center bg-[#090d16] text-white">
+        <div className="relative flex flex-col items-center justify-center p-8 rounded-2xl border border-white/[0.05] bg-slate-950/40 backdrop-blur-xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
+          {/* Glowing gradient background orbit */}
+          <div className="absolute -top-20 -left-20 w-40 h-40 bg-brand-500/20 rounded-full blur-3xl" />
+          <div className="absolute -bottom-20 -right-20 w-40 h-40 bg-violet-500/20 rounded-full blur-3xl" />
+          
+          {/* Logo animation */}
+          <div className="relative flex items-center justify-center h-16 w-16 rounded-2xl bg-gradient-to-tr from-brand-600 to-violet-600 shadow-lg shadow-brand-500/10 mb-5 animate-pulse">
+            <span className="text-2xl font-black tracking-tighter text-white select-none">C</span>
+            {/* Spinning/rotating ring */}
+            <div className="absolute -inset-1.5 rounded-[18px] border-2 border-dashed border-brand-500/40 animate-[spin_20s_linear_infinite]" />
+          </div>
+          
+          <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent font-sans">Context AI</h1>
+          <p className="text-[11px] text-slate-500 tracking-widest uppercase font-bold mt-1 font-sans">Privacy-First AI Chat</p>
+          
+          {/* Loading status */}
+          <div className="mt-8 flex flex-col items-center gap-2 w-full">
+            <div className="h-1 w-28 bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-brand-500 to-violet-500 rounded-full animate-[loading-bar_1.5s_infinite_ease-in-out]" style={{ width: '40%' }} />
+            </div>
+            <span className="text-[10px] font-medium text-slate-400 animate-pulse font-sans">Initializing secure storage...</span>
+          </div>
+        </div>
+        
+        {/* Simple inline animation styles */}
+        <style dangerouslySetInnerHTML={{__html: `
+          @keyframes loading-bar {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(250%); }
+          }
+        `}} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background font-sans text-foreground">
@@ -1529,137 +1441,175 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
         }}
       />
 
-      <ChatArea
-        chat={activeChat}
-        onSendMessage={handleSendMessage}
-        isGenerating={isGenerating}
-        onEditMessage={handleEditMessage}
-        onDeleteMessage={handleDeleteMessage}
-        onRegenerateResponse={handleRegenerateResponse}
-        isSidebarCollapsed={isSidebarCollapsed}
-        onToggleSidebar={() => {
-          const next = !isSidebarCollapsed;
-          setIsSidebarCollapsed(next);
-          Storage.saveSidebarCollapsed(next);
-        }}
-        onSwitchBranch={handleSwitchBranch}
-        onOpenBrowserModal={(sid) => {
-          setBrowserModalSessionId(sid || 'interactive');
-          setBrowserModalOpen(true);
-        }}
-      >
-        <Composer
-          input={composerInput}
-          onChangeInput={setComposerInput}
-          onSend={(attachments) => handleSendMessage(undefined, attachments)}
+      <ErrorBoundary fallbackTitle="Chat View Failed to Render">
+        <ChatArea
+          chat={activeChat}
+          onSendMessage={handleSendMessage}
           isGenerating={isGenerating}
-          onStop={handleStopGenerating}
-          inputRef={textareaRef}
-          userPrompts={userPrompts}
-          onError={(msg) => showToast(msg, 'error')}
-          settings={settings}
-          onSettingsChanged={setSettings}
-          activePromptId={activePromptId}
-          onSelectPromptId={(id) => {
-            setActivePromptId(id);
-            Storage.saveActivePromptId(id);
-          }}
-          customPrompts={customPrompts}
-        />
-      </ChatArea>
-
-      {/* Settings Panel */}
-      {settingsOpen && (
-        <SettingsModal
-          isOpen={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          activeChat={activeChat}
-          onSettingsSaved={handleSettingsSaved}
-          onPromptsChanged={handlePromptsChanged}
-          onBackupImported={handleBackupImported}
-        />
-      )}
-
-      {/* Keyboard Shortcuts Overlay */}
-      {shortcutsOpen && (
-        <ShortcutsModal
-          isOpen={shortcutsOpen}
-          onClose={() => setShortcutsOpen(false)}
-        />
-      )}
-
-      {/* RAG Memory Panel */}
-      {ragPanelOpen && (
-        <RAGPanel
-          isOpen={ragPanelOpen}
-          onClose={() => setRagPanelOpen(false)}
-          isRagEnabled={!!settings.isRagEnabled}
-          onToggleRag={(enabled) => {
-            const newSettings = { ...settings, isRagEnabled: enabled };
-            setSettings(newSettings);
-            Storage.saveSettings(newSettings);
-          }}
-          onError={(msg) => showToast(msg, 'error')}
-        />
-      )}
-
-      {/* Command Palette Overlay */}
-      {commandPaletteOpen && (
-        <CommandPalette
-          isOpen={commandPaletteOpen}
-          onClose={() => setCommandPaletteOpen(false)}
-          chats={chats}
-          activeChatId={activeChatId}
-          onSelectChat={handleSelectChat}
-          onNewChat={handleNewChat}
-          settings={settings}
-          onSettingsChanged={setSettings}
-          activePromptId={activePromptId}
-          onSelectPromptId={(id) => {
-            setActivePromptId(id);
-            Storage.saveActivePromptId(id);
-          }}
-          customPrompts={customPrompts}
-          theme={theme}
-          onThemeChanged={(newTheme) => {
-            setTheme(newTheme);
-            Storage.saveTheme(newTheme);
-          }}
+          onEditMessage={handleEditMessage}
+          onDeleteMessage={handleDeleteMessage}
+          onRegenerateResponse={handleRegenerateResponse}
+          isSidebarCollapsed={isSidebarCollapsed}
           onToggleSidebar={() => {
             const next = !isSidebarCollapsed;
             setIsSidebarCollapsed(next);
             Storage.saveSidebarCollapsed(next);
           }}
-          onToggleSettings={() => setSettingsOpen(true)}
-          onToggleRAG={() => setRagPanelOpen(true)}
-          onShowToast={(msg, type) => showToast(msg, type)}
-        />
-      )}
-
-      {/* Task Schedules Dashboard */}
-      {schedulesOpen && (
-        <SchedulesPanel
-          isOpen={schedulesOpen}
-          onClose={() => setSchedulesOpen(false)}
-          chats={chats}
-          onShowToast={(msg, type) => showToast(msg, type)}
+          onSwitchBranch={handleSwitchBranch}
           onOpenBrowserModal={(sid) => {
             setBrowserModalSessionId(sid || 'interactive');
             setBrowserModalOpen(true);
           }}
-        />
+          onOpenAnalytics={() => setAnalyticsOpen(true)}
+        >
+          <Composer
+            input={composerInput}
+            onChangeInput={setComposerInput}
+            onSend={(attachments) => handleSendMessage(undefined, attachments)}
+            isGenerating={isGenerating}
+            onStop={handleStopGenerating}
+            inputRef={textareaRef}
+            userPrompts={userPrompts}
+            onError={(msg) => showToast(msg, 'error')}
+            settings={settings}
+            onSettingsChanged={setSettings}
+            activePromptId={activePromptId}
+            onSelectPromptId={(id) => {
+              setActivePromptId(id);
+              Storage.saveActivePromptId(id);
+            }}
+            customPrompts={customPrompts}
+          />
+        </ChatArea>
+      </ErrorBoundary>
+
+      {/* Settings Panel */}
+      {settingsOpen && (
+        <ErrorBoundary fallbackTitle="Settings Modal Failed to Render">
+          <Suspense fallback={<ModalFallback />}>
+            <SettingsModal
+              isOpen={settingsOpen}
+              onClose={() => setSettingsOpen(false)}
+              activeChat={activeChat}
+              onSettingsSaved={handleSettingsSaved}
+              onPromptsChanged={handlePromptsChanged}
+              onBackupImported={handleBackupImported}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
+
+      {/* Keyboard Shortcuts Overlay */}
+      {shortcutsOpen && (
+        <Suspense fallback={<ModalFallback />}>
+          <ShortcutsModal
+            isOpen={shortcutsOpen}
+            onClose={() => setShortcutsOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* RAG Memory Panel */}
+      {ragPanelOpen && (
+        <ErrorBoundary fallbackTitle="RAG Panel Failed to Render">
+          <Suspense fallback={<ModalFallback />}>
+            <RAGPanel
+              isOpen={ragPanelOpen}
+              onClose={() => setRagPanelOpen(false)}
+              isRagEnabled={!!settings.isRagEnabled}
+              onToggleRag={(enabled) => {
+                const newSettings = { ...settings, isRagEnabled: enabled };
+                setSettings(newSettings);
+                Storage.saveSettings(newSettings);
+              }}
+              onError={(msg) => showToast(msg, 'error')}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
+
+      {/* Command Palette Overlay */}
+      {commandPaletteOpen && (
+        <Suspense fallback={<ModalFallback />}>
+          <CommandPalette
+            isOpen={commandPaletteOpen}
+            onClose={() => setCommandPaletteOpen(false)}
+            chats={chats}
+            activeChatId={activeChatId}
+            onSelectChat={handleSelectChat}
+            onNewChat={handleNewChat}
+            settings={settings}
+            onSettingsChanged={setSettings}
+            activePromptId={activePromptId}
+            onSelectPromptId={(id) => {
+              setActivePromptId(id);
+              Storage.saveActivePromptId(id);
+            }}
+            customPrompts={customPrompts}
+            theme={theme}
+            onThemeChanged={(newTheme) => {
+              setTheme(newTheme);
+              Storage.saveTheme(newTheme);
+            }}
+            onToggleSidebar={() => {
+              const next = !isSidebarCollapsed;
+              setIsSidebarCollapsed(next);
+              Storage.saveSidebarCollapsed(next);
+            }}
+            onToggleSettings={() => setSettingsOpen(true)}
+            onToggleRAG={() => setRagPanelOpen(true)}
+            onShowToast={(msg, type) => showToast(msg, type)}
+            onOpenAnalytics={() => setAnalyticsOpen(true)}
+            onOpenSchedules={() => setSchedulesOpen(true)}
+            onOpenBrowserModal={() => setBrowserModalOpen(true)}
+          />
+        </Suspense>
+      )}
+
+      {/* System Analytics Telemetry Modal */}
+      {analyticsOpen && (
+        <ErrorBoundary fallbackTitle="System Telemetry Modal Failed to Render">
+          <Suspense fallback={<ModalFallback />}>
+            <AnalyticsModal
+              isOpen={analyticsOpen}
+              onClose={() => setAnalyticsOpen(false)}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      )}
+
+      {/* Task Schedules Dashboard */}
+      {schedulesOpen && (
+        <ErrorBoundary fallbackTitle="Task Schedules Dashboard Failed to Render">
+          <Suspense fallback={<ModalFallback />}>
+            <SchedulesPanel
+              isOpen={schedulesOpen}
+              onClose={() => setSchedulesOpen(false)}
+              chats={chats}
+              onShowToast={(msg, type) => showToast(msg, type)}
+              onOpenBrowserModal={(sid) => {
+                setBrowserModalSessionId(sid || 'interactive');
+                setBrowserModalOpen(true);
+              }}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
 
       {/* Browser View Modal */}
       {browserModalOpen && (
-        <BrowserModal
-          isOpen={browserModalOpen}
-          onClose={() => setBrowserModalOpen(false)}
-          activeChatId={activeChatId}
-          activeChatTitle={activeChat?.title}
-          initialSessionId={browserModalSessionId}
-          isBrowserAgentRunning={isGenerating && !!activeChat?.messages.some(m => m.browserSession && m.browserSession.status === 'running')}
-        />
+        <ErrorBoundary fallbackTitle="Browser View Modal Failed to Render">
+          <Suspense fallback={<ModalFallback />}>
+            <BrowserModal
+              isOpen={browserModalOpen}
+              onClose={() => setBrowserModalOpen(false)}
+              activeChatId={activeChatId}
+              activeChatTitle={activeChat?.title}
+              initialSessionId={browserModalSessionId}
+              isBrowserAgentRunning={isGenerating && !!activeChat?.messages.some(m => m.browserSession && (m.browserSession.status === 'running' || m.browserSession.status === 'paused'))}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
 
     </div>

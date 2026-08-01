@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, RotateCw, Globe, ArrowRight, MousePointer, Keyboard, 
   ChevronUp, ChevronDown, FileText, Loader2, Search, Compass, Power, 
-  AlertTriangle, Eye, EyeOff, Terminal, Plus, Trash2, ArrowLeft
+  AlertTriangle, Eye, EyeOff, Terminal, Plus, Trash2, ArrowLeft,
+  Play, Pause, SkipForward
 } from 'lucide-react';
 
 interface InteractiveElement {
@@ -27,6 +28,7 @@ interface BrowserState {
   title: string;
   elements: InteractiveElement[];
   screenshot?: string;
+  agentStatus?: 'idle' | 'running' | 'paused';
 }
 
 interface BrowserModalProps {
@@ -65,6 +67,55 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
   const [logs, setLogs] = useState<{ timestamp: string; type: string; text: string; url: string }[]>([]);
   const [showConsoleDrawer, setShowConsoleDrawer] = useState(false);
   const [activeSessions, setActiveSessions] = useState<{ id: string; url: string; title: string }[]>([]);
+  const [consoleInput, setConsoleInput] = useState('');
+
+  const handlePause = async () => {
+    setActionLoading(true);
+    try {
+      await fetch('/api/browser/agent/pause', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+      await fetchBrowserState(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleResume = async () => {
+    setActionLoading(true);
+    try {
+      await fetch('/api/browser/agent/resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+      await fetchBrowserState(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleStep = async () => {
+    setActionLoading(true);
+    try {
+      await fetch('/api/browser/agent/step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+      await fetchBrowserState(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   // Sync initialSessionId state if the parent prop changes
   if (initialSessionId !== prevInitialSessionId) {
@@ -338,6 +389,32 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
     }
   };
 
+  const handleEvalConsole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const code = consoleInput.trim();
+    if (!code) return;
+
+    setConsoleInput('');
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/browser/eval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, code })
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Evaluation failed');
+      }
+      // Refresh browser overlays & screenshots dynamically after JS runs
+      await fetchBrowserState(false);
+    } catch (err) {
+      console.error('Failed to run console eval:', err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleScreenshotClick = async (e: React.MouseEvent<HTMLDivElement>) => {
     if (actionLoading || !browserState) return;
 
@@ -487,10 +564,52 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
               </select>
             </div>
 
-            {sessionId === activeChatId && isBrowserAgentRunning && (
-              <div className="ml-2 bg-amber-500/15 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 animate-pulse">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-                <span>Agent is active on this session</span>
+            {((browserState?.agentStatus && browserState.agentStatus !== 'idle') || (sessionId === activeChatId && isBrowserAgentRunning)) && (
+              <div className="ml-2 flex items-center gap-2 select-none">
+                <div className={`border rounded px-2 py-0.5 text-[10px] font-medium flex items-center gap-1 ${
+                  (browserState?.agentStatus || 'running') === 'paused'
+                    ? 'bg-blue-500/15 border-blue-500/30 text-blue-400'
+                    : 'bg-amber-500/15 border-amber-500/30 text-amber-400 animate-pulse'
+                }`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${
+                    (browserState?.agentStatus || 'running') === 'paused' ? 'bg-blue-500' : 'bg-amber-500 animate-pulse'
+                  }`} />
+                  <span>Agent: {(browserState?.agentStatus || 'running').toUpperCase()}</span>
+                </div>
+                
+                {browserState?.agentStatus && browserState.agentStatus !== 'idle' && (
+                  <div className="flex items-center gap-1 bg-slate-950/60 border border-white/[0.08] rounded-lg p-0.5 animate-fade-in">
+                    {browserState.agentStatus === 'running' ? (
+                      <button
+                        onClick={() => handlePause()}
+                        disabled={actionLoading}
+                        className="p-1 text-amber-400 hover:text-amber-300 hover:bg-white/5 rounded transition cursor-pointer disabled:opacity-50"
+                        title="Pause Agent Loop"
+                      >
+                        <Pause className="h-3 w-3 fill-amber-400" />
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleResume()}
+                          disabled={actionLoading}
+                          className="p-1 text-emerald-400 hover:text-emerald-300 hover:bg-white/5 rounded transition cursor-pointer disabled:opacity-50"
+                          title="Resume Agent Loop"
+                        >
+                          <Play className="h-3 w-3 fill-emerald-400" />
+                        </button>
+                        <button
+                          onClick={() => handleStep()}
+                          disabled={actionLoading}
+                          className="p-1 text-blue-400 hover:text-blue-300 hover:bg-white/5 rounded transition cursor-pointer disabled:opacity-50"
+                          title="Step Agent Loop (1 Cycle)"
+                        >
+                          <SkipForward className="h-3 w-3 fill-blue-450" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -675,6 +794,19 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                         alt="Sandbox Live Viewport"
                         className="w-full h-full select-none pointer-events-none"
                       />
+
+                      {/* Paused Glass Overlay */}
+                      {browserState?.agentStatus === 'paused' && (
+                        <div className="absolute inset-0 bg-slate-950/25 backdrop-blur-[0.5px] z-25 flex items-center justify-center pointer-events-none transition duration-200">
+                          <div className="bg-slate-900/95 border border-blue-500/20 shadow-2xl rounded-xl px-5 py-3 flex flex-col items-center gap-1">
+                            <div className="flex items-center gap-2">
+                              <Pause className="h-4 w-4 text-blue-400 fill-blue-450" />
+                              <span className="text-xs font-semibold text-slate-200">Agent is Paused on this session</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400">Interact freely or Resume/Step to proceed</span>
+                          </div>
+                        </div>
+                      )}
                       
                       {/* Click Indicator Ripple */}
                       {clickIndicator && (
@@ -815,6 +947,19 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                       )}
                       <div ref={(el) => el?.scrollIntoView({ behavior: 'smooth' })} />
                     </div>
+
+                    {/* Interactive CLI Console Input Form */}
+                    <form onSubmit={handleEvalConsole} className="flex gap-1.5 border-t border-white/[0.04] p-2 bg-slate-950/60 select-text shrink-0">
+                      <span className="text-[10px] text-brand-400 font-bold self-center font-mono pl-1">&gt;</span>
+                      <input
+                        type="text"
+                        value={consoleInput}
+                        onChange={(e) => setConsoleInput(e.target.value)}
+                        placeholder="Evaluate JavaScript in active page..."
+                        className="flex-1 bg-transparent border-0 p-0 text-slate-200 focus:outline-none focus:ring-0 font-mono text-[10.5px]"
+                        disabled={actionLoading}
+                      />
+                    </form>
                   </div>
                 )}
               </div>

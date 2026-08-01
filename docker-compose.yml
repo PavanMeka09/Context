@@ -10,8 +10,10 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - searxng
-      - companion-server
+      companion-server:
+        condition: service_healthy
+      searxng:
+        condition: service_started
     restart: unless-stopped
     networks:
       - context-network
@@ -22,6 +24,11 @@ services:
       context: .
       dockerfile: Dockerfile.companion
     container_name: companion-server
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - SEARXNG_URL=http://searxng:8080
     volumes:
       - companion-data:/root/.context-ai
     restart: unless-stopped

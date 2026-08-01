@@ -1,73 +1,142 @@
-# React + TypeScript + Vite
+# Context AI — Production-Ready Autonomous Agent & Chat Workstation
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Context is an advanced, production-grade autonomous AI workspace featuring real-time web browsing capabilities via Puppeteer, local vector-based RAG memory, privacy-focused search with SearXNG, automated background task scheduling, code execution sandbox, and flexible multi-LLM provider integration (OpenAI, Gemini, Ollama, OpenRouter).
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🌟 Key Features
 
-## React Compiler
+- 🌐 **Autonomous Browser Control**: Puppeteer-powered background browser agent with live frame streaming, self-healing element selectors, interactive step inspection, and session management.
+- 📚 **Client-Side Vector RAG**: Fully local embedding pipeline powered by `@huggingface/transformers` in a dedicated WebWorker, IndexedDB storage, paragraph/sentence chunking, and similarity search.
+- 🔍 **Privacy Search Integration**: Automated SearXNG integration for fast, privacy-preserving live web search queries.
+- ⏰ **Scheduled Background Tasks**: Cron-driven background task runner (`node-cron`) for recurring browser web scraping and LLM summaries.
+- 🛡️ **Execution Sandbox & Safety**: Isolated Python and Node.js execution sandbox with safety pattern detection blocking destructive operations.
+- ⚡ **Production Hardened**: Comprehensive Vitest test suite, React `ErrorBoundary` fault tolerance, `/api/health` probes, dynamic CORS, and container healthchecks.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## 🏗️ System Architecture
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+                               ┌─────────────────────────┐
+                               │   Context Web UI        │
+                               │ (React + Vite + Tailw.) │
+                               └────────────┬────────────┘
+                                            │
+                 ┌──────────────────────────┼──────────────────────────┐
+                 │                          │                          │
+                 ▼                          ▼                          ▼
+       ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
+       │ Companion Server │       │  Local RAG Engine│       │ SearXNG Search   │
+       │  (Express 5.x)   │       │(WebWorker + IDB) │       │ (Docker Service) │
+       └────────┬─────────┘       └──────────────────┘       └──────────────────┘
+                │
+     ┌──────────┴──────────┐
+     ▼                     ▼
+┌──────────────┐   ┌───────────────┐
+│ Puppeteer    │   │ Code Executor │
+│ Browser Engine│  │ (Python/Node) │
+└──────────────┘   └───────────────┘
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+---
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## 🚀 Quick Start
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 1. Prerequisites
+- **Node.js**: `v20.x` or higher
+- **npm**: `v10.x` or higher
+- **Docker & Docker Compose** (Optional, for containerized deployment)
+
+### 2. Installation
+```bash
+# Clone the repository
+git clone https://github.com/your-org/context.git
+cd context
+
+# Install dependencies
+npm install
 ```
+
+### 3. Running Locally in Development Mode
+```bash
+# Start the Express companion server
+npm run server
+
+# In another terminal, start the Vite development server
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+---
+
+## 🧪 Testing & Code Quality
+
+Context includes a test suite powered by [Vitest](https://vitest.dev/) and [@testing-library/react](https://testing-library.com/).
+
+```bash
+# Run unit and integration tests
+npm test
+
+# Run ESLint check
+npm run lint
+
+# Build production bundle
+npm run build
+```
+
+---
+
+## 🐳 Docker Deployment
+
+Deploy the entire stack (React UI, Puppeteer Companion Server, SearXNG) using Docker Compose:
+
+```bash
+# Build and start all services in detached mode
+docker compose up -d --build
+```
+
+Access services at:
+- **Context UI**: [http://localhost:3000](http://localhost:3000)
+- **Companion Server**: [http://localhost:3001](http://localhost:3001)
+- **Companion Health Probe**: [http://localhost:3001/api/health](http://localhost:3001/api/health)
+- **SearXNG Engine**: [http://localhost:8082](http://localhost:8082)
+
+---
+
+## ⚙️ Environment Variables
+
+Copy `.env.example` to `.env` to customize runtime settings:
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3001` | Express companion server port |
+| `CORS_ORIGIN` | `*` | Allowed CORS origins (comma-separated for production) |
+| `SEARXNG_URL` | `http://localhost:8082` | Endpoint URL for SearXNG search engine |
+| `DATA_DIR` | `~/.context-ai` | Storage directory for schedules and runs database |
+| `PUPPETEER_EXECUTABLE_PATH` | System Chromium | Path to custom Chromium executable |
+
+---
+
+## 📄 Health Check API
+
+The companion server exposes a `/api/health` probe endpoint for container orchestration:
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-08-01T17:06:00.000Z",
+  "uptime": 124.5,
+  "activeSessions": 1,
+  "browserConnected": true,
+  "pythonCommand": "python3",
+  "version": "1.0.0"
+}
+```
+
+---
+
+## 📜 License
+
+MIT License. See `LICENSE` for details.

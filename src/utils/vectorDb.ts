@@ -2,6 +2,7 @@
 export interface VectorDocument {
   id: string;
   name: string;
+  category?: string;
   size: number;
   addedAt: string;
   content: string;
@@ -12,6 +13,7 @@ export interface VectorChunk {
   id: string;
   docId: string;
   docName: string;
+  category?: string;
   text: string;
   embedding: number[];
 }
@@ -22,7 +24,25 @@ const progressListeners = new Set<(progress: number) => void>();
 let currentStatus = 'idle'; // 'idle' | 'loading' | 'ready' | 'embedding' | 'error'
 let currentProgress = 0;
 
-const pendingPromises = new Map<string, { resolve: (embedding: number[]) => void; reject: (err: any) => void }>();
+const pendingPromises = new Map<string, { resolve: (embedding: any) => void; reject: (err: any) => void }>();
+
+// Reactive in-memory vector cache
+let cachedChunks: VectorChunk[] | null = null;
+
+async function ensureChunksCached(): Promise<VectorChunk[]> {
+  if (cachedChunks !== null) {
+    return cachedChunks;
+  }
+  const db = await getDb();
+  cachedChunks = await new Promise<VectorChunk[]>((resolve, reject) => {
+    const tx = db.transaction('chunks', 'readonly');
+    const store = tx.objectStore('chunks');
+    const request = store.getAll();
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
+  return cachedChunks!;
+}
 
 function getWorker(): Worker {
   if (worker) return worker;
@@ -89,7 +109,7 @@ function getDb(): Promise<IDBDatabase> {
 }
 
 // Simple chunking utility (splits by paragraphs, with overlap)
-function chunkText(text: string, maxChunkLength = 600): string[] {
+export function chunkText(text: string, maxChunkLength = 600): string[] {
   const paragraphs = text.split(/\n+/);
   const chunks: string[] = [];
   let currentChunk = '';
@@ -125,6 +145,26 @@ function chunkText(text: string, maxChunkLength = 600): string[] {
 
   if (currentChunk) chunks.push(currentChunk);
   return chunks;
+}
+
+// Lightweight BM25 / keyword term overlap scoring utility
+export function computeKeywordScore(query: string, text: string): number {
+  const normalize = (str: string) => str.toLowerCase().replace(/[^\w\s]/g, ' ');
+  const queryTerms = normalize(query).split(/\s+/).filter(t => t.length > 1);
+  if (queryTerms.length === 0) return 0;
+  
+  const docText = normalize(text);
+  const docWords = docText.split(/\s+/);
+  const totalWords = docWords.length || 1;
+  
+  let totalScore = 0;
+  for (const term of queryTerms) {
+    const matches = docWords.filter(w => w === term || w.includes(term)).length;
+    if (matches > 0) {
+      totalScore += (matches / totalWords) * (term.length > 4 ? 1.5 : 1.0);
+    }
+  }
+  return totalScore;
 }
 
 export const vectorDb = {
@@ -166,7 +206,17 @@ export const vectorDb = {
     });
   },
 
-  async addDocument(name: string, content: string): Promise<void> {
+  async embedTexts(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) return [];
+    const w = getWorker();
+    const id = `embed-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    return new Promise((resolve, reject) => {
+      pendingPromises.set(id, { resolve, reject });
+      w.postMessage({ type: 'embed', text: texts, id });
+    });
+  },
+
+  async addDocument(name: string, content: string, category: string = 'General'): Promise<void> {
     const db = await getDb();
     const docId = `doc-${Date.now()}`;
     const chunks = chunkText(content);
@@ -175,6 +225,7 @@ export const vectorDb = {
     const doc: VectorDocument = {
       id: docId,
       name,
+      category,
       size: content.length,
       addedAt: new Date().toISOString(),
       content,
@@ -189,33 +240,49 @@ export const vectorDb = {
       tx.onerror = () => reject(tx.error);
     });
 
-    // 2. Generate embeddings & save chunks in parallel batches
-    const batchSize = 5;
+    // 2. Generate embeddings in parallel batches
+    const computedChunks: VectorChunk[] = [];
+    const batchSize = 16;
     for (let i = 0; i < chunks.length; i += batchSize) {
       const batch = chunks.slice(i, i + batchSize);
-      const promises = batch.map(async (chunkText, index) => {
-        const chunkIndex = i + index;
-        try {
-          const embedding = await this.embedText(chunkText);
-          const chunk: VectorChunk = {
-            id: `${docId}-chunk-${chunkIndex}`,
-            docId,
-            docName: name,
-            text: chunkText,
-            embedding
-          };
-
-          await new Promise<void>((resolve, reject) => {
-            const tx = db.transaction('chunks', 'readwrite');
-            tx.objectStore('chunks').put(chunk);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-          });
-        } catch (err) {
-          console.error(`Failed to index chunk ${chunkIndex} of document ${name}:`, err);
+      try {
+        const embeddings = await this.embedTexts(batch);
+        for (let index = 0; index < batch.length; index++) {
+          const chunkIndex = i + index;
+          if (embeddings[index]) {
+            computedChunks.push({
+              id: `${docId}-chunk-${chunkIndex}`,
+              docId,
+              docName: name,
+              category,
+              text: batch[index],
+              embedding: embeddings[index]
+            });
+          }
         }
+      } catch (err) {
+        console.error(`Failed to index batch starting at ${i} of document ${name}:`, err);
+      }
+    }
+
+    // 3. Save all computed chunks to IndexedDB in a single readwrite transaction
+    if (computedChunks.length > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction('chunks', 'readwrite');
+        const store = tx.objectStore('chunks');
+        
+        for (const chunk of computedChunks) {
+          store.put(chunk);
+        }
+        
+        tx.oncomplete = () => {
+          if (cachedChunks !== null) {
+            cachedChunks.push(...computedChunks);
+          }
+          resolve();
+        };
+        tx.onerror = () => reject(tx.error);
       });
-      await Promise.all(promises);
     }
   },
 
@@ -242,13 +309,7 @@ export const vectorDb = {
     });
 
     // Delete associated chunks
-    const chunks = await new Promise<VectorChunk[]>((resolve, reject) => {
-      const tx = db.transaction('chunks', 'readonly');
-      const store = tx.objectStore('chunks');
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
-    });
+    const chunks = await ensureChunksCached();
 
     // Open a single readwrite transaction to batch delete matching chunks
     const tx = db.transaction('chunks', 'readwrite');
@@ -263,6 +324,11 @@ export const vectorDb = {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+
+    // Update cache
+    if (cachedChunks !== null) {
+      cachedChunks = cachedChunks.filter(c => c.docId !== docId);
+    }
   },
 
   async deleteAllData(): Promise<void> {
@@ -274,38 +340,134 @@ export const vectorDb = {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+    cachedChunks = [];
+  },
+
+  // Perform Hybrid (Vector + BM25 Keyword via RRF) Search
+  async searchHybridChunks(
+    query: string,
+    options: { limit?: number; minScore?: number; category?: string; mode?: 'hybrid' | 'vector' | 'keyword' } = {}
+  ): Promise<Array<{ chunk: VectorChunk; score: number; matchType?: string }>> {
+    const { limit = 4, minScore = 0.0, category, mode = 'hybrid' } = options;
+    const allChunks = await ensureChunksCached();
+
+    if (allChunks.length === 0) return [];
+
+    let chunks = allChunks;
+    if (category && category !== 'All') {
+      chunks = chunks.filter(c => c.category === category);
+    }
+
+    if (chunks.length === 0) return [];
+
+    // Vector Similarity
+    let queryEmbedding: number[] = [];
+    if (mode !== 'keyword') {
+      try {
+        queryEmbedding = await this.embedText(query);
+      } catch (err) {
+        console.warn('Vector embedding failed for query, falling back to keyword search', err);
+      }
+    }
+
+    const vectorScores: Array<{ chunk: VectorChunk; score: number }> = [];
+    const keywordScores: Array<{ chunk: VectorChunk; score: number }> = [];
+
+    for (const chunk of chunks) {
+      if (queryEmbedding.length > 0) {
+        let dotProduct = 0;
+        for (let i = 0; i < queryEmbedding.length; i++) {
+          dotProduct += queryEmbedding[i] * chunk.embedding[i];
+        }
+        vectorScores.push({ chunk, score: dotProduct });
+      }
+      if (mode !== 'vector') {
+        const kwScore = computeKeywordScore(query, chunk.text + ' ' + chunk.docName);
+        keywordScores.push({ chunk, score: kwScore });
+      }
+    }
+
+    if (mode === 'vector' || (mode === 'hybrid' && keywordScores.length === 0)) {
+      return vectorScores
+        .sort((a, b) => b.score - a.score)
+        .filter(r => r.score >= minScore)
+        .slice(0, limit)
+        .map(r => ({ ...r, matchType: 'vector' }));
+    }
+
+    if (mode === 'keyword') {
+      return keywordScores
+        .sort((a, b) => b.score - a.score)
+        .filter(r => r.score >= minScore)
+        .slice(0, limit)
+        .map(r => ({ ...r, matchType: 'keyword' }));
+    }
+
+    // Hybrid Reciprocal Rank Fusion (RRF)
+    const vectorRankMap = new Map<string, number>();
+    vectorScores.sort((a, b) => b.score - a.score).forEach((item, idx) => {
+      vectorRankMap.set(item.chunk.id, idx + 1);
+    });
+
+    const keywordRankMap = new Map<string, number>();
+    keywordScores.sort((a, b) => b.score - a.score).forEach((item, idx) => {
+      keywordRankMap.set(item.chunk.id, idx + 1);
+    });
+
+    const combined = chunks.map(chunk => {
+      const vRank = vectorRankMap.get(chunk.id) || 1000;
+      const kRank = keywordRankMap.get(chunk.id) || 1000;
+      const vScore = vectorScores.find(s => s.chunk.id === chunk.id)?.score || 0;
+      const rrfScore = (1 / (60 + vRank)) + (1 / (60 + kRank));
+      // Blend RRF score and raw cosine similarity
+      const finalScore = Math.min(1.0, (rrfScore * 25) + (vScore * 0.5));
+      return { chunk, score: finalScore, matchType: 'hybrid' };
+    });
+
+    return combined
+      .sort((a, b) => b.score - a.score)
+      .filter(r => r.score >= minScore)
+      .slice(0, limit);
   },
 
   // Perform Similarity Search over all chunks
   async searchSimilarChunks(query: string, limit = 4): Promise<Array<{ chunk: VectorChunk; score: number }>> {
+    return this.searchHybridChunks(query, { limit, mode: 'hybrid' });
+  },
+
+  async exportDatabaseJSON(): Promise<{ version: number; documents: VectorDocument[]; chunks: VectorChunk[] }> {
+    const docs = await this.getDocuments();
+    const chunks = await ensureChunksCached();
+    return {
+      version: 1,
+      documents: docs,
+      chunks
+    };
+  },
+
+  async importDatabaseJSON(data: { version?: number; documents?: VectorDocument[]; chunks?: VectorChunk[] }): Promise<void> {
+    if (!data || !Array.isArray(data.documents) || !Array.isArray(data.chunks)) {
+      throw new Error('Invalid database backup format. Must contain documents and chunks arrays.');
+    }
     const db = await getDb();
-    
-    // 1. Get query embedding
-    const queryEmbedding = await this.embedText(query);
+    const tx = db.transaction(['documents', 'chunks'], 'readwrite');
+    const docStore = tx.objectStore('documents');
+    const chunkStore = tx.objectStore('chunks');
 
-    // 2. Fetch all chunks
-    const chunks = await new Promise<VectorChunk[]>((resolve, reject) => {
-      const tx = db.transaction('chunks', 'readonly');
-      const store = tx.objectStore('chunks');
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
+    for (const doc of data.documents) {
+      if (doc && doc.id) docStore.put(doc);
+    }
+    for (const chunk of data.chunks) {
+      if (chunk && chunk.id && chunk.docId) chunkStore.put(chunk);
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
     });
 
-    if (chunks.length === 0) return [];
-
-    // 3. Compute Cosine Similarity (Dot product because embeddings are unit normalized)
-    const results = chunks.map(chunk => {
-      let dotProduct = 0;
-      for (let i = 0; i < queryEmbedding.length; i++) {
-        dotProduct += queryEmbedding[i] * chunk.embedding[i];
-      }
-      return { chunk, score: dotProduct };
-    });
-
-    // 4. Sort and return top matches
-    return results
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
+    cachedChunks = null; // Invalidate cache to reload from DB
+    await ensureChunksCached();
   }
 };
+

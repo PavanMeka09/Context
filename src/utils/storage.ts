@@ -9,7 +9,7 @@ export interface Attachment {
 export interface BrowserSessionData {
   url: string;
   title: string;
-  status: 'idle' | 'running' | 'completed' | 'failed';
+  status: 'idle' | 'running' | 'paused' | 'completed' | 'failed';
   steps: {
     id: string;
     thought?: string;
@@ -78,7 +78,7 @@ export interface TaskSchedule {
 }
 
 export interface Settings {
-  provider: 'gemini' | 'openrouter' | 'ollama';
+  provider: 'gemini' | 'openrouter' | 'ollama' | 'openai';
   apiKey: string;
   model: string;
   localUrl?: string;
@@ -172,6 +172,29 @@ export function debounce<A extends unknown[], R>(func: (...args: A) => R, wait: 
     timeout = setTimeout(later, wait) as unknown as number;
   };
 }
+
+const CHAT_DB_NAME = 'context_chats_db';
+const CHAT_DB_VERSION = 1;
+
+function getChatDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      return reject(new Error('IndexedDB is not supported in this environment'));
+    }
+    const request = indexedDB.open(CHAT_DB_NAME, CHAT_DB_VERSION);
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains('chats')) {
+        db.createObjectStore('chats', { keyPath: 'id' });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
 
 // Helper: Reconstruct linear path from tree and active leaf
 export function reconstructActivePath(
@@ -340,34 +363,143 @@ export const Storage = {
     }
   },
 
-  getChats(): Chat[] {
+  async getChats(): Promise<Chat[]> {
+    if (typeof indexedDB === 'undefined') {
+      try {
+        const raw = localStorage.getItem(KEYS.CHATS);
+        const legacyChats = raw ? JSON.parse(raw) : [];
+        return Array.isArray(legacyChats) ? legacyChats.map(c => upgradeChatToTree(c)) : [];
+      } catch {
+        return [];
+      }
+    }
+
     try {
-      const data = localStorage.getItem(KEYS.CHATS);
-      if (data) {
-        const rawChats = JSON.parse(data);
-        if (Array.isArray(rawChats)) {
-          return rawChats.map(c => upgradeChatToTree(c));
+      const db = await getChatDb();
+      
+      const dbChats = await new Promise<Chat[]>((resolve, reject) => {
+        const tx = db.transaction('chats', 'readonly');
+        const store = tx.objectStore('chats');
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error);
+      });
+
+      if (dbChats.length > 0) {
+        return dbChats.map(c => upgradeChatToTree(c));
+      }
+
+      // Fallback & automatic migration from localStorage
+      const legacyData = localStorage.getItem(KEYS.CHATS);
+      if (legacyData) {
+        const legacyChats = JSON.parse(legacyData);
+        if (Array.isArray(legacyChats) && legacyChats.length > 0) {
+          console.log('[Storage] Migrating legacy localStorage chats to IndexedDB...');
+          await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction('chats', 'readwrite');
+            const store = tx.objectStore('chats');
+            for (const chat of legacyChats) {
+              store.put(chat);
+            }
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+          });
+          localStorage.removeItem(KEYS.CHATS);
+          return legacyChats.map(c => upgradeChatToTree(c));
         }
       }
     } catch (e) {
-      console.error('Error reading chats from localStorage', e);
+      console.error('Error reading chats from IndexedDB / migrating from localStorage', e);
     }
     return [];
   },
 
-  saveChats: debounce((chats: Chat[]): void => {
-    try {
-      localStorage.setItem(KEYS.CHATS, JSON.stringify(chats));
-    } catch (e) {
-      console.error('Error saving chats to localStorage', e);
-    }
+  saveChats: debounce(async (chats: Chat[]): Promise<void> => {
+    await Storage.saveChatsImmediately(chats);
   }, 300),
 
-  saveChatsImmediately(chats: Chat[]): void {
+  async saveChat(chat: Chat): Promise<void> {
+    if (typeof indexedDB === 'undefined') {
+      try {
+        const raw = localStorage.getItem(KEYS.CHATS);
+        const chats: Chat[] = raw ? JSON.parse(raw) : [];
+        const idx = chats.findIndex(c => c.id === chat.id);
+        if (idx >= 0) chats[idx] = chat;
+        else chats.push(chat);
+        localStorage.setItem(KEYS.CHATS, JSON.stringify(chats));
+      } catch (e) {
+        console.error('Error saving chat to localStorage', e);
+      }
+      return;
+    }
+
     try {
-      localStorage.setItem(KEYS.CHATS, JSON.stringify(chats));
+      const db = await getChatDb();
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction('chats', 'readwrite');
+        const store = tx.objectStore('chats');
+        store.put(chat);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
     } catch (e) {
-      console.error('Error saving chats to localStorage immediately', e);
+      console.error('Error saving single chat to IndexedDB', e);
+    }
+  },
+
+  async deleteChat(chatId: string): Promise<void> {
+    if (typeof indexedDB === 'undefined') {
+      try {
+        const raw = localStorage.getItem(KEYS.CHATS);
+        const chats: Chat[] = raw ? JSON.parse(raw) : [];
+        const filtered = chats.filter(c => c.id !== chatId);
+        localStorage.setItem(KEYS.CHATS, JSON.stringify(filtered));
+      } catch (e) {
+        console.error('Error deleting chat from localStorage', e);
+      }
+      return;
+    }
+
+    try {
+      const db = await getChatDb();
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction('chats', 'readwrite');
+        const store = tx.objectStore('chats');
+        store.delete(chatId);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (e) {
+      console.error('Error deleting chat from IndexedDB', e);
+    }
+  },
+
+  async saveChatsImmediately(chats: Chat[]): Promise<void> {
+    if (typeof indexedDB === 'undefined') {
+      try {
+        localStorage.setItem(KEYS.CHATS, JSON.stringify(chats));
+      } catch (e) {
+        console.error('Error saving chats to localStorage', e);
+      }
+      return;
+    }
+
+    try {
+      const db = await getChatDb();
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction('chats', 'readwrite');
+        const store = tx.objectStore('chats');
+        
+        store.clear();
+        for (const chat of chats) {
+          store.put(chat);
+        }
+        
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (e) {
+      console.error('Error saving chats to IndexedDB', e);
     }
   },
 
@@ -389,6 +521,23 @@ export const Storage = {
     } catch (e) {
       console.error('Error saving prompts to localStorage', e);
     }
+  },
+
+  saveCustomPrompt(prompt: SystemPrompt): void {
+    const existing = Storage.getCustomPrompts();
+    const idx = existing.findIndex(p => p.id === prompt.id);
+    if (idx >= 0) {
+      existing[idx] = prompt;
+    } else {
+      existing.push(prompt);
+    }
+    Storage.saveCustomPrompts(existing);
+  },
+
+  deleteCustomPrompt(id: string): void {
+    const existing = Storage.getCustomPrompts();
+    const filtered = existing.filter(p => p.id !== id);
+    Storage.saveCustomPrompts(filtered);
   },
 
   getActiveChatId(): string | null {
@@ -437,6 +586,84 @@ export const Storage = {
 
   saveTheme(theme: 'dark' | 'light'): void {
     localStorage.setItem(KEYS.THEME, theme);
+  },
+
+  async exportData(): Promise<string> {
+    const chats = await Storage.getChats();
+    const settings = Storage.getSettings();
+    const prompts = Storage.getCustomPrompts();
+    const memories = Storage.getMemories();
+    const schedules = Storage.getSchedules();
+
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      chats,
+      settings,
+      customPrompts: prompts,
+      memories,
+      schedules
+    };
+
+    return JSON.stringify(payload, null, 2);
+  },
+
+  async importData(jsonContent: string): Promise<{ success: boolean; count: number; error?: string }> {
+    try {
+      const parsed = JSON.parse(jsonContent);
+      if (!parsed || typeof parsed !== 'object') {
+        return { success: false, count: 0, error: 'Invalid JSON format' };
+      }
+
+      let count = 0;
+
+      if (Array.isArray(parsed.chats) && parsed.chats.length > 0) {
+        const existingChats = await Storage.getChats();
+        const chatMap = new Map(existingChats.map(c => [c.id, c]));
+        for (const chat of parsed.chats) {
+          if (chat && chat.id) {
+            chatMap.set(chat.id, upgradeChatToTree(chat));
+            count++;
+          }
+        }
+        await Storage.saveChatsImmediately(Array.from(chatMap.values()));
+      }
+
+      if (parsed.settings && typeof parsed.settings === 'object') {
+        Storage.saveSettings({ ...Storage.getSettings(), ...parsed.settings });
+      }
+
+      if (Array.isArray(parsed.customPrompts)) {
+        const existingPrompts = Storage.getCustomPrompts();
+        const promptMap = new Map(existingPrompts.map(p => [p.id, p]));
+        for (const p of parsed.customPrompts) {
+          if (p && p.id) promptMap.set(p.id, p);
+        }
+        Storage.saveCustomPrompts(Array.from(promptMap.values()));
+      }
+
+      if (Array.isArray(parsed.memories)) {
+        const existingMemories = Storage.getMemories();
+        const memoryMap = new Map(existingMemories.map(m => [m.id, m]));
+        for (const m of parsed.memories) {
+          if (m && m.id) memoryMap.set(m.id, m);
+        }
+        Storage.saveMemories(Array.from(memoryMap.values()));
+      }
+
+      if (Array.isArray(parsed.schedules)) {
+        const existingSchedules = Storage.getSchedules();
+        const scheduleMap = new Map(existingSchedules.map(s => [s.id, s]));
+        for (const s of parsed.schedules) {
+          if (s && s.id) scheduleMap.set(s.id, s);
+        }
+        Storage.saveSchedules(Array.from(scheduleMap.values()));
+      }
+
+      return { success: true, count };
+    } catch (e) {
+      return { success: false, count: 0, error: e instanceof Error ? e.message : 'Import failed' };
+    }
   }
 };
 

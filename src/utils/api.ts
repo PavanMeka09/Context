@@ -11,7 +11,40 @@ export interface ModelOption {
 }
 
 // Fetch dynamic models for OpenRouter, or return presets for Gemini/Anthropic
-export async function fetchModels(provider: 'gemini' | 'openrouter' | 'ollama', apiKey?: string, localUrl?: string): Promise<ModelOption[]> {
+export async function fetchModels(provider: 'gemini' | 'openrouter' | 'ollama' | 'openai', apiKey?: string, localUrl?: string): Promise<ModelOption[]> {
+
+  if (provider === 'openai') {
+    const url = localUrl || 'https://api.openai.com/v1';
+    try {
+      const headers: Record<string, string> = {};
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+      const response = await fetch(`${url}/models`, {
+        method: 'GET',
+        headers
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data && Array.isArray(data.data)) {
+          return data.data
+            .map((m: any) => ({
+              id: m.id,
+              name: m.id
+            }))
+            .sort((a: any, b: any) => a.name.localeCompare(b.name));
+        }
+      }
+    } catch (e) {
+      console.warn('Error fetching OpenAI models dynamically, using fallbacks', e);
+    }
+    return [
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Default)' },
+      { id: 'gpt-4o', name: 'GPT-4o (High Quality)' },
+      { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
+      { id: 'o1-mini', name: 'o1-mini' }
+    ];
+  }
 
   if (provider === 'ollama') {
     const url = localUrl || 'http://localhost:11434/v1';
@@ -27,7 +60,7 @@ export async function fetchModels(provider: 'gemini' | 'openrouter' | 'ollama', 
         }
       }
     } catch (e) {
-      console.error('Error fetching Ollama models dynamically, using fallbacks', e);
+      console.warn('Error fetching Ollama models dynamically, using fallbacks', e);
     }
     return [
       { id: 'llama3', name: 'Llama 3 (Local Fallback)' },
@@ -61,7 +94,7 @@ export async function fetchModels(provider: 'gemini' | 'openrouter' | 'ollama', 
           });
       }
     } catch (e) {
-      console.error('Error fetching Gemini models dynamically, using fallback', e);
+      console.warn('Error fetching Gemini models dynamically, using fallback', e);
     }
     return [
       { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Default)' },
@@ -153,7 +186,7 @@ export async function streamChatCompletion(
 ): Promise<void> {
   const { provider, apiKey, model } = settings;
 
-  if (!apiKey && provider !== 'ollama') {
+  if (!apiKey && provider !== 'ollama' && provider !== 'openai') {
     callbacks.onError('API key required. Please configure it in Settings.');
     return;
   }
@@ -303,6 +336,46 @@ export async function streamChatCompletion(
         system: effectiveSystemInstruction || undefined,
         abortSignal: signal,
       });
+    } else if (provider === 'openai') {
+      const openaiInstance = createOpenAI({
+        baseURL: settings.localUrl || 'https://api.openai.com/v1',
+        apiKey: apiKey || 'empty',
+      });
+
+      // Format messages into Vercel AI SDK ModelMessages
+      const formattedMessages: ModelMessage[] = messages
+        .filter(m => m.role !== 'system')
+        .map(m => {
+          const role = m.role === 'assistant' ? 'assistant' : 'user';
+
+          if (m.attachments && m.attachments.length > 0) {
+            const contentParts: any[] = [{ type: 'text', text: m.content }];
+            for (const att of m.attachments) {
+              if (att.type.startsWith('image/')) {
+                contentParts.push({
+                  type: 'image',
+                  image: att.data,
+                  mimeType: att.type
+                });
+              } else {
+                contentParts.push({
+                  type: 'text',
+                  text: `\n\n[File Attachment: ${att.name}]\n\`\`\`\n${att.data}\n\`\`\``
+                });
+              }
+            }
+            return { role, content: contentParts };
+          }
+
+          return { role, content: m.content };
+        });
+
+      result = streamText({
+        model: openaiInstance(model),
+        messages: formattedMessages,
+        system: effectiveSystemInstruction || undefined,
+        abortSignal: signal,
+      });
     }
 
     if (result) {
@@ -335,7 +408,7 @@ export async function generateTextCompletion(
 ): Promise<string> {
   const { provider, apiKey, model } = settings;
 
-  if (!apiKey && provider !== 'ollama') {
+  if (!apiKey && provider !== 'ollama' && provider !== 'openai') {
     throw new Error('API key required. Please configure it in Settings.');
   }
 
@@ -428,6 +501,17 @@ export async function generateTextCompletion(
 
     result = await generateText({
       model: openrouter(model),
+      messages: formattedMessages,
+      system: effectiveSystemInstruction || undefined,
+    });
+  } else if (provider === 'openai') {
+    const openaiInstance = createOpenAI({
+      baseURL: settings.localUrl || 'https://api.openai.com/v1',
+      apiKey: apiKey || 'empty',
+    });
+
+    result = await generateText({
+      model: openaiInstance(model),
       messages: formattedMessages,
       system: effectiveSystemInstruction || undefined,
     });

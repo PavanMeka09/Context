@@ -24,11 +24,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onPromptsChanged,
   onBackupImported
 }) => {
-  const [activeTab, setActiveTab] = useState<'provider' | 'prompts' | 'websearch' | 'memory' | 'backup'>('provider');
+  const [activeTab, setActiveTab] = useState<'provider' | 'prompts' | 'websearch' | 'memory' | 'backup' | 'diagnostics'>('provider');
   const [settings, setSettings] = useState<Settings>(() => Storage.getSettings());
   const [memories, setMemories] = useState<MemoryItem[]>(() => Storage.getMemories());
   const [newMemoryContent, setNewMemoryContent] = useState('');
   const [newMemoryCategory, setNewMemoryCategory] = useState<'preference' | 'project' | 'conversation' | 'other'>('preference');
+  const [diagnostics, setDiagnostics] = useState<any>(null);
+  const [loadingDiagnostics, setLoadingDiagnostics] = useState(false);
+
+  const fetchDiagnostics = useCallback(async () => {
+    setLoadingDiagnostics(true);
+    try {
+      const res = await fetch('/api/system/stats');
+      if (res.ok) {
+        const data = await res.json();
+        setDiagnostics(data);
+      }
+    } catch (e) {
+      console.error('Failed to fetch system stats', e);
+    } finally {
+      setLoadingDiagnostics(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'diagnostics') {
+      const timer = setTimeout(() => {
+        fetchDiagnostics();
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, fetchDiagnostics]);
 
   const slugify = (text: string) => {
     return text
@@ -297,15 +323,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [importSuccess, setImportSuccess] = useState<boolean>(false);
   const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
 
-  const handleExportBackup = () => {
-    const backupData = {
-      version: '1.0.0',
-      chats: Storage.getChats(),
-      customPrompts: Storage.getCustomPrompts(),
-      settings: Storage.getSettings()
-    };
-    
-    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+  const handleExportBackup = async () => {
+    const jsonStr = await Storage.exportData();
+    const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -322,27 +342,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const text = event.target?.result as string;
-        const data = JSON.parse(text);
+        const result = await Storage.importData(text);
 
-        if (!data || (typeof data !== 'object')) {
-          throw new Error('Invalid JSON format.');
-        }
-
-        const chats = Array.isArray(data.chats) ? data.chats : [];
-        const customPrompts = Array.isArray(data.customPrompts) ? data.customPrompts : [];
-        const loadedSettings = data.settings && typeof data.settings === 'object' ? data.settings : null;
-
-        if (chats.length > 0) {
-          Storage.saveChatsImmediately(chats);
-        }
-        if (customPrompts.length > 0) {
-          Storage.saveCustomPrompts(customPrompts);
-        }
-        if (loadedSettings) {
-          Storage.saveSettings(loadedSettings);
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to import backup data');
         }
 
         setImportSuccess(true);
@@ -352,13 +358,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setTimeout(() => setImportSuccess(false), 3000);
       } catch (err) {
         console.error('Failed to parse backup JSON', err);
-        setImportError('Failed to import backup. Please make sure it is a valid Context backup JSON file.');
+        setImportError(err instanceof Error ? err.message : 'Invalid backup JSON file.');
       }
     };
     reader.readAsText(file);
   };
 
-  const loadModelsForProvider = useCallback(async (provider: 'gemini' | 'openrouter' | 'ollama', key: string, activeModelId?: string, localUrl?: string) => {
+  const loadModelsForProvider = useCallback(async (provider: 'gemini' | 'openrouter' | 'ollama' | 'openai', key: string, activeModelId?: string, localUrl?: string) => {
     setLoadingModels(true);
     setModelError(null);
     setModelSearchQuery('');
@@ -539,7 +545,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             { id: 'prompts', name: 'System Prompts', icon: <FileText className="h-3.5 w-3.5" /> },
             { id: 'websearch', name: 'Web Search', icon: <Globe className="h-3.5 w-3.5" /> },
             { id: 'memory', name: 'Memory', icon: <Brain className="h-3.5 w-3.5" /> },
-            { id: 'backup', name: 'Backup', icon: <Database className="h-3.5 w-3.5" /> }
+            { id: 'backup', name: 'Backup', icon: <Database className="h-3.5 w-3.5" /> },
+            { id: 'diagnostics', name: 'Diagnostics', icon: <Terminal className="h-3.5 w-3.5" /> }
           ].map(tab => (
             <button
               key={tab.id}
@@ -579,6 +586,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <span className="truncate pr-2">
                     {settings.provider === 'gemini' && 'Google Gemini'}
+                    {settings.provider === 'openai' && 'OpenAI (Compatible)'}
                     {settings.provider === 'openrouter' && 'OpenRouter'}
                     {settings.provider === 'ollama' && 'Ollama (Local LLM)'}
                   </span>
@@ -595,6 +603,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     >
                       {[
                         { id: 'gemini', name: 'Google Gemini' },
+                        { id: 'openai', name: 'OpenAI (Compatible)' },
                         { id: 'openrouter', name: 'OpenRouter' },
                         { id: 'ollama', name: 'Ollama (Local LLM)' }
                       ].map(p => (
@@ -607,6 +616,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             const newSettings = { ...settings, provider: p.id as any };
                             if (p.id === 'ollama' && !newSettings.localUrl) {
                               newSettings.localUrl = 'http://localhost:11434/v1';
+                            } else if (p.id === 'openai' && !newSettings.localUrl) {
+                              newSettings.localUrl = 'https://api.openai.com/v1';
                             }
                             setSettings(newSettings);
                             loadModelsForProvider(p.id as any, newSettings.apiKey, '', newSettings.localUrl);
@@ -643,7 +654,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       placeholder={
                         settings.provider === 'gemini' 
                           ? 'Enter Gemini API Key...' 
-                          : 'sk-or-...'
+                          : settings.provider === 'openai'
+                            ? 'Enter OpenAI API Key (sk-...) or custom API key...'
+                            : 'sk-or-...'
                       }
                       className="w-full rounded-md border border-input bg-background pl-3.5 pr-10 py-2 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     />
@@ -677,15 +690,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Get OpenRouter Key
                       </a>
                     )}
+                    {settings.provider === 'openai' && (
+                      <a
+                        href="https://platform.openai.com/api-keys"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline font-semibold transition"
+                      >
+                        Get OpenAI Key
+                      </a>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* Local Server Endpoint for Ollama */}
-              {settings.provider === 'ollama' && (
+              {/* Local/Custom Server Endpoint for Ollama and OpenAI */}
+              {(settings.provider === 'ollama' || settings.provider === 'openai') && (
                 <div className="space-y-1">
                   <label htmlFor="local-url-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Local Server Endpoint
+                    {settings.provider === 'openai' ? 'API Base URL (Optional)' : 'Local Server Endpoint'}
                   </label>
                   <input
                     id="local-url-input"
@@ -698,11 +721,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     onBlur={() => {
                       loadModelsForProvider(settings.provider, settings.apiKey, settings.model, settings.localUrl);
                     }}
-                    placeholder="http://localhost:11434/v1"
+                    placeholder={settings.provider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:11434/v1'}
                     className="w-full rounded-md border border-input bg-background px-3.5 py-2 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   />
                   <div className="flex justify-between items-center text-[9px] text-muted-foreground mt-1 select-none">
-                    <span>Ollama default: http://localhost:11434/v1 | LM Studio: http://localhost:1234/v1</span>
+                    <span>
+                      {settings.provider === 'openai'
+                        ? 'Default: https://api.openai.com/v1. Custom hosts: https://api.deepseek.com/v1, https://api.groq.com/openai/v1, etc.'
+                        : 'Ollama default: http://localhost:11434/v1 | LM Studio: http://localhost:1234/v1'}
+                    </span>
                   </div>
                 </div>
               )}
@@ -1109,7 +1136,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
               </div>
             </div>
-          ) : (
+          ) : activeTab === 'backup' ? (
             <div className="space-y-4 animate-fade-in">
 
               {activeChat && activeChat.messages && activeChat.messages.length > 0 && (
@@ -1246,6 +1273,96 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
               </div>
 
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">System Diagnostics & Telemetry</h3>
+                  <p className="text-[10px] text-muted-foreground">Real-time companion server metrics, process heap usage, storage stats, and active background threads.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchDiagnostics}
+                  disabled={loadingDiagnostics}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-accent hover:bg-accent/80 text-xs font-semibold text-accent-foreground transition cursor-pointer active:scale-95 disabled:opacity-50"
+                >
+                  {loadingDiagnostics ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Terminal className="w-3.5 h-3.5" />}
+                  <span>Refresh</span>
+                </button>
+              </div>
+
+              {diagnostics ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="p-3 rounded-lg border border-border bg-muted/20">
+                      <span className="text-[9px] font-bold uppercase text-muted-foreground block">Server Process Uptime</span>
+                      <span className="text-sm font-semibold text-foreground mt-0.5 block">{Math.floor(diagnostics.process?.uptime || 0)}s</span>
+                    </div>
+                    <div className="p-3 rounded-lg border border-border bg-muted/20">
+                      <span className="text-[9px] font-bold uppercase text-muted-foreground block">Heap Memory Used</span>
+                      <span className="text-sm font-semibold text-foreground mt-0.5 block">{diagnostics.process?.memoryUsageMb?.heapUsed || 0} MB</span>
+                    </div>
+                    <div className="p-3 rounded-lg border border-border bg-muted/20">
+                      <span className="text-[9px] font-bold uppercase text-muted-foreground block">Active Browser Sessions</span>
+                      <span className="text-sm font-semibold text-foreground mt-0.5 block">{diagnostics.activeSessionsCount || 0}</span>
+                    </div>
+                    <div className="p-3 rounded-lg border border-border bg-muted/20">
+                      <span className="text-[9px] font-bold uppercase text-muted-foreground block">Active Background Cron Jobs</span>
+                      <span className="text-sm font-semibold text-foreground mt-0.5 block">{diagnostics.activeCronJobsCount || 0}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-lg border border-border bg-muted/20 space-y-1.5 text-xs">
+                    <span className="text-[9px] font-bold uppercase text-muted-foreground block">Storage & Database Metrics</span>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Screenshot Cache Files:</span>
+                      <span className="font-semibold text-foreground">{diagnostics.storageStats?.screenshotFiles || 0}</span>
+                    </div>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Configured Task Schedules:</span>
+                      <span className="font-semibold text-foreground">{diagnostics.storageStats?.totalSchedules || 0}</span>
+                    </div>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Historical Task Runs logged:</span>
+                      <span className="font-semibold text-foreground">{diagnostics.storageStats?.totalTaskRuns || 0}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-lg border border-border bg-muted/20 text-xs flex justify-between items-center">
+                    <span className="text-[9px] font-bold uppercase text-muted-foreground">Host System Platform</span>
+                    <span className="font-mono text-[10px] text-foreground bg-background px-2 py-0.5 rounded border border-border">
+                      {diagnostics.system?.platform} ({diagnostics.system?.cpus} cores)
+                    </span>
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await fetch('/api/browser/close', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ sessionId: 'all' })
+                          });
+                          fetchDiagnostics();
+                        } catch (err) {
+                          console.error('Failed to close idle browser sessions', err);
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-md border border-input bg-background hover:bg-accent text-[11px] font-medium text-foreground transition cursor-pointer"
+                    >
+                      Clean Idle Browser Sessions
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-8 text-center text-muted-foreground text-xs flex flex-col items-center justify-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
+                  <span>Loading server telemetry...</span>
+                </div>
+              )}
             </div>
           )}
         </div>

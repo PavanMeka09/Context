@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RotateCw, Lock, ExternalLink, Terminal, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { RotateCw, Lock, ExternalLink, Terminal, Loader2, ChevronDown, ChevronUp, Play, Pause, SkipForward } from 'lucide-react';
 
 export interface BrowserStep {
   id: string;
@@ -16,7 +16,7 @@ export interface BrowserStep {
 interface BrowserLiveViewProps {
   url: string;
   title: string;
-  status: 'idle' | 'running' | 'completed' | 'failed';
+  status: 'idle' | 'running' | 'paused' | 'completed' | 'failed';
   steps: BrowserStep[];
   screenshotUrl: string;
   screenshotTimestamp: number;
@@ -36,6 +36,48 @@ export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+
+  const handlePause = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!sessionId) return;
+    try {
+      await fetch('/api/browser/agent/pause', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+    } catch (err) {
+      console.error('Failed to pause browser agent:', err);
+    }
+  };
+
+  const handleResume = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!sessionId) return;
+    try {
+      await fetch('/api/browser/agent/resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+    } catch (err) {
+      console.error('Failed to resume browser agent:', err);
+    }
+  };
+
+  const handleStep = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!sessionId) return;
+    try {
+      await fetch('/api/browser/agent/step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId })
+      });
+    } catch (err) {
+      console.error('Failed to step browser agent:', err);
+    }
+  };
 
   const lastStep = steps && steps.length > 0 ? steps[steps.length - 1] : null;
   const lastStepId = (status === 'completed' || status === 'failed') && lastStep ? lastStep.id : null;
@@ -95,6 +137,36 @@ export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
       <div className="bg-slate-950/20 px-4 py-1.5 flex items-center justify-between border-b border-white/[0.015] text-[10.5px] text-slate-400">
         <span className="truncate font-semibold text-slate-350">{title || 'Loading Page...'}</span>
         <div className="flex items-center gap-3 select-none">
+          {sessionId && (status === 'running' || status === 'paused') && (
+            <div className="flex items-center gap-1 bg-slate-950/60 border border-white/[0.08] rounded-lg p-0.5 mr-1">
+              {status === 'running' ? (
+                <button
+                  onClick={handlePause}
+                  className="p-1 text-amber-400 hover:text-amber-300 hover:bg-white/5 rounded transition cursor-pointer"
+                  title="Pause Agent Loop"
+                >
+                  <Pause className="h-3 w-3 fill-amber-400" />
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={handleResume}
+                    className="p-1 text-emerald-400 hover:text-emerald-300 hover:bg-white/5 rounded transition cursor-pointer"
+                    title="Resume Agent Loop"
+                  >
+                    <Play className="h-3 w-3 fill-emerald-400" />
+                  </button>
+                  <button
+                    onClick={handleStep}
+                    className="p-1 text-blue-400 hover:text-blue-300 hover:bg-white/5 rounded transition cursor-pointer"
+                    title="Step Agent Loop (1 Cycle)"
+                  >
+                    <SkipForward className="h-3 w-3 fill-blue-450" />
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           {url && sessionId && onInteract && (
             <button
               onClick={() => onInteract(sessionId)}
@@ -139,6 +211,19 @@ export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
             <div className="bg-slate-900/90 border border-white/[0.05] shadow-2xl rounded-xl px-4 py-2.5 flex items-center gap-3 animate-pulse">
               <Loader2 className="h-4 w-4 animate-spin text-brand-500" />
               <span className="text-xs font-semibold text-slate-200">AI is controlling the browser...</span>
+            </div>
+          </div>
+        )}
+
+        {/* Paused Glass Overlay */}
+        {status === 'paused' && (
+          <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-[1px] flex items-center justify-center pointer-events-none transition duration-200">
+            <div className="bg-slate-900/90 border border-blue-500/20 shadow-2xl rounded-xl px-4 py-2.5 flex flex-col items-center gap-1 animate-scale-in">
+              <div className="flex items-center gap-2">
+                <Pause className="h-4 w-4 text-blue-400 fill-blue-400" />
+                <span className="text-xs font-semibold text-slate-200">Agent is Paused</span>
+              </div>
+              <span className="text-[9px] text-slate-400">Click Resume or Step to proceed</span>
             </div>
           </div>
         )}

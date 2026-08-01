@@ -617,7 +617,12 @@ export const Composer: React.FC<ComposerProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
+            {input.trim() && (
+              <span className="text-[10px] font-medium text-muted-foreground bg-muted/40 px-2 py-0.5 rounded border border-border select-none animate-fade-in">
+                ~{Math.ceil(input.trim().length / 4)} tokens
+              </span>
+            )}
             {/* Send Button */}
             <button
               onClick={handleSend}
