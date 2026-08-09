@@ -13,7 +13,7 @@ describe('server/llm.cjs', () => {
   });
 
   it('throws error when API Key is missing for gemini provider', async () => {
-    const settings = { provider: 'gemini', apiKey: '', model: 'gemini-2.5-flash' };
+    const settings = { provider: 'gemini' as const, apiKey: '', model: 'gemini-2.5-flash' };
     await expect(callLLM(settings, '', 'Hello')).rejects.toThrow(
       'API Key is not configured on the server'
     );
@@ -53,35 +53,6 @@ describe('server/llm.cjs', () => {
     );
   });
 
-  it('calls OpenAI compatible API correctly (OpenAI / OpenRouter / Ollama)', async () => {
-    const mockResponse = {
-      choices: [
-        {
-          message: { content: 'Response from OpenAI' }
-        }
-      ]
-    };
-
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => mockResponse
-    } as Response);
-
-    const settings = { provider: 'openai', apiKey: 'sk-test', model: 'gpt-4o' };
-    const result = await callLLM(settings, 'System prompt', 'User prompt');
-
-    expect(result).toBe('Response from OpenAI');
-    expect(global.fetch).toHaveBeenCalledWith(
-      'https://api.openai.com/v1/chat/completions',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          'Authorization': 'Bearer sk-test',
-          'Content-Type': 'application/json'
-        })
-      })
-    );
-  });
 
   it('handles API error status from LLM endpoint', async () => {
     global.fetch = vi.fn().mockResolvedValue({

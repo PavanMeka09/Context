@@ -3,9 +3,7 @@ FROM node:22-alpine AS build
 
 WORKDIR /app
 
-# Copy package files and install dependencies.
-# --ignore-scripts skips onnxruntime-node's native NuGet download; the
-# browser build uses onnxruntime-web via @huggingface/transformers instead.
+ # Copy package files and install dependencies.
 COPY package*.json ./
 RUN npm install --ignore-scripts --no-audit --no-fund
 

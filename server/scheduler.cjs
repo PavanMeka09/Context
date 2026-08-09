@@ -4,59 +4,11 @@ const path = require('path');
 const { PATHS, readJSON, writeJSON, broadcastLiveEvent } = require('./utils.cjs');
 const { callLLM } = require('./llm.cjs');
 const { executeBrowserAgent } = require('./browser.cjs');
+const { searchAndFormat } = require('./webSearchEngine.cjs');
 
 const activeRuns = new Map(); // runId -> { controller, scheduleId }
 const activeCronJobs = new Map(); // scheduleId -> cronJob / timerObj
 
-// Server-side SearXNG Search Helper for Scheduled Tasks
-async function searchSearxng(query, customUrl, abortSignal = null) {
-  let baseUrl = customUrl?.trim() || '';
-  if (!baseUrl) {
-    baseUrl = 'http://localhost:8082';
-  } else {
-    baseUrl = baseUrl.replace(/\/+$/, '');
-  }
-
-  const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(query)}&format=json`;
-  try {
-    const response = await fetch(searchUrl, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json'
-      },
-      signal: abortSignal
-    });
-
-    if (!response.ok) {
-      throw new Error(`SearXNG request failed: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    if (data && Array.isArray(data.results)) {
-      const seenUrls = new Set();
-      const uniqueResults = [];
-      for (const r of data.results) {
-        if (!r.url) continue;
-        const cleanUrl = r.url.replace(/\/+$/, '').split('#')[0];
-        if (seenUrls.has(cleanUrl)) continue;
-        seenUrls.add(cleanUrl);
-
-        uniqueResults.push({
-          title: r.title || 'Untitled Page',
-          url: r.url,
-          content: (r.content || r.snippet || '').replace(/<[^>]*>/g, '').trim()
-        });
-
-        if (uniqueResults.length >= 5) break;
-      }
-      return uniqueResults;
-    }
-  } catch (error) {
-    console.error('Error fetching from SearXNG on server:', error);
-    throw error;
-  }
-  return [];
-}
 
 // Main Scheduled Task Trigger
 async function executeScheduledTask(schedule) {
@@ -137,23 +89,21 @@ Current Time: ${new Date().toLocaleString()}
 Scheduled Job: "${schedule.title}"`;
 
       if (schedule.isWebSearchEnabled) {
-        runLog.push('Web Search is enabled. Querying SearXNG...');
+        runLog.push('Web Search is enabled. Querying WebSearchEngine...');
         if (abortController.signal.aborted) {
           throw new Error('Task execution cancelled by user.');
         }
         try {
-          const results = await searchSearxng(schedule.prompt, settings.searxngUrl, abortController.signal);
-          if (results && results.length > 0) {
-            runLog.push(`Web search completed. Found ${results.length} results.`);
-            const webSearchContext = results.map((r, idx) => {
-              return `[Web Result #${idx + 1}]
-Title: ${r.title}
-URL: ${r.url}
-Excerpt: ${r.content}`;
-            }).join('\n\n');
-            systemPrompt += `\n\n[REAL-TIME WEB SEARCH CONTEXT]\nUse the following real-time web search results from SearXNG to answer the user's prompt. Rely on these search results to provide accurate, up-to-date information:\n${webSearchContext}`;
+          const searchResult = await searchAndFormat(schedule.prompt, {
+            forceSearch: true,
+            customUrl: settings.searxngUrl,
+            abortSignal: abortController.signal
+          });
+          if (searchResult.results && searchResult.results.length > 0) {
+            runLog.push(`Web search completed via ${searchResult.source}. Found ${searchResult.results.length} results.`);
+            systemPrompt += `\n\n${searchResult.contextText}`;
           } else {
-            runLog.push('Web search returned no results.');
+            runLog.push(`Web search returned no results.`);
           }
         } catch (searchErr) {
           if (abortController.signal.aborted) {

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   Search, Terminal, MessageSquare, Sparkles, Globe, 
-  Settings, Key, Layers, Palette, ChevronRight, CornerDownLeft, 
-  Check, ArrowLeft, EyeOff, Loader2, Activity, Clock, Compass
+   Settings, Palette, ChevronRight, CornerDownLeft, 
+  Check, ArrowLeft, EyeOff, Loader2, Clock, Compass
 } from 'lucide-react';
 import type { Chat, Settings as AppSettings, SystemPrompt } from '../utils/storage';
 import { Storage, PRESET_PROMPTS } from '../utils/storage';
@@ -24,14 +24,12 @@ interface CommandPaletteProps {
   onThemeChanged: (theme: 'dark' | 'light') => void;
   onToggleSidebar: () => void;
   onToggleSettings: () => void;
-  onToggleRAG: () => void;
   onShowToast: (msg: string, type: 'success' | 'error') => void;
-  onOpenAnalytics?: () => void;
   onOpenSchedules?: () => void;
   onOpenBrowserModal?: () => void;
 }
 
-type ScreenType = 'main' | 'models' | 'providers' | 'personas' | 'chats' | 'themes';
+type ScreenType = 'main' | 'models' | 'personas' | 'chats' | 'themes';
 
 interface CommandItem {
   id: string;
@@ -59,9 +57,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onThemeChanged,
   onToggleSidebar,
   onToggleSettings,
-  onToggleRAG,
   onShowToast,
-  onOpenAnalytics,
   onOpenSchedules,
   onOpenBrowserModal
 }) => {
@@ -114,8 +110,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       Promise.resolve().then(() => {
         if (!active) return;
         setIsLoadingModels(true);
-        fetchModels(settings.provider, settings.apiKey, settings.localUrl)
-          .then(models => { if (active) setAvailableModels(models); })
+        fetchModels(settings.apiKey)
           .catch(() => { if (active) setAvailableModels([]); })
           .finally(() => { if (active) setIsLoadingModels(false); });
       });
@@ -123,8 +118,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     return () => {
       active = false;
     };
-  }, [isOpen, activeScreen, settings.provider, settings.apiKey, settings.localUrl]);
-
+  }, [isOpen, activeScreen, settings.apiKey]);
   // Core navigation, activation and settings hooks
   const handleToggleWebSearch = useCallback(() => {
     const nextVal = !settings.isWebSearchEnabled;
@@ -135,30 +129,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     onClose();
   }, [settings, onSettingsChanged, onShowToast, onClose]);
 
-  const handleToggleRAGInstant = useCallback(() => {
-    const nextVal = !settings.isRagEnabled;
-    const nextSettings = { ...settings, isRagEnabled: nextVal };
-    Storage.saveSettings(nextSettings);
-    onSettingsChanged(nextSettings);
-    onShowToast(nextVal ? 'RAG local document retrieval enabled!' : 'RAG retrieval disabled.', 'success');
-    onClose();
-  }, [settings, onSettingsChanged, onShowToast, onClose]);
 
-  const handleSelectProvider = useCallback((prov: AppSettings['provider']) => {
-    let defaultModel = 'gemini-3.6-flash';
-    if (prov === 'ollama') defaultModel = 'llama3';
-    else if (prov === 'openrouter') defaultModel = 'google/gemini-3.6-flash';
-    else if (prov === 'openai') defaultModel = 'gpt-4o-mini';
-
-    const nextSettings = { ...settings, provider: prov, model: defaultModel };
-    Storage.saveSettings(nextSettings);
-    onSettingsChanged(nextSettings);
-    onShowToast(`Provider switched to ${prov.toUpperCase()}.`, 'success');
-    
-    setActiveScreen('models');
-    setSearchQuery('');
-    setSelectedIndex(0);
-  }, [settings, onSettingsChanged, onShowToast]);
 
   const handleSelectModel = useCallback((modelId: string) => {
     const nextSettings = { ...settings, model: modelId };
@@ -167,6 +138,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     onShowToast(`Active model updated to ${modelId}.`, 'success');
     onClose();
   }, [settings, onSettingsChanged, onShowToast, onClose]);
+
 
 
   // Group commands depending on screen
@@ -180,14 +152,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       category: 'Navigation',
       action: () => { onNewChat(); onClose(); },
       shortcut: ['Ctrl', 'Shift', 'N']
-    },
-    {
-      id: 'nav-analytics',
-      title: 'System Diagnostics & Telemetry',
-      subtitle: 'Inspect companion memory, process uptime & storage',
-      icon: <Activity className="h-4 w-4" />,
-      category: 'Navigation',
-      action: () => { onOpenAnalytics?.(); onClose(); }
     },
     {
       id: 'nav-schedules',
@@ -214,14 +178,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       action: () => { onToggleSettings(); onClose(); }
     },
     {
-      id: 'nav-rag',
-      title: 'Open Local Memory (RAG) Manager',
-      subtitle: 'Upload, chunk, and index offline files',
-      icon: <Layers className="h-4 w-4" />,
-      category: 'Navigation',
-      action: () => { onToggleRAG(); onClose(); }
-    },
-    {
       id: 'nav-sidebar',
       title: 'Toggle Sidebar Panel',
       subtitle: 'Expand or collapse conversation history list',
@@ -238,14 +194,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       icon: <Terminal className="h-4 w-4" />,
       category: 'Configuration',
       action: () => { setActiveScreen('models'); setSearchQuery(''); setSelectedIndex(0); }
-    },
-    {
-      id: 'sub-providers',
-      title: 'Change AI Provider...',
-      subtitle: `Current: ${settings.provider.toUpperCase()}`,
-      icon: <Key className="h-4 w-4" />,
-      category: 'Configuration',
-      action: () => { setActiveScreen('providers'); setSearchQuery(''); setSelectedIndex(0); }
     },
     {
       id: 'sub-personas',
@@ -270,16 +218,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       title: 'Toggle Web Search (SearXNG)',
       subtitle: settings.isWebSearchEnabled ? 'Disable internet search (enabled)' : 'Enable internet search (disabled)',
       icon: <Globe className="h-4 w-4" />,
-      category: 'RAG & Web Search',
+      category: 'Web Search',
       action: handleToggleWebSearch
-    },
-    {
-      id: 'toggle-rag',
-      title: 'Toggle Local Docs (RAG)',
-      subtitle: settings.isRagEnabled ? 'Disable local context (enabled)' : 'Enable local context (disabled)',
-      icon: <Layers className="h-4 w-4" />,
-      category: 'RAG & Web Search',
-      action: handleToggleRAGInstant
     },
 
     // APPEARANCE
@@ -291,18 +231,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       category: 'Appearance',
       action: () => { setActiveScreen('themes'); setSearchQuery(''); setSelectedIndex(0); }
     },
-  ], [settings, theme, onNewChat, onClose, onToggleSettings, onToggleRAG, onToggleSidebar, onOpenAnalytics, onOpenBrowserModal, onOpenSchedules, handleToggleWebSearch, handleToggleRAGInstant]);
+  ], [settings, theme, onNewChat, onClose, onToggleSettings, onToggleSidebar, onOpenBrowserModal, onOpenSchedules, handleToggleWebSearch]);
 
   // Derived submenus items
   const subCommands = useMemo<CommandItem[]>(() => {
     switch (activeScreen) {
-      case 'providers':
-        return ([
-          { id: 'prov-gemini', title: 'Google Gemini API', icon: <Check className={`h-4 w-4 ${settings.provider === 'gemini' ? '' : 'opacity-0'}`} />, category: 'AI Providers', action: () => handleSelectProvider('gemini') },
-          { id: 'prov-openai', title: 'OpenAI (Compatible)', icon: <Check className={`h-4 w-4 ${settings.provider === 'openai' ? '' : 'opacity-0'}`} />, category: 'AI Providers', action: () => handleSelectProvider('openai') },
-          { id: 'prov-openrouter', title: 'OpenRouter API', icon: <Check className={`h-4 w-4 ${settings.provider === 'openrouter' ? '' : 'opacity-0'}`} />, category: 'AI Providers', action: () => handleSelectProvider('openrouter') },
-          { id: 'prov-ollama', title: 'Local Ollama API', icon: <Check className={`h-4 w-4 ${settings.provider === 'ollama' ? '' : 'opacity-0'}`} />, category: 'AI Providers', action: () => handleSelectProvider('ollama') }
-        ] as const).map(c => ({ ...c, subtitle: 'Select active API provider', action: c.action as () => void }));
 
       case 'models':
         if (isLoadingModels) {
@@ -397,7 +330,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     }
   }, [
     activeScreen, settings, customPrompts, activePromptId, chats, activeChatId, theme, 
-    availableModels, isLoadingModels, handleSelectModel, handleSelectProvider, onClose, 
+    availableModels, isLoadingModels, handleSelectModel, onClose, 
     onSelectChat, onSelectPromptId, onShowToast, onThemeChanged
   ]);
 
@@ -471,8 +404,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   const getScreenTitle = () => {
     switch (activeScreen) {
-      case 'models': return `${settings.provider.toUpperCase()} MODELS`;
-      case 'providers': return 'AI PROVIDERS';
+      case 'models': return 'GEMINI MODELS';
       case 'personas': return 'SYSTEM PERSONAS';
       case 'chats': return 'RECENT CONVERSATIONS';
       case 'themes': return 'APPEARANCE THEME';

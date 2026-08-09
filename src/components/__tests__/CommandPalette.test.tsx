@@ -9,7 +9,6 @@ describe('CommandPalette Component', () => {
     provider: 'gemini',
     apiKey: 'test-key',
     model: 'gemini-2.5-flash',
-    isRagEnabled: false,
     isWebSearchEnabled: false,
     thinkingLevel: 'off',
     isMemoryEnabled: true,
@@ -34,7 +33,6 @@ describe('CommandPalette Component', () => {
         onThemeChanged={vi.fn()}
         onToggleSidebar={vi.fn()}
         onToggleSettings={vi.fn()}
-        onToggleRAG={vi.fn()}
         onShowToast={vi.fn()}
       />
     );
@@ -60,7 +58,6 @@ describe('CommandPalette Component', () => {
         onThemeChanged={vi.fn()}
         onToggleSidebar={vi.fn()}
         onToggleSettings={vi.fn()}
-        onToggleRAG={vi.fn()}
         onShowToast={vi.fn()}
       />
     );
@@ -90,7 +87,6 @@ describe('CommandPalette Component', () => {
         onThemeChanged={vi.fn()}
         onToggleSidebar={vi.fn()}
         onToggleSettings={vi.fn()}
-        onToggleRAG={vi.fn()}
         onShowToast={vi.fn()}
       />
     );

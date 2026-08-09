@@ -25,7 +25,6 @@ describe('Sidebar Component', () => {
     provider: 'gemini',
     apiKey: 'test-key',
     model: 'gemini-2.5-flash',
-    isRagEnabled: false,
     isWebSearchEnabled: false,
     thinkingLevel: 'off',
     isMemoryEnabled: true,
@@ -106,5 +105,37 @@ describe('Sidebar Component', () => {
     fireEvent.click(newChatBtn);
 
     expect(handleNewChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows inline deletion confirmation when delete button is clicked and calls onDeleteChat on confirm', () => {
+    const handleDeleteChat = vi.fn();
+    render(
+      <Sidebar
+        chats={mockChats}
+        activeChatId="chat-1"
+        settings={mockSettings}
+        onSelectChat={vi.fn()}
+        onNewChat={vi.fn()}
+        onDeleteChat={handleDeleteChat}
+        onRenameChat={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onOpenSchedules={vi.fn()}
+        isCollapsed={false}
+        onToggleCollapse={vi.fn()}
+        theme="dark"
+        onThemeChanged={vi.fn()}
+      />
+    );
+
+    const deleteBtn = screen.getByLabelText('Delete chat First Conversation');
+    fireEvent.click(deleteBtn);
+
+    expect(screen.getByText('Delete?')).toBeDefined();
+    expect(handleDeleteChat).not.toHaveBeenCalled();
+
+    const confirmBtn = screen.getByLabelText('Confirm delete chat First Conversation');
+    fireEvent.click(confirmBtn);
+
+    expect(handleDeleteChat).toHaveBeenCalledWith('chat-1');
   });
 });

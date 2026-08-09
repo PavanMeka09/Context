@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import os from 'os';
 
 describe('Server API Endpoints & Security', () => {
   const createTestApp = () => {
@@ -27,30 +26,6 @@ describe('Server API Endpoints & Security', () => {
       });
     });
 
-    app.get('/api/system/stats', (req, res) => {
-      res.json({
-        success: true,
-        timestamp: new Date().toISOString(),
-        process: {
-          uptime: process.uptime(),
-          memoryUsageMb: { rss: 50, heapTotal: 30, heapUsed: 20, external: 5 }
-        },
-        system: {
-          total: os.totalmem(),
-          free: os.freemem(),
-          platform: os.platform(),
-          cpus: os.cpus().length
-        },
-        activeSessionsCount: 0,
-        activeBrowserAgentsCount: 0,
-        activeCronJobsCount: 0,
-        storageStats: {
-          screenshotFiles: 0,
-          totalSchedules: 0,
-          totalTaskRuns: 0
-        }
-      });
-    });
 
     app.post('/api/transpile', (req, res) => {
       const { code } = req.body;
@@ -92,13 +67,6 @@ describe('Server API Endpoints & Security', () => {
     expect(res.headers['x-frame-options']).toBe('SAMEORIGIN');
   });
 
-  it('GET /api/system/stats returns telemetry data', async () => {
-    const res = await request(app).get('/api/system/stats');
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.system).toHaveProperty('platform');
-    expect(res.body.storageStats).toHaveProperty('screenshotFiles');
-  });
 
   it('POST /api/transpile returns 400 when missing code parameter', async () => {
     const res = await request(app).post('/api/transpile').send({});

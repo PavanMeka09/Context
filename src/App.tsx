@@ -2,22 +2,18 @@ import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { Composer } from './components/Composer';
-import { vectorDb } from './utils/vectorDb';
 import { PRESET_PROMPTS, Storage, reconstructActivePath, upgradeChatToTree } from './utils/storage';
 import type { Chat, Message, MessageNode, Settings, SystemPrompt, Attachment, BrowserSessionData } from './utils/storage';
 import { streamChatCompletion } from './utils/api';
-import { searchSearxng, classifySearchHeuristically } from './utils/searxng';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AlertCircle, X, Loader2 } from 'lucide-react';
 
 // Code splitting for modal components to optimize initial chunk size
 const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
 const ShortcutsModal = lazy(() => import('./components/ShortcutsModal').then(m => ({ default: m.ShortcutsModal })));
-const RAGPanel = lazy(() => import('./components/RAGPanel').then(m => ({ default: m.RAGPanel })));
 const CommandPalette = lazy(() => import('./components/CommandPalette').then(m => ({ default: m.CommandPalette })));
 const SchedulesPanel = lazy(() => import('./components/SchedulesPanel').then(m => ({ default: m.SchedulesPanel })));
 const BrowserModal = lazy(() => import('./components/BrowserModal').then(m => ({ default: m.BrowserModal })));
-const AnalyticsModal = lazy(() => import('./components/AnalyticsModal').then(m => ({ default: m.AnalyticsModal })));
 
 const ModalFallback = () => (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
@@ -78,12 +74,10 @@ function App() {
   const [composerInput, setComposerInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [ragPanelOpen, setRagPanelOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [schedulesOpen, setSchedulesOpen] = useState(false);
   const [browserModalOpen, setBrowserModalOpen] = useState(false);
   const [browserModalSessionId, setBrowserModalSessionId] = useState<string>('interactive');
-  const [analyticsOpen, setAnalyticsOpen] = useState(false);
 
   // Preference and accessibility states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => Storage.getSidebarCollapsed());
@@ -222,7 +216,6 @@ function App() {
         }
         setSettingsOpen(false);
         setShortcutsOpen(false);
-        setRagPanelOpen(false);
         setCommandPaletteOpen(false);
         setBrowserModalOpen(false);
       }
@@ -483,27 +476,19 @@ interface SyncEvent {
   };
 
   const handleDeleteChat = (id: string) => {
-    const chat = chats.find(c => c.id === id);
-    setConfirmDialog({
-      title: 'Delete conversation',
-      message: `Delete "${chat?.title || 'this chat'}"? This cannot be undone.`,
-      onConfirm: () => {
-        const updatedChats = chats.filter(c => c.id !== id);
-        setChats(updatedChats);
-        Storage.deleteChat(id);
+    const updatedChats = chats.filter(c => c.id !== id);
+    setChats(updatedChats);
+    Storage.deleteChat(id);
 
-        if (activeChatId === id) {
-          if (updatedChats.length > 0) {
-            setActiveChatId(updatedChats[0].id);
-            Storage.saveActiveChatId(updatedChats[0].id);
-          } else {
-            setActiveChatId(null);
-            Storage.saveActiveChatId(null);
-          }
-        }
-        setConfirmDialog(null);
+    if (activeChatId === id) {
+      if (updatedChats.length > 0) {
+        setActiveChatId(updatedChats[0].id);
+        Storage.saveActiveChatId(updatedChats[0].id);
+      } else {
+        setActiveChatId(null);
+        Storage.saveActiveChatId(null);
       }
-    });
+    }
   };
 
   const handleRenameChat = (id: string, newTitle: string) => {
@@ -595,21 +580,11 @@ interface SyncEvent {
 
     // Create stream message placeholder
     const streamMessageId = `msg-stream-${Date.now()}`;
-    let initialContent = '';
-    
-    if (settings.isRagEnabled && userQuery) {
-      const currentModelStatus = vectorDb.getStatus();
-      const statusAttr = currentModelStatus === 'loading' ? 'loading_model' : 'searching';
-      initialContent += `<rag_status query="${userQuery.replace(/"/g, '&quot;')}" status="${statusAttr}" />\n`;
-    }
-    if (settings.isWebSearchEnabled && userQuery) {
-      initialContent += `<search_status query="${userQuery.replace(/"/g, '&quot;')}" status="searching" />`;
-    }
 
     const placeholderMessage: Message = {
       id: streamMessageId,
       role: 'assistant',
-      content: initialContent,
+      content: '',
       timestamp: new Date().toISOString()
     };
 
@@ -622,202 +597,12 @@ interface SyncEvent {
     );
     setChats(chatsWithPlaceholder);
 
-    let ragContext = '';
-    let ragTagPrefix = '';
-    let unsubStatus: (() => void) | null = null;
-    let unsubProgress: (() => void) | null = null;
-
-    if (settings.isRagEnabled && userQuery) {
-      try {
-        unsubStatus = vectorDb.subscribeStatus((status) => {
-          setChats(prevChats =>
-            prevChats.map(c => {
-              if (c.id === targetChatId) {
-                const upgraded = upgradeChatToTree(c);
-                const tree = { ...upgraded.messageTree };
-                if (tree[streamMessageId]) {
-                  const content = tree[streamMessageId].content;
-                  const newStatus = status === 'loading' ? 'loading_model' : 'searching';
-                  const updatedContent = content.replace(/<rag_status\s+query="([^"]*)"\s+status="([^"]*)"/i, `<rag_status query="$1" status="${newStatus}"`);
-                  tree[streamMessageId] = {
-                    ...tree[streamMessageId],
-                    content: updatedContent
-                  };
-                }
-                const messages = reconstructActivePath(tree, upgraded.activeLeafId);
-                return { ...upgraded, messageTree: tree, messages };
-              }
-              return c;
-            })
-          );
-        });
-
-        unsubProgress = vectorDb.subscribeProgress((progress) => {
-          setChats(prevChats =>
-            prevChats.map(c => {
-              if (c.id === targetChatId) {
-                const upgraded = upgradeChatToTree(c);
-                const tree = { ...upgraded.messageTree };
-                if (tree[streamMessageId]) {
-                  const content = tree[streamMessageId].content;
-                  let updatedContent: string;
-                  if (content.includes('progress=')) {
-                    updatedContent = content.replace(/progress="([^"]*)"/i, `progress="${progress.toFixed(0)}"`);
-                  } else {
-                    updatedContent = content.replace(/<rag_status\s+query="([^"]*)"\s+status="([^"]*)"/i, `<rag_status query="$1" status="$2" progress="${progress.toFixed(0)}"`);
-                  }
-                  tree[streamMessageId] = {
-                    ...tree[streamMessageId],
-                    content: updatedContent
-                  };
-                }
-                const messages = reconstructActivePath(tree, upgraded.activeLeafId);
-                return { ...upgraded, messageTree: tree, messages };
-              }
-              return c;
-            })
-          );
-        });
-
-        const matches = await vectorDb.searchSimilarChunks(userQuery);
-        if (matches.length > 0) {
-          ragContext = matches.map(m => `--- [Document: ${m.chunk.docName} (Similarity: ${(m.score * 100).toFixed(0)}%)] ---\n${m.chunk.text}`).join('\n\n');
-        }
-        ragTagPrefix = `<rag_status query="${userQuery.replace(/"/g, '&quot;')}" status="done">${JSON.stringify(
-          matches.map(m => ({ docName: m.chunk.docName, score: m.score, text: m.chunk.text }))
-        )}</rag_status>\n\n`;
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Semantic search failed';
-        console.error('Failed to perform local RAG similarity search:', err);
-        ragTagPrefix = `<rag_status query="${userQuery.replace(/"/g, '&quot;')}" status="failed" error="${errorMsg}"></rag_status>\n\n`;
-      } finally {
-        if (unsubStatus) unsubStatus();
-        if (unsubProgress) unsubProgress();
-      }
-
-      // Update placeholder with final RAG status tag prefix in tree
-      setChats(prevChats =>
-        prevChats.map(c => {
-          if (c.id === targetChatId) {
-            const upgraded = upgradeChatToTree(c);
-            const tree = { ...upgraded.messageTree };
-            if (tree[streamMessageId]) {
-              const currentContent = tree[streamMessageId].content;
-              const updatedContent = currentContent.replace(/<rag_status[\s\S]*?<\/rag_status>|<rag_status\s*[^>]*\/>/i, ragTagPrefix);
-              tree[streamMessageId] = {
-                ...tree[streamMessageId],
-                content: updatedContent
-              };
-            }
-            const messages = reconstructActivePath(tree, upgraded.activeLeafId);
-            return { ...upgraded, messageTree: tree, messages };
-          }
-          return c;
-        })
-      );
-    }
-
     let searchTagPrefix = '';
-    let webSearchContext = '';
+    const systemInstruction = getSystemPromptText();
+    const apiHistory = activeChat.messages;
+    let accumulatedContent = '';
 
-    if (settings.isWebSearchEnabled && userQuery) {
-      try {
-        // Run classification and query optimization
-        const { shouldSearch, searchQuery } = classifySearchHeuristically(userQuery);
-
-        if (shouldSearch && searchQuery) {
-          // Update visual placeholder query in state
-          setChats(prevChats =>
-            prevChats.map(c => {
-              if (c.id === targetChatId) {
-                const upgraded = upgradeChatToTree(c);
-                const tree = { ...upgraded.messageTree };
-                if (tree[streamMessageId]) {
-                  tree[streamMessageId] = {
-                    ...tree[streamMessageId],
-                    content: ragTagPrefix + `<search_status query="${searchQuery.replace(/"/g, '&quot;')}" status="searching" />`
-                  };
-                }
-                const messages = reconstructActivePath(tree, upgraded.activeLeafId);
-                return { ...upgraded, messageTree: tree, messages };
-              }
-              return c;
-            })
-          );
-
-          // Perform Search
-          const results = await searchSearxng(searchQuery, settings.searxngUrl);
-          
-          let scrapedPages: { url: string; content: string }[] = [];
-          if (results.length > 0) {
-            try {
-              // Update visual placeholder status to scraping
-              setChats(prevChats =>
-                prevChats.map(c => {
-                  if (c.id === targetChatId) {
-                    const upgraded = upgradeChatToTree(c);
-                    const tree = { ...upgraded.messageTree };
-                    if (tree[streamMessageId]) {
-                      tree[streamMessageId] = {
-                        ...tree[streamMessageId],
-                        content: ragTagPrefix + `<search_status query="${searchQuery.replace(/"/g, '&quot;')}" status="scraping" />`
-                      };
-                    }
-                    const messages = reconstructActivePath(tree, upgraded.activeLeafId);
-                    return { ...upgraded, messageTree: tree, messages };
-                  }
-                  return c;
-                })
-              );
-
-              // Concurrently scrape the top 2 search results to build rich context
-              const scrapePromises = results.slice(0, 2).map(async (r) => {
-                try {
-                  const res = await fetch('/api/scrape', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: r.url }),
-                  });
-                  if (res.ok) {
-                    const data = await res.json();
-                    if (data.success && data.content) {
-                      return { url: r.url, content: data.content };
-                    }
-                  }
-                } catch (e) {
-                  console.error(`Failed to scrape ${r.url}:`, e);
-                }
-                return null;
-              });
-
-              const scrapeResults = await Promise.all(scrapePromises);
-              scrapedPages = scrapeResults.filter((p): p is { url: string; content: string } => p !== null);
-            } catch (e) {
-              console.error('Failed to perform page scraping:', e);
-            }
-          }
-
-          // Format search results with full scraped content when available
-          webSearchContext = results.map((r, idx) => {
-            const scraped = scrapedPages.find(p => p.url === r.url);
-            return `[Web Result #${idx + 1}]
-Title: ${r.title}
-URL: ${r.url}
-${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.content}`}`;
-          }).join('\n\n');
-
-          searchTagPrefix = `<search_status query="${searchQuery.replace(/"/g, '&quot;')}" status="done">${JSON.stringify(results)}</search_status>\n\n`;
-        } else {
-          // Bypassed search
-          searchTagPrefix = '';
-        }
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Search failed';
-        console.error('Failed to perform SearXNG web search:', err);
-        searchTagPrefix = `<search_status query="${userQuery.replace(/"/g, '&quot;')}" status="failed" error="${errorMsg}"></search_status>\n\n`;
-      }
-
-      // Update placeholder with final search tag prefix in tree
+    const updateStreamedContent = (newContent: string) => {
       setChats(prevChats =>
         prevChats.map(c => {
           if (c.id === targetChatId) {
@@ -826,7 +611,7 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
             if (tree[streamMessageId]) {
               tree[streamMessageId] = {
                 ...tree[streamMessageId],
-                content: ragTagPrefix + searchTagPrefix
+                content: newContent
               };
             }
             const messages = reconstructActivePath(tree, upgraded.activeLeafId);
@@ -835,53 +620,28 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
           return c;
         })
       );
-    }
-
-    let systemInstruction = getSystemPromptText();
-    
-    // Inject web search context if available
-    if (webSearchContext) {
-      systemInstruction = `${systemInstruction}\n\n[REAL-TIME WEB SEARCH CONTEXT]\nUse the following real-time web search results from SearXNG to answer the user's prompt. Rely on these search results to provide accurate, up-to-date information:\n${webSearchContext}`;
-    }
-    
-    // Inject RAG context if available
-    if (ragContext) {
-      systemInstruction = `${systemInstruction}\n\n[RELEVANT LOCAL MEMORY CONTEXT]\nUse the following retrieved excerpts from the user's local documents to answer their prompt. Rely strictly on this context if it directly answers the question:\n${ragContext}`;
-    }
-
-    // Exclude system message and the stream message placeholder from API history
-    const apiHistory = activeChat.messages;
-
-    let accumulatedContent = '';
+    };
 
     await streamChatCompletion(
       settings,
       apiHistory,
       systemInstruction,
       {
+        onToolCall: ({ query }: { toolName: string; query: string }) => {
+          searchTagPrefix = `<search_status query="${query.replace(/"/g, '&quot;')}" status="searching" />`;
+          updateStreamedContent(searchTagPrefix + accumulatedContent);
+        },
+        onToolResult: ({ query, results }: { toolName: string; query: string; results: unknown[]; source: string }) => {
+          if (results && results.length > 0) {
+            searchTagPrefix = `<search_status query="${query.replace(/"/g, '&quot;')}" status="done">${JSON.stringify(results)}</search_status>\n\n`;
+          } else {
+            searchTagPrefix = `<search_status query="${query.replace(/"/g, '&quot;')}" status="failed" error="No search results found"></search_status>\n\n`;
+          }
+          updateStreamedContent(searchTagPrefix + accumulatedContent);
+        },
         onChunk: (chunk: string) => {
           accumulatedContent += chunk;
-          setChats(prevChats =>
-            prevChats.map(c => {
-              if (c.id === targetChatId) {
-                const upgraded = upgradeChatToTree(c);
-                const tree = { ...upgraded.messageTree };
-                if (tree[streamMessageId]) {
-                  tree[streamMessageId] = {
-                    ...tree[streamMessageId],
-                    content: ragTagPrefix + searchTagPrefix + accumulatedContent
-                  };
-                }
-                const messages = reconstructActivePath(tree, upgraded.activeLeafId);
-                return {
-                  ...upgraded,
-                  messageTree: tree,
-                  messages
-                };
-              }
-              return c;
-            })
-          );
+          updateStreamedContent(searchTagPrefix + accumulatedContent);
         },
         onDone: (finalText: string) => {
           setIsGenerating(false);
@@ -894,7 +654,7 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
                 if (tree[streamMessageId]) {
                   tree[streamMessageId] = {
                     ...tree[streamMessageId],
-                    content: ragTagPrefix + searchTagPrefix + finalText,
+                    content: searchTagPrefix + finalText,
                     timestamp: new Date().toISOString()
                   };
                 }
@@ -931,35 +691,30 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
           showToast(errorMsg, 'error');
           
           let updatedChat: Chat | undefined;
-          // Remove placeholder and restore chat session
           setChats(prevChats => {
-            const rolledBackChats = prevChats.map(c => {
+            const finalChats = prevChats.map(c => {
               if (c.id === targetChatId) {
                 const upgraded = upgradeChatToTree(c);
                 const tree = { ...upgraded.messageTree };
-                
-                const nodeToDelete = tree[streamMessageId];
-                if (nodeToDelete && nodeToDelete.parentId && tree[nodeToDelete.parentId]) {
-                  const parentNode = { ...tree[nodeToDelete.parentId] };
-                  parentNode.children = parentNode.children.filter(id => id !== streamMessageId);
-                  tree[nodeToDelete.parentId] = parentNode;
+                if (tree[streamMessageId]) {
+                  tree[streamMessageId] = {
+                    ...tree[streamMessageId],
+                    content: searchTagPrefix + (accumulatedContent ? accumulatedContent + `\n\n⚠️ ${errorMsg}` : `⚠️ ${errorMsg}`),
+                    timestamp: new Date().toISOString()
+                  };
                 }
-                
-                delete tree[streamMessageId];
-                const activeLeaf = parentId;
-                const messages = reconstructActivePath(tree, activeLeaf);
-                
+                const messages = reconstructActivePath(tree, upgraded.activeLeafId);
                 updatedChat = {
                   ...upgraded,
                   messageTree: tree,
-                  activeLeafId: activeLeaf,
-                  messages
+                  messages,
+                  updatedAt: new Date().toISOString()
                 };
                 return updatedChat;
               }
               return c;
             });
-            return rolledBackChats;
+            return finalChats;
           });
           if (updatedChat) {
             Storage.saveChat(updatedChat);
@@ -1527,7 +1282,6 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
             setBrowserModalSessionId(sid || 'interactive');
             setBrowserModalOpen(true);
           }}
-          onOpenAnalytics={() => setAnalyticsOpen(true)}
           settings={settings}
         >
           <Composer
@@ -1577,24 +1331,6 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
         </Suspense>
       )}
 
-      {/* RAG Memory Panel */}
-      {ragPanelOpen && (
-        <ErrorBoundary fallbackTitle="RAG Panel Failed to Render">
-          <Suspense fallback={<ModalFallback />}>
-            <RAGPanel
-              isOpen={ragPanelOpen}
-              onClose={() => setRagPanelOpen(false)}
-              isRagEnabled={!!settings.isRagEnabled}
-              onToggleRag={(enabled) => {
-                const newSettings = { ...settings, isRagEnabled: enabled };
-                setSettings(newSettings);
-                Storage.saveSettings(newSettings);
-              }}
-              onError={(msg) => showToast(msg, 'error')}
-            />
-          </Suspense>
-        </ErrorBoundary>
-      )}
 
       {/* Command Palette Overlay */}
       {commandPaletteOpen && (
@@ -1625,26 +1361,13 @@ ${scraped ? `Full Page Text Content:\n${scraped.content}` : `Excerpt: ${r.conten
               Storage.saveSidebarCollapsed(next);
             }}
             onToggleSettings={() => setSettingsOpen(true)}
-            onToggleRAG={() => setRagPanelOpen(true)}
             onShowToast={(msg, type) => showToast(msg, type)}
-            onOpenAnalytics={() => setAnalyticsOpen(true)}
             onOpenSchedules={() => setSchedulesOpen(true)}
             onOpenBrowserModal={() => setBrowserModalOpen(true)}
           />
         </Suspense>
       )}
 
-      {/* System Analytics Telemetry Modal */}
-      {analyticsOpen && (
-        <ErrorBoundary fallbackTitle="System Telemetry Modal Failed to Render">
-          <Suspense fallback={<ModalFallback />}>
-            <AnalyticsModal
-              isOpen={analyticsOpen}
-              onClose={() => setAnalyticsOpen(false)}
-            />
-          </Suspense>
-        </ErrorBoundary>
-      )}
 
       {/* Task Schedules Dashboard */}
       {schedulesOpen && (

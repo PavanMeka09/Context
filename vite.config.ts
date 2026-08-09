@@ -16,6 +16,14 @@ export default defineConfig({
         target: 'http://localhost:8082',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/searxng/, ''),
+        configure: (proxy) => {
+          proxy.on('error', (_err, _req, res) => {
+            if (res && 'writeHead' in res && !res.headersSent) {
+              res.writeHead(502, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'SearXNG service unreachable' }));
+            }
+          });
+        }
       },
       '/api': {
         target: 'http://localhost:3001',
@@ -29,9 +37,6 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('node_modules')) {
-            if (id.includes('@huggingface') || id.includes('onnxruntime')) {
-              return 'vendor-transformers';
-            }
             if (id.includes('react-markdown') || id.includes('remark-gfm')) {
               return 'vendor-markdown';
             }

@@ -86,11 +86,9 @@ describe('src/utils/storage.ts', () => {
 
     it('saves and retrieves updated settings', () => {
       const updated = {
-        provider: 'ollama' as const,
-        apiKey: '',
-        model: 'llama3:latest',
-        localUrl: 'http://localhost:11434/v1',
-        isRagEnabled: true,
+        provider: 'gemini' as const,
+        apiKey: 'test-api-key',
+        model: 'gemini-2.5-flash',
         isWebSearchEnabled: false,
         searxngUrl: 'http://localhost:8082',
         thinkingLevel: 'medium' as const,
@@ -100,9 +98,8 @@ describe('src/utils/storage.ts', () => {
 
       Storage.saveSettings(updated);
       const retrieved = Storage.getSettings();
-      expect(retrieved.provider).toBe('ollama');
-      expect(retrieved.model).toBe('llama3:latest');
-      expect(retrieved.isRagEnabled).toBe(true);
+      expect(retrieved.provider).toBe('gemini');
+      expect(retrieved.model).toBe('gemini-2.5-flash');
     });
   });
 
@@ -147,7 +144,7 @@ describe('src/utils/storage.ts', () => {
     it('imports valid backup JSON successfully', async () => {
       const backupData = JSON.stringify({
         version: 1,
-        settings: { provider: 'openrouter', apiKey: 'test-key', model: 'gpt-4o' },
+        settings: { provider: 'gemini', apiKey: 'test-key', model: 'gemini-2.5-flash' },
         memories: [{ id: 'imported-m1', content: 'Imported Memory', category: 'preference', createdAt: '2026-01-01' }],
         customPrompts: [{ id: 'imported-p1', name: 'Imported Prompt', content: 'Test', isCustom: true }]
       });
@@ -156,7 +153,7 @@ describe('src/utils/storage.ts', () => {
       expect(result.success).toBe(true);
 
       const settings = Storage.getSettings();
-      expect(settings.provider).toBe('openrouter');
+      expect(settings.provider).toBe('gemini');
       expect(settings.apiKey).toBe('test-key');
 
       const memories = Storage.getMemories();

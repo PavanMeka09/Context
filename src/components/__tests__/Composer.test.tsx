@@ -9,7 +9,6 @@ describe('Composer Component', () => {
     provider: 'gemini',
     apiKey: 'test-key',
     model: 'gemini-2.5-flash',
-    isRagEnabled: false,
     isWebSearchEnabled: false,
     thinkingLevel: 'off',
     isMemoryEnabled: true,

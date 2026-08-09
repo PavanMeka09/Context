@@ -1,13 +1,10 @@
-# Context AI — Production-Ready Autonomous Agent & Chat Workstation
+# Context AI — Autonomous Agent & Chat Workstation
 
-Context is an advanced, production-grade autonomous AI workspace featuring real-time web browsing capabilities via Puppeteer, local vector-based RAG memory, privacy-focused search with SearXNG, automated background task scheduling, code execution sandbox, and flexible multi-LLM provider integration (OpenAI, Gemini, Ollama, OpenRouter).
-
----
+ Context is an advanced, production-grade autonomous AI workspace featuring real-time web browsing capabilities via Puppeteer, privacy-focused search with SearXNG, automated background task scheduling, code execution sandbox, and Google Gemini API integration via Vercel AI SDK.
 
 ## 🌟 Key Features
 
 - 🌐 **Autonomous Browser Control**: Puppeteer-powered background browser agent with live frame streaming, self-healing element selectors, interactive step inspection, and session management.
-- 📚 **Client-Side Vector RAG**: Fully local embedding pipeline powered by `@huggingface/transformers` in a dedicated WebWorker, IndexedDB storage, paragraph/sentence chunking, and similarity search.
 - 🔍 **Privacy Search Integration**: Automated SearXNG integration for fast, privacy-preserving live web search queries.
 - ⏰ **Scheduled Background Tasks**: Cron-driven background task runner (`node-cron`) for recurring browser web scraping and LLM summaries.
 - 🛡️ **Execution Sandbox & Safety**: Isolated Python and Node.js execution sandbox with safety pattern detection blocking destructive operations.
@@ -23,13 +20,13 @@ Context is an advanced, production-grade autonomous AI workspace featuring real-
                                │ (React + Vite + Tailw.) │
                                └────────────┬────────────┘
                                             │
-                 ┌──────────────────────────┼──────────────────────────┐
-                 │                          │                          │
-                 ▼                          ▼                          ▼
-       ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
-       │ Companion Server │       │  Local RAG Engine│       │ SearXNG Search   │
-       │  (Express 5.x)   │       │(WebWorker + IDB) │       │ (Docker Service) │
-       └────────┬─────────┘       └──────────────────┘       └──────────────────┘
+                 ┌──────────────────────────┴──────────────────────────┐
+                 │                                                     │
+                 ▼                                                     ▼
+       ┌──────────────────┐                                   ┌──────────────────┐
+       │ Companion Server │                                   │ SearXNG Search   │
+       │  (Express 5.x)   │                                   │ (Docker Service) │
+       └────────┬─────────┘                                   └──────────────────┘
                 │
      ┌──────────┴──────────┐
      ▼                     ▼

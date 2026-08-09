@@ -5,7 +5,6 @@ import type { Settings, SystemPrompt, Chat, MemoryItem } from '../utils/storage'
 import { fetchModels, type ModelOption } from '../utils/api';
 import { X, Eye, EyeOff, Save, Plus, Trash2, Edit2, AlertCircle, Loader2, Download, CheckSquare, ChevronDown, Check, Globe, Search, Cpu, Database, FileText, Terminal, Brain } from 'lucide-react';
 import { testSearxngConnection } from '../utils/searxng';
-import { vectorDb } from '../utils/vectorDb';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -24,42 +23,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onPromptsChanged,
   onBackupImported
 }) => {
-  const [activeTab, setActiveTab] = useState<'provider' | 'prompts' | 'websearch' | 'memory' | 'backup' | 'diagnostics'>('provider');
+  const [activeTab, setActiveTab] = useState<'provider' | 'prompts' | 'websearch' | 'memory' | 'backup'>('provider');
   const [settings, setSettings] = useState<Settings>(() => Storage.getSettings());
   const [memories, setMemories] = useState<MemoryItem[]>(() => Storage.getMemories());
   const [newMemoryContent, setNewMemoryContent] = useState('');
   const [newMemoryCategory, setNewMemoryCategory] = useState<'preference' | 'project' | 'conversation' | 'other'>('preference');
-  const [diagnostics, setDiagnostics] = useState<any>(null);
-  const [loadingDiagnostics, setLoadingDiagnostics] = useState(false);
-  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
-
-  const fetchDiagnostics = useCallback(async () => {
-    setLoadingDiagnostics(true);
-    setDiagnosticsError(null);
-    try {
-      const res = await fetch('/api/system/stats');
-      if (!res.ok) {
-        throw new Error(`Server returned status ${res.status}`);
-      }
-      const data = await res.json();
-      setDiagnostics(data);
-    } catch (e) {
-      console.error('Failed to fetch system stats', e);
-      setDiagnostics(null);
-      setDiagnosticsError(e instanceof Error ? e.message : 'Failed to fetch diagnostics');
-    } finally {
-      setLoadingDiagnostics(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === 'diagnostics') {
-      const timer = setTimeout(() => {
-        fetchDiagnostics();
-      }, 0);
-      return () => clearTimeout(timer);
-    }
-  }, [activeTab, fetchDiagnostics]);
 
   const slugify = (text: string) => {
     return text
@@ -314,7 +282,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [modelError, setModelError] = useState<string | null>(null);
   const [modelSearchQuery, setModelSearchQuery] = useState('');
 
-  const [providerDropdownOpen, setProviderDropdownOpen] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
 
   const [customPrompts, setCustomPrompts] = useState<SystemPrompt[]>(() => Storage.getCustomPrompts());
@@ -368,12 +335,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     reader.readAsText(file);
   };
 
-  const loadModelsForProvider = useCallback(async (provider: 'gemini' | 'openrouter' | 'ollama' | 'openai', key: string, activeModelId?: string, localUrl?: string) => {
+  const loadModelsForProvider = useCallback(async (key: string, activeModelId?: string) => {
     setLoadingModels(true);
     setModelError(null);
     setModelSearchQuery('');
     try {
-      const fetched = await fetchModels(provider, key, localUrl);
+      const fetched = await fetchModels(key);
       setModels(fetched);
       
       if (fetched.length > 0) {
@@ -385,7 +352,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setSettings(prev => ({ ...prev, model: '' }));
       }
     } catch {
-      setModelError('Failed to load dynamic models for this provider.');
+      setModelError('Failed to load dynamic models for Google Gemini.');
     } finally {
       setLoadingModels(false);
     }
@@ -393,7 +360,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   useEffect(() => {
     setTimeout(() => {
-      loadModelsForProvider(settings.provider, settings.apiKey, settings.model, settings.localUrl);
+      loadModelsForProvider(settings.apiKey, settings.model);
     }, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadModelsForProvider]);
@@ -401,11 +368,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   useEffect(() => {
     const handleEscapeCapture = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (providerDropdownOpen) {
-          e.preventDefault();
-          e.stopPropagation();
-          setProviderDropdownOpen(false);
-        } else if (modelDropdownOpen) {
+        if (modelDropdownOpen) {
           e.preventDefault();
           e.stopPropagation();
           setModelDropdownOpen(false);
@@ -414,11 +377,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       }
     };
 
-    if (providerDropdownOpen || modelDropdownOpen) {
+    if (modelDropdownOpen) {
       window.addEventListener('keydown', handleEscapeCapture, true);
       return () => window.removeEventListener('keydown', handleEscapeCapture, true);
     }
-  }, [providerDropdownOpen, modelDropdownOpen]);
+  }, [modelDropdownOpen]);
 
   const handleKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const apiKey = e.target.value;
@@ -426,7 +389,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleKeyBlur = () => {
-    loadModelsForProvider(settings.provider, settings.apiKey, settings.model, settings.localUrl);
+    loadModelsForProvider(settings.apiKey, settings.model);
   };
 
   const handleSaveSettings = () => {
@@ -550,7 +513,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             { id: 'websearch', name: 'Web Search', icon: <Globe className="h-3.5 w-3.5" /> },
             { id: 'memory', name: 'Memory', icon: <Brain className="h-3.5 w-3.5" /> },
             { id: 'backup', name: 'Backup', icon: <Database className="h-3.5 w-3.5" /> },
-            { id: 'diagnostics', name: 'Diagnostics', icon: <Terminal className="h-3.5 w-3.5" /> }
           ].map(tab => (
             <button
               key={tab.id}
@@ -573,171 +535,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="space-y-4">
               
               {/* Provider Selection */}
-              <div className="relative">
+              <div>
                 <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   API Provider
                 </label>
-                 <button
-                  type="button"
-                  id="provider-select-btn"
-                  aria-haspopup="listbox"
-                  aria-expanded={providerDropdownOpen}
-                  onClick={() => {
-                    setProviderDropdownOpen(!providerDropdownOpen);
-                    setModelDropdownOpen(false);
-                  }}
-                  className="flex w-full items-center justify-between rounded-md border border-input bg-background px-3.5 py-2 text-left text-xs text-foreground cursor-pointer hover:bg-accent transition-all duration-200"
-                >
-                  <span className="truncate pr-2">
-                    {settings.provider === 'gemini' && 'Google Gemini'}
-                    {settings.provider === 'openai' && 'OpenAI (Compatible)'}
-                    {settings.provider === 'openrouter' && 'OpenRouter'}
-                    {settings.provider === 'ollama' && 'Ollama (Local LLM)'}
-                  </span>
-                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                </button>
-
-                {providerDropdownOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setProviderDropdownOpen(false)} />
-                    <div 
-                      role="listbox" 
-                      aria-labelledby="provider-select-btn"
-                      className="absolute left-0 right-0 mt-2 z-20 rounded-md border border-border bg-popover p-1 shadow-md animate-fade-in"
-                    >
-                      {[
-                        { id: 'gemini', name: 'Google Gemini' },
-                        { id: 'openai', name: 'OpenAI (Compatible)' },
-                        { id: 'openrouter', name: 'OpenRouter' },
-                        { id: 'ollama', name: 'Ollama (Local LLM)' }
-                      ].map(p => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          role="option"
-                          aria-selected={settings.provider === p.id}
-                          onClick={() => {
-                            const newSettings = { ...settings, provider: p.id as any };
-                            if (p.id === 'ollama' && !newSettings.localUrl) {
-                              newSettings.localUrl = 'http://localhost:11434/v1';
-                            } else if (p.id === 'openai' && !newSettings.localUrl) {
-                              newSettings.localUrl = 'https://api.openai.com/v1';
-                            }
-                            setSettings(newSettings);
-                            loadModelsForProvider(p.id as any, newSettings.apiKey, '', newSettings.localUrl);
-                            setProviderDropdownOpen(false);
-                          }}
-                          className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-xs transition cursor-pointer ${
-                            settings.provider === p.id
-                              ? 'bg-accent text-accent-foreground font-semibold'
-                              : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                          }`}
-                        >
-                          <span>{p.name}</span>
-                          {settings.provider === p.id && <Check className="h-3.5 w-3.5 text-primary" />}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
+                <div className="flex w-full items-center justify-between rounded-md border border-input bg-muted/50 px-3.5 py-2 text-xs font-medium text-foreground">
+                  <span>Google Gemini</span>
+                </div>
               </div>
 
               {/* API Key */}
-              {settings.provider !== 'ollama' && (
-                <div className="space-y-1">
-                  <label htmlFor="api-key-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    API Key
-                  </label>
-                  <div className="relative">
-                    <input
-                      id="api-key-input"
-                      type={showKey ? 'text' : 'password'}
-                      value={settings.apiKey}
-                      onChange={handleKeyChange}
-                      onBlur={handleKeyBlur}
-                      placeholder={
-                        settings.provider === 'gemini' 
-                          ? 'Enter Gemini API Key...' 
-                          : settings.provider === 'openai'
-                            ? 'Enter OpenAI API Key (sk-...) or custom API key...'
-                            : 'sk-or-...'
-                      }
-                      className="w-full rounded-md border border-input bg-background pl-3.5 pr-10 py-2 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowKey(!showKey)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      aria-label={showKey ? "Hide API key" : "Show API key"}
-                    >
-                      {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                  <div className="flex justify-end items-center text-[9px] text-muted-foreground mt-1 select-none">
-                    {settings.provider === 'gemini' && (
-                      <a
-                        href="https://aistudio.google.com/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline font-semibold transition"
-                      >
-                        Get Free Gemini Key
-                      </a>
-                    )}
-                    {settings.provider === 'openrouter' && (
-                      <a
-                        href="https://openrouter.ai/keys"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline font-semibold transition"
-                      >
-                        Get OpenRouter Key
-                      </a>
-                    )}
-                    {settings.provider === 'openai' && (
-                      <a
-                        href="https://platform.openai.com/api-keys"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline font-semibold transition"
-                      >
-                        Get OpenAI Key
-                      </a>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Local/Custom Server Endpoint for Ollama and OpenAI */}
-              {(settings.provider === 'ollama' || settings.provider === 'openai') && (
-                <div className="space-y-1">
-                  <label htmlFor="local-url-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                    {settings.provider === 'openai' ? 'API Base URL (Optional)' : 'Local Server Endpoint'}
-                  </label>
+              <div className="space-y-1">
+                <label htmlFor="api-key-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Gemini API Key
+                </label>
+                <div className="relative">
                   <input
-                    id="local-url-input"
-                    type="text"
-                    value={settings.localUrl || ''}
-                    onChange={(e) => {
-                      const localUrl = e.target.value;
-                      setSettings(prev => ({ ...prev, localUrl }));
-                    }}
-                    onBlur={() => {
-                      loadModelsForProvider(settings.provider, settings.apiKey, settings.model, settings.localUrl);
-                    }}
-                    placeholder={settings.provider === 'openai' ? 'https://api.openai.com/v1' : 'http://localhost:11434/v1'}
-                    className="w-full rounded-md border border-input bg-background px-3.5 py-2 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    id="api-key-input"
+                    type={showKey ? 'text' : 'password'}
+                    value={settings.apiKey}
+                    onChange={handleKeyChange}
+                    onBlur={handleKeyBlur}
+                    placeholder="Enter Gemini API Key..."
+                    className="w-full rounded-md border border-input bg-background pl-3.5 pr-10 py-2 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   />
-                  <div className="flex justify-between items-center text-[9px] text-muted-foreground mt-1 select-none">
-                    <span>
-                      {settings.provider === 'openai'
-                        ? 'Default: https://api.openai.com/v1. Custom hosts: https://api.deepseek.com/v1, https://api.groq.com/openai/v1, etc.'
-                        : 'Ollama default: http://localhost:11434/v1 | LM Studio: http://localhost:1234/v1'}
-                    </span>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label={showKey ? "Hide API key" : "Show API key"}
+                  >
+                    {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
-              )}
-
+              </div>
               {/* Model Dropdown */}
               <div className="relative">
                 <div className="mb-1.5 flex items-center justify-between">
@@ -767,7 +598,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   onClick={() => {
                     if (models.length > 0 && !loadingModels) {
                       setModelDropdownOpen(!modelDropdownOpen);
-                      setProviderDropdownOpen(false);
                     }
                   }}
                   disabled={loadingModels || models.length === 0}
@@ -976,7 +806,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       const val = e.target.value;
                       setSettings(prev => ({ ...prev, searxngUrl: val }));
                     }}
-                    placeholder="http://localhost:8080 (Leave blank for Docker proxy)"
+                    placeholder="http://localhost:8082 (Leave blank for default proxy)"
                     className="flex-1 min-w-0 rounded-md border border-input bg-background px-3.5 py-2 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   />
                   <button
@@ -1019,7 +849,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span>How does Web Search work?</span>
                 </h4>
                 <p className="text-[10px] text-muted-foreground leading-relaxed">
-                  When Web Search is enabled, Context queries SearXNG before the LLM generation starts, retrieves the top search snippets, and automatically injects them into the model's context. This allows any model (local Ollama, Gemini, or OpenRouter) to answer with up-to-date information.
+                  When Web Search is enabled, Context queries SearXNG before the LLM generation starts, retrieves the top search snippets, and automatically injects them into the model's context. This allows Gemini models to answer with up-to-date information.
                 </p>
               </div>
 
@@ -1140,7 +970,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
               </div>
             </div>
-          ) : activeTab === 'backup' ? (
+          ) : (
             <div className="space-y-4 animate-fade-in">
 
               {activeChat && activeChat.messages && activeChat.messages.length > 0 && (
@@ -1246,11 +1076,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         } catch (err) {
                           console.error('Failed to clear scheduling database on server', err);
                         }
-                        try {
-                          await vectorDb.deleteAllData();
-                        } catch (err) {
-                          console.error('Failed to clear local vector database', err);
-                        }
                         localStorage.clear();
                         window.location.reload();
                       }}
@@ -1278,114 +1103,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
             </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">System Diagnostics & Telemetry</h3>
-                  <p className="text-[10px] text-muted-foreground">Real-time companion server metrics, process heap usage, storage stats, and active background threads.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={fetchDiagnostics}
-                  disabled={loadingDiagnostics}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-accent hover:bg-accent/80 text-xs font-semibold text-accent-foreground transition cursor-pointer active:scale-95 disabled:opacity-50"
-                >
-                  {loadingDiagnostics ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Terminal className="w-3.5 h-3.5" />}
-                  <span>Refresh</span>
-                </button>
-              </div>
-
-              {loadingDiagnostics && !diagnostics && !diagnosticsError ? (
-                <div className="p-8 text-center text-muted-foreground text-xs flex flex-col items-center justify-center gap-2">
-                  <Loader2 className="w-5 h-5 animate-spin text-primary" />
-                  <span>Loading server telemetry...</span>
-                </div>
-              ) : diagnosticsError ? (
-                <div className="flex flex-col items-center justify-center gap-3 p-8 rounded-lg border border-destructive/20 bg-destructive/10 text-center">
-                  <div className="flex items-center gap-2 text-destructive text-xs">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span>{diagnosticsError}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={fetchDiagnostics}
-                    disabled={loadingDiagnostics}
-                    className="rounded-md border border-destructive/20 bg-background px-3 py-1.5 text-[11px] font-medium text-destructive hover:bg-destructive/10 transition cursor-pointer disabled:opacity-50"
-                  >
-                    Retry
-                  </button>
-                </div>
-              ) : diagnostics ? (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <div className="p-3 rounded-lg border border-border bg-muted/20">
-                      <span className="text-[9px] font-bold uppercase text-muted-foreground block">Server Process Uptime</span>
-                      <span className="text-sm font-semibold text-foreground mt-0.5 block">{Math.floor(diagnostics.process?.uptime || 0)}s</span>
-                    </div>
-                    <div className="p-3 rounded-lg border border-border bg-muted/20">
-                      <span className="text-[9px] font-bold uppercase text-muted-foreground block">Heap Memory Used</span>
-                      <span className="text-sm font-semibold text-foreground mt-0.5 block">{diagnostics.process?.memoryUsageMb?.heapUsed || 0} MB</span>
-                    </div>
-                    <div className="p-3 rounded-lg border border-border bg-muted/20">
-                      <span className="text-[9px] font-bold uppercase text-muted-foreground block">Active Browser Sessions</span>
-                      <span className="text-sm font-semibold text-foreground mt-0.5 block">{diagnostics.activeSessionsCount || 0}</span>
-                    </div>
-                    <div className="p-3 rounded-lg border border-border bg-muted/20">
-                      <span className="text-[9px] font-bold uppercase text-muted-foreground block">Active Background Cron Jobs</span>
-                      <span className="text-sm font-semibold text-foreground mt-0.5 block">{diagnostics.activeCronJobsCount || 0}</span>
-                    </div>
-                  </div>
-
-                  <div className="p-3 rounded-lg border border-border bg-muted/20 space-y-1.5 text-xs">
-                    <span className="text-[9px] font-bold uppercase text-muted-foreground block">Storage & Database Metrics</span>
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>Screenshot Cache Files:</span>
-                      <span className="font-semibold text-foreground">{diagnostics.storageStats?.screenshotFiles || 0}</span>
-                    </div>
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>Configured Task Schedules:</span>
-                      <span className="font-semibold text-foreground">{diagnostics.storageStats?.totalSchedules || 0}</span>
-                    </div>
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>Historical Task Runs logged:</span>
-                      <span className="font-semibold text-foreground">{diagnostics.storageStats?.totalTaskRuns || 0}</span>
-                    </div>
-                  </div>
-
-                  <div className="p-3 rounded-lg border border-border bg-muted/20 text-xs flex justify-between items-center">
-                    <span className="text-[9px] font-bold uppercase text-muted-foreground">Host System Platform</span>
-                    <span className="font-mono text-[10px] text-foreground bg-background px-2 py-0.5 rounded border border-border">
-                      {diagnostics.system?.platform} ({diagnostics.system?.cpus} cores)
-                    </span>
-                  </div>
-
-                  <div className="pt-2 flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          await fetch('/api/browser/close', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ sessionId: 'all' })
-                          });
-                          fetchDiagnostics();
-                        } catch (err) {
-                          console.error('Failed to close idle browser sessions', err);
-                        }
-                      }}
-                      className="px-3 py-1.5 rounded-md border border-input bg-background hover:bg-accent text-[11px] font-medium text-foreground transition cursor-pointer"
-                    >
-                      Clean Idle Browser Sessions
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
           )}
         </div>
-
         <div className="flex items-center justify-end border-t border-border bg-muted/40 px-5 py-3.5 gap-2.5">
           <button
             onClick={onClose}

@@ -82,12 +82,6 @@ export const Composer: React.FC<ComposerProps> = ({
     return prompt ? prompt.name : 'General Assistant';
   };
 
-  const toggleSearch = () => {
-    const nextSearch = !settings.isRagEnabled;
-    const updatedSettings = { ...settings, isRagEnabled: nextSearch };
-    Storage.saveSettings(updatedSettings);
-    onSettingsChanged?.(updatedSettings);
-  };
 
   const toggleWebSearch = () => {
     const nextWebSearch = !settings.isWebSearchEnabled;
@@ -486,7 +480,7 @@ export const Composer: React.FC<ComposerProps> = ({
                 aria-expanded={toolsDropdownOpen}
                 aria-haspopup="menu"
                 className={`flex h-7 px-2.5 items-center gap-1.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                  settings.isRagEnabled || settings.isWebSearchEnabled || settings.isBrowserAgentEnabled
+                  settings.isWebSearchEnabled || settings.isBrowserAgentEnabled
                     ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/95'
                     : 'border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
                 }`}
@@ -502,18 +496,6 @@ export const Composer: React.FC<ComposerProps> = ({
                     <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border mb-1">
                       Context Tools
                     </div>
-                    <button
-                      role="menuitem"
-                      type="button"
-                      onClick={() => { toggleSearch(); setToolsDropdownOpen(false); }}
-                      className={`flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
-                        settings.isRagEnabled ? 'bg-accent text-accent-foreground font-semibold' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                      }`}
-                    >
-                      <Search className="h-3.5 w-3.5" />
-                      <span className="flex-1">Docs (RAG)</span>
-                      {settings.isRagEnabled && <Check className="h-3.5 w-3.5 text-primary" />}
-                    </button>
                     <button
                       role="menuitem"
                       type="button"
@@ -543,22 +525,6 @@ export const Composer: React.FC<ComposerProps> = ({
               )}
             </div>
 
-            {/* Docs (RAG) Toggle — md+ */}
-            <button
-              type="button"
-              onClick={toggleSearch}
-              title={settings.isRagEnabled ? "Disable Local Docs context (RAG)" : "Enable Local Docs context (RAG)"}
-              aria-label="Toggle Docs RAG"
-              aria-pressed={settings.isRagEnabled}
-              className={`hidden md:flex h-7 items-center gap-1.5 rounded-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                settings.isRagEnabled
-                  ? 'px-2 border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
-                  : 'w-7 justify-center border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
-              }`}
-            >
-              <Search className="h-3.5 w-3.5" />
-              {settings.isRagEnabled && <span className="text-[10px] font-semibold">Docs</span>}
-            </button>
 
             {/* Web Search Toggle — md+ */}
             <button
@@ -727,7 +693,7 @@ export const Composer: React.FC<ComposerProps> = ({
         </div>
       </div>
 
-      {/* Micro-telemetry display */}
+      {/* Audio recording status indicator */}
       {isRecording && (
         <div className="mt-1.5 flex items-center px-2 text-[9px] font-bold tracking-wide select-none animate-fade-in min-h-[14px]">
           <span className="flex items-center gap-1 text-destructive">

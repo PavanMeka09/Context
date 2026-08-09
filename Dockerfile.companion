@@ -19,8 +19,7 @@ WORKDIR /app
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Companion only needs server runtime deps — avoid installing the full
-# frontend tree (@huggingface/transformers / onnxruntime-node, React, etc.)
+ # Companion only needs server runtime deps — avoid installing the full frontend tree
 COPY package.json ./
 RUN node -e "\
 const fs=require('fs');\

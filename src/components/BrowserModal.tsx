@@ -50,6 +50,9 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
   isBrowserAgentRunning,
   onShowToast
 }) => {
+  const showErrorToast = useCallback((err: unknown, defaultMessage: string) => {
+    onShowToast?.(err instanceof Error ? err.message : defaultMessage, 'error');
+  }, [onShowToast]);
   const [sessionId, setSessionId] = useState<string>(initialSessionId || 'interactive');
   const [prevInitialSessionId, setPrevInitialSessionId] = useState(initialSessionId);
   const [browserState, setBrowserState] = useState<BrowserState | null>(null);
@@ -318,7 +321,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       setSelectedElement(null);
       setTypeText('');
     } catch (err: unknown) {
-      onShowToast?.(err instanceof Error ? err.message : 'Failed to complete action', 'error');
+      showErrorToast(err, 'Failed to complete action');
     } finally {
       setActionLoading(false);
     }
@@ -336,7 +339,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       if (!res.ok) throw new Error('Failed to switch tab');
       await fetchBrowserState(false);
     } catch (err) {
-      onShowToast?.(err instanceof Error ? err.message : 'Failed to switch tab', 'error');
+      showErrorToast(err, 'Failed to switch tab');
     } finally {
       setActionLoading(false);
     }
@@ -354,7 +357,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       if (!res.ok) throw new Error('Failed to close tab');
       await fetchBrowserState(false);
     } catch (err) {
-      onShowToast?.(err instanceof Error ? err.message : 'Failed to close tab', 'error');
+      showErrorToast(err, 'Failed to close tab');
     } finally {
       setActionLoading(false);
     }
@@ -371,7 +374,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       if (!res.ok) throw new Error('Failed to create tab');
       await fetchBrowserState(false);
     } catch (err) {
-      onShowToast?.(err instanceof Error ? err.message : 'Failed to create tab', 'error');
+      showErrorToast(err, 'Failed to create tab');
     } finally {
       setActionLoading(false);
     }
@@ -465,7 +468,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       setSelectedElement(null);
       setTypeText('');
     } catch (err: unknown) {
-      onShowToast?.(err instanceof Error ? err.message : 'Failed to execute click', 'error');
+      showErrorToast(err, 'Failed to execute click');
     } finally {
       setActionLoading(false);
     }
@@ -869,7 +872,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                     </div>
                   )}
 
-                  {/* Status telemetry footer */}
+                  {/* Browser state info footer */}
                   {browserState && (
                     <div className="mt-4 flex items-center gap-4 text-[10.5px] text-muted-foreground font-mono">
                       <span className="truncate max-w-[280px]">

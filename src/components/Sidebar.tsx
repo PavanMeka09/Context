@@ -34,10 +34,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onThemeChanged
 }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [tempTitle, setTempTitle] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [mounted, setMounted] = useState(false);
-
   React.useEffect(() => {
     const timer = window.setTimeout(() => setMounted(true), 50);
     return () => window.clearTimeout(timer);
@@ -45,6 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const startEditing = (chat: Chat, e: React.MouseEvent) => {
     e.stopPropagation();
+    setConfirmDeleteId(null);
     setEditingId(chat.id);
     setTempTitle(chat.title);
   };
@@ -57,12 +58,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setEditingId(null);
   };
 
-  const getProviderLabel = () => {
-    if (settings.provider === 'gemini') return 'Gemini';
-    if (settings.provider === 'ollama') return 'Ollama';
-    if (settings.provider === 'openai') return 'OpenAI';
-    return 'OpenRouter';
-  };
 
   const getModelLabel = () => {
     const parts = settings.model.split('/');
@@ -195,8 +190,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <>
                     <button
                       type="button"
-                      onClick={() => onSelectChat(chat.id)}
-                      className="flex w-full items-center gap-2 min-w-0 px-3 py-2 pr-16 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-md"
+                      onClick={() => {
+                        if (confirmDeleteId) setConfirmDeleteId(null);
+                        onSelectChat(chat.id);
+                      }}
+                      className={`flex w-full items-center gap-2 min-w-0 px-3 py-2 ${confirmDeleteId === chat.id ? 'pr-28' : 'pr-16'} text-left cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-md`}
                       aria-current={isActive ? 'page' : undefined}
                     >
                       <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
@@ -204,28 +202,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </button>
 
                     {/* Actions: visible on hover, focus-within, and touch */}
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200">
-                      <button
-                        type="button"
-                        onClick={(e) => startEditing(chat, e)}
-                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        title="Rename chat"
-                        aria-label={`Rename chat ${chat.title}`}
-                      >
-                        <Edit2 className="h-3 w-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteChat(chat.id);
-                        }}
-                        className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        title="Delete chat"
-                        aria-label={`Delete chat ${chat.title}`}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
+                    <div className={`absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 ${confirmDeleteId === chat.id ? 'opacity-100 z-10' : 'opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100'} transition-opacity duration-200`}>
+                      {confirmDeleteId === chat.id ? (
+                        <div className="flex items-center gap-1 bg-background/95 border border-destructive/30 rounded px-1.5 py-0.5 shadow-sm select-none">
+                          <span className="text-[10px] font-medium text-destructive">Delete?</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteChat(chat.id);
+                              setConfirmDeleteId(null);
+                            }}
+                            className="rounded p-0.5 text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            title="Confirm delete"
+                            aria-label={`Confirm delete chat ${chat.title}`}
+                          >
+                            <Check className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeleteId(null);
+                            }}
+                            className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            title="Cancel"
+                            aria-label="Cancel delete chat"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={(e) => startEditing(chat, e)}
+                            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            title="Rename chat"
+                            aria-label={`Rename chat ${chat.title}`}
+                          >
+                            <Edit2 className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeleteId(chat.id);
+                            }}
+                            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            title="Delete chat"
+                            aria-label={`Delete chat ${chat.title}`}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </>
                 )}
@@ -242,7 +273,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="min-w-0 pr-2 select-none">
           <div className="flex items-center gap-1">
             <div className="h-1.5 w-1.5 rounded-full bg-primary" />
-            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest truncate">{getProviderLabel()}</span>
+            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest truncate">Gemini</span>
           </div>
           <span className="text-[10px] font-semibold text-foreground truncate block mt-[2px]" title={settings.model}>
             {getModelLabel()}

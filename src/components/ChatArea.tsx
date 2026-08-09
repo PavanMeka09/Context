@@ -2,8 +2,8 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import type { Chat, Message } from '../utils/storage';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { BrowserLiveView } from './BrowserLiveView';
-import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, CheckSquare, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Compass, Volume2, VolumeX, Download, Activity } from 'lucide-react';
-import type { SearxngResult } from '../utils/searxng';
+import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, CheckSquare, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Compass, Volume2, VolumeX, Download } from 'lucide-react';
+import { cleanSnippetText, type SearxngResult } from '../utils/searxng';
 
 function parseThinkingAndContent(content: string): { thinking: string | null; content: string } {
   const thinkingMatch = content.match(/<(?:thinking|thought)>([\s\S]*?)<\/(?:thinking|thought)>/i);
@@ -31,6 +31,7 @@ interface SearchStatus {
   cleanContent: string;
 }
 
+
 function parseSearchStatus(content: string): SearchStatus {
   const tagRegex = /<search_status\s+query="([^"]*)"\s+status="([^"]*)"(?:\s+error="([^"]*)")?>([\s\S]*?)<\/search_status>/i;
   let match = content.match(tagRegex);
@@ -47,9 +48,9 @@ function parseSearchStatus(content: string): SearchStatus {
     
     return {
       hasSearch: true,
-      query: match[1],
+      query: cleanSnippetText(match[1]),
       status: match[2] as 'searching' | 'scraping' | 'done' | 'failed',
-      error: match[3] || null,
+      error: match[3] ? cleanSnippetText(match[3]) : null,
       results,
       cleanContent: content.replace(tagRegex, '').trim()
     };
@@ -60,9 +61,9 @@ function parseSearchStatus(content: string): SearchStatus {
   if (match) {
     return {
       hasSearch: true,
-      query: match[1],
+      query: cleanSnippetText(match[1]),
       status: match[2] as 'searching' | 'scraping' | 'done' | 'failed',
-      error: match[3] || null,
+      error: match[3] ? cleanSnippetText(match[3]) : null,
       results: [],
       cleanContent: content.replace(selfClosingRegex, '').trim()
     };
@@ -78,65 +79,6 @@ function parseSearchStatus(content: string): SearchStatus {
   };
 }
 
-interface RagStatus {
-  hasRag: boolean;
-  query: string;
-  status: 'searching' | 'loading_model' | 'done' | 'failed';
-  progress: number;
-  error: string | null;
-  results: { docName: string; score: number; text: string }[];
-  cleanContent: string;
-}
-
-function parseRagStatus(content: string): RagStatus {
-  const tagRegex = /<rag_status\s+query="([^"]*)"\s+status="([^"]*)"(?:\s+progress="([^"]*)")?(?:\s+error="([^"]*)")?>([\s\S]*?)<\/rag_status>/i;
-  let match = content.match(tagRegex);
-  
-  if (match) {
-    let results: { docName: string; score: number; text: string }[] = [];
-    try {
-      if (match[5].trim()) {
-        results = JSON.parse(match[5].trim());
-      }
-    } catch (e) {
-      console.error('Failed to parse RAG results JSON:', e);
-    }
-    
-    return {
-      hasRag: true,
-      query: match[1],
-      status: match[2] as RagStatus['status'],
-      progress: match[3] ? parseInt(match[3], 10) : 0,
-      error: match[4] || null,
-      results,
-      cleanContent: content.replace(tagRegex, '').trim()
-    };
-  }
-
-  const selfClosingRegex = /<rag_status\s+query="([^"]*)"\s+status="([^"]*)"(?:\s+progress="([^"]*)")?(?:\s+error="([^"]*)")?\s*\/>/i;
-  match = content.match(selfClosingRegex);
-  if (match) {
-    return {
-      hasRag: true,
-      query: match[1],
-      status: match[2] as RagStatus['status'],
-      progress: match[3] ? parseInt(match[3], 10) : 0,
-      error: match[4] || null,
-      results: [],
-      cleanContent: content.replace(selfClosingRegex, '').trim()
-    };
-  }
-
-  return {
-    hasRag: false,
-    query: '',
-    status: 'searching',
-    progress: 0,
-    error: null,
-    results: [],
-    cleanContent: content
-  };
-}
 
 interface QuestionDetails {
   hasQuestion: boolean;
@@ -546,152 +488,6 @@ export const SearchStatusBadge: React.FC<SearchStatusBadgeProps> = ({
   );
 };
 
-interface RagStatusBadgeProps {
-  query: string;
-  status: 'searching' | 'loading_model' | 'done' | 'failed';
-  progress: number;
-  error: string | null;
-  results: { docName: string; score: number; text: string }[];
-}
-
-export const RagStatusBadge: React.FC<RagStatusBadgeProps> = ({
-  query,
-  status,
-  progress,
-  error,
-  results
-}) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  if (status === 'loading_model') {
-    return (
-      <div className="mb-4 rounded-md border border-border bg-muted/40 p-3.5 animate-fade-in select-none">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-6 w-6 items-center justify-center rounded bg-accent text-accent-foreground border border-border">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                Local RAG Model Initialization
-              </span>
-              <span className="text-xs font-medium text-foreground leading-snug">
-                Downloading embeddings model weights (~23MB)...
-              </span>
-            </div>
-          </div>
-          <div className="space-y-1 pl-9">
-            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-              <div 
-                className="h-full bg-primary transition-all duration-300" 
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <div className="flex justify-between text-[8px] font-bold text-primary">
-              <span>DOWNLOADING LOCAL EMBEDDINGS MODEL</span>
-              <span>{progress}%</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (status === 'searching') {
-    return (
-      <div className="mb-4 rounded-md border border-border bg-muted/40 p-3.5 animate-fade-in select-none">
-        <div className="flex items-center gap-3">
-          <div className="relative flex h-6 w-6 items-center justify-center rounded bg-accent text-accent-foreground border border-border">
-            <Database className="h-3.5 w-3.5 animate-pulse text-primary" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              Local Semantic Memory Active
-            </span>
-            <span className="text-xs font-medium text-foreground leading-snug">
-              Searching local vector database for "{query}"...
-            </span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (status === 'failed') {
-    return (
-      <div className="mb-4 rounded-md border border-destructive/20 bg-destructive/10 p-3.5 animate-fade-in select-none">
-        <div className="flex items-center gap-3 text-destructive">
-          <div className="flex h-6 w-6 items-center justify-center rounded bg-destructive/10 border border-destructive/20">
-            <AlertTriangle className="h-3.5 w-3.5" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Semantic Search Failed</span>
-            <span className="text-xs font-medium leading-snug">
-              Could not search local files for "{query}" • <span className="font-mono text-[10.5px]">{error || 'Unknown issue'}</span>
-            </span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const hasResults = results && results.length > 0;
-
-  return (
-    <div className="mb-4 rounded-md border border-border bg-muted/30 p-2.5 animate-fade-in select-none">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="flex h-6 w-6 items-center justify-center rounded bg-muted border border-border text-foreground">
-            <Check className="h-3.5 w-3.5 text-primary" strokeWidth={2.5} />
-          </div>
-          <div className="flex flex-col min-w-0">
-            <span className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground leading-none">Semantic Match Completed</span>
-            <span className="text-xs font-medium text-foreground truncate mt-1">
-              Retrieved relevant context from local files
-            </span>
-          </div>
-        </div>
-
-        {hasResults && (
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="flex items-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent text-[10px] font-semibold text-muted-foreground hover:text-accent-foreground px-2.5 py-1.5 transition active:scale-95 cursor-pointer shrink-0"
-          >
-            <span>Documents ({results.length})</span>
-            <ChevronDown className={`h-3 w-3 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
-          </button>
-        )}
-      </div>
-
-      {/* Expanded Sources Grid */}
-      {isExpanded && hasResults && (
-        <div className="mt-3 border-t border-border pt-3 animate-fade-in">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {results.map((r, idx) => (
-              <div
-                key={idx}
-                className="group flex flex-col justify-between rounded-md border border-border bg-card p-3 transition-all duration-200"
-              >
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex items-center gap-1.5 text-[9.5px] font-bold text-muted-foreground uppercase tracking-wide">
-                    <FileText className="h-3 w-3 text-primary" />
-                    <span className="truncate max-w-[150px]">{r.docName}</span>
-                  </div>
-                  <span className="text-[11px] text-foreground leading-relaxed line-clamp-3 select-text font-sans bg-muted/20 p-2 rounded border border-border/50">
-                    {r.text}
-                  </span>
-                </div>
-                <div className="mt-2 flex items-center justify-between text-[9px] text-muted-foreground leading-none">
-                  <span>Match Score: <span className="font-semibold text-primary">{(r.score * 100).toFixed(0)}%</span></span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
 
 interface ChatAreaProps {
   chat: Chat | null;
@@ -704,7 +500,6 @@ interface ChatAreaProps {
   onToggleSidebar: () => void;
   onSwitchBranch?: (messageId: string) => void;
   onOpenBrowserModal?: (sessionId?: string) => void;
-  onOpenAnalytics?: () => void;
   settings?: { provider: string; model: string };
   children?: React.ReactNode;
 }
@@ -720,7 +515,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onToggleSidebar,
   onSwitchBranch,
   onOpenBrowserModal,
-  onOpenAnalytics,
   settings,
   children
 }) => {
@@ -744,7 +538,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     const cleanText = text
       .replace(/<(?:thinking|thought)>[\s\S]*?<\/(?:thinking|thought)>/gi, '')
       .replace(/<search_status[\s\S]*?<\/search_status>/gi, '')
-      .replace(/<rag_status[\s\S]*?<\/rag_status>/gi, '')
       .replace(/<ask_question[\s\S]*?<\/ask_question>/gi, '')
       .trim();
 
@@ -868,10 +661,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
   const getProviderLabel = () => {
     if (!settings) return null;
-    if (settings.provider === 'gemini') return 'Gemini';
-    if (settings.provider === 'ollama') return 'Ollama';
-    if (settings.provider === 'openai') return 'OpenAI';
-    return 'OpenRouter';
+    return 'Gemini';
   };
 
   const getModelLabel = () => {
@@ -953,17 +743,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </div>
           )}
 
-          {onOpenAnalytics && (
-            <button
-              onClick={onOpenAnalytics}
-              className="flex items-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground p-2 sm:px-2.5 sm:py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              title="System Diagnostics & Telemetry"
-              aria-label="System Diagnostics & Telemetry"
-            >
-              <Activity className="h-3.5 w-3.5 text-chart-2" />
-              <span className="hidden md:inline">Telemetry</span>
-            </button>
-          )}
 
           {onOpenBrowserModal && (
             <button
@@ -1252,30 +1031,30 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                         ) : (
                           <div className="flex flex-col w-full">
                             {(() => {
-                              const { hasRag, query: ragQuery, status: ragStatus, progress: ragProgress, error: ragError, results: ragResults, cleanContent: ragCleanContent } = parseRagStatus(msg.content);
-                              const { hasSearch, query, status, error, results, cleanContent: searchCleanContent } = parseSearchStatus(ragCleanContent);
+                              const searchMeta = msg.metadata?.search;
+                              const hasMetaSearch = Boolean(searchMeta && searchMeta.shouldSearch && searchMeta.results && searchMeta.results.length > 0);
+                              const { hasSearch: hasLegacySearch, query: legacyQuery, status: legacyStatus, error: legacyError, results: legacyResults, cleanContent: searchCleanContent } = parseSearchStatus(msg.content);
                               const { thinking, content: thinkingCleanContent } = parseThinkingAndContent(searchCleanContent);
                               const { hasQuestion, question, options, allowCustom, allowSkip, cleanContent } = parseQuestion(thinkingCleanContent);
                               const isStreamingThinking = index === chat.messages.length - 1 && isGenerating && !msg.content.includes('</thinking>') && msg.content.includes('<thinking>');
                               
+                              const finalHasSearch = hasMetaSearch || hasLegacySearch;
+                              const finalSearchQuery = hasMetaSearch ? searchMeta!.query : legacyQuery;
+                              const finalSearchStatus = hasMetaSearch ? 'done' : legacyStatus;
+                              const finalSearchError = hasMetaSearch ? (searchMeta!.error || null) : legacyError;
+                              const finalSearchResults = hasMetaSearch
+                                ? searchMeta!.results.map(r => ({ title: r.title, url: r.url, content: r.snippet }))
+                                : legacyResults;
+                              
                               return (
                                 <>
-                                  {hasRag && (
-                                    <RagStatusBadge
-                                      query={ragQuery}
-                                      status={ragStatus}
-                                      progress={ragProgress}
-                                      error={ragError}
-                                      results={ragResults}
-                                    />
-                                  )}
 
-                                  {hasSearch && (
+                                  {finalHasSearch && (
                                     <SearchStatusBadge
-                                      query={query}
-                                      status={status}
-                                      error={error}
-                                      results={results}
+                                      query={finalSearchQuery}
+                                      status={finalSearchStatus}
+                                      error={finalSearchError}
+                                      results={finalSearchResults}
                                     />
                                   )}
 

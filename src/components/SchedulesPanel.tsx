@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   X, Calendar, Clock, Play, Trash2, Plus, 
   ToggleLeft, ToggleRight, CheckCircle2, AlertTriangle, Loader2,
@@ -147,23 +147,22 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
     }
   };
 
-  const fetchSchedules = async () => {
+  const fetchSchedules = useCallback(async () => {
     try {
-      setFetchError(null);
       const res = await fetch('/api/schedules');
       if (res.ok) {
         const data = await res.json();
         setSchedules(data);
       } else {
-        setFetchError(`Failed to load schedules (${res.status})`);
+        setFetchError('Failed to fetch schedules.');
       }
     } catch (e) {
       console.error('Failed to load schedules', e);
       setFetchError('Failed to load schedules. Is the server running?');
     }
-  };
+  }, []);
 
-  const fetchRuns = async () => {
+  const fetchRuns = useCallback(async () => {
     try {
       const res = await fetch('/api/schedules/runs');
       if (res.ok) {
@@ -173,14 +172,14 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
     } catch (e) {
       console.error('Failed to load runs history', e);
     }
-  };
+  }, []);
 
-  const loadPanelData = async () => {
+  const loadPanelData = useCallback(async () => {
     setIsFetching(true);
     setFetchError(null);
     await Promise.all([fetchSchedules(), fetchRuns()]);
     setIsFetching(false);
-  };
+  }, [fetchSchedules, fetchRuns]);
 
   // Listen for real-time run updates via custom SSE events
   useEffect(() => {
@@ -213,7 +212,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
     return () => {
       window.removeEventListener('context-live-event', handleLiveEvent);
     };
-  }, [isOpen]);
+  }, [isOpen, fetchSchedules]);
 
   // Poll for runs log history when panel is open (heartbeat fallback)
   useEffect(() => {
@@ -231,7 +230,7 @@ export const SchedulesPanel: React.FC<SchedulesPanelProps> = ({
         clearInterval(interval);
       };
     }
-  }, [isOpen]);
+  }, [isOpen, loadPanelData, fetchRuns]);
 
   const handleCancelRun = async (runId: string) => {
     try {

@@ -48,6 +48,11 @@ const {
   executeCode
 } = require('./server/executor.cjs');
 
+const {
+  searchAndFormat,
+  testConnection: testSearchConnection
+} = require('./server/webSearchEngine.cjs');
+
 // Auto-detect python command interpreter on server boot
 detectPythonCommand();
 
@@ -104,57 +109,32 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Endpoint: Comprehensive System Diagnostics & Telemetry
-app.get('/api/system/stats', (req, res) => {
+// Endpoint: Web Search Engine (unified search execution)
+app.post('/api/search', async (req, res) => {
   try {
-    const memory = process.memoryUsage();
-    const systemMem = {
-      total: os.totalmem(),
-      free: os.freemem(),
-      platform: os.platform(),
-      cpus: os.cpus().length
-    };
-
-    let screenshotCount = 0;
-    const screenshotDir = path.join(DATA_DIR, 'screenshots');
-    if (fs.existsSync(screenshotDir)) {
-      screenshotCount = fs.readdirSync(screenshotDir).length;
+    const { query, forceSearch, customUrl } = req.body;
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'Query string is required' });
     }
-
-    let schedulesCount = 0;
-    const schedules = readJSON(PATHS.schedules, []);
-    if (Array.isArray(schedules)) schedulesCount = schedules.length;
-
-    let runsCount = 0;
-    const runs = readJSON(PATHS.runs, []);
-    if (Array.isArray(runs)) runsCount = runs.length;
-
-    res.json({
-      success: true,
-      timestamp: new Date().toISOString(),
-      process: {
-        uptime: process.uptime(),
-        memoryUsageMb: {
-          rss: Math.round(memory.rss / (1024 * 1024)),
-          heapTotal: Math.round(memory.heapTotal / (1024 * 1024)),
-          heapUsed: Math.round(memory.heapUsed / (1024 * 1024)),
-          external: Math.round(memory.external / (1024 * 1024))
-        }
-      },
-      system: systemMem,
-      activeSessionsCount: sessions.size,
-      activeBrowserAgentsCount: activeBrowserAgents.size,
-      activeCronJobsCount: activeCronJobs.size,
-      storageStats: {
-        screenshotFiles: screenshotCount,
-        totalSchedules: schedulesCount,
-        totalTaskRuns: runsCount
-      }
-    });
+    const searchResult = await searchAndFormat(query, { forceSearch, customUrl });
+    res.json(searchResult);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('API Search endpoint error:', err);
+    res.status(500).json({ error: err.message || 'Web search execution failed' });
   }
 });
+
+// Endpoint: Web Search Engine Ping Test
+app.post('/api/search/test', async (req, res) => {
+  try {
+    const { customUrl } = req.body;
+    const testResult = await testSearchConnection(customUrl);
+    res.json(testResult);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
 // Register process hooks for graceful shutdown
 async function gracefulShutdown() {

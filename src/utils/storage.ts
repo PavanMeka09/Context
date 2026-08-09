@@ -24,6 +24,26 @@ export interface BrowserSessionData {
   screenshotTimestamp: number;
 }
 
+export interface SearchResultItem {
+  title: string;
+  url: string;
+  snippet: string;
+  favicon?: string;
+}
+
+export interface SearchExecutionResult {
+  shouldSearch: boolean;
+  query: string;
+  contextText: string;
+  results: SearchResultItem[];
+  source: 'searxng' | 'wikipedia' | 'bypassed' | 'none';
+  error?: string;
+}
+
+export interface MessageMetadata {
+  search?: SearchExecutionResult;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -31,6 +51,7 @@ export interface Message {
   timestamp: string;
   attachments?: Attachment[];
   browserSession?: BrowserSessionData;
+  metadata?: MessageMetadata;
 }
 
 export interface MessageNode {
@@ -42,6 +63,7 @@ export interface MessageNode {
   children: string[];
   attachments?: Attachment[];
   browserSession?: BrowserSessionData;
+  metadata?: MessageMetadata;
 }
 
 export interface Chat {
@@ -78,11 +100,10 @@ export interface TaskSchedule {
 }
 
 export interface Settings {
-  provider: 'gemini' | 'openrouter' | 'ollama' | 'openai';
+  provider: 'gemini';
   apiKey: string;
   model: string;
   localUrl?: string;
-  isRagEnabled?: boolean;
   isWebSearchEnabled?: boolean;
   searxngUrl?: string;
   thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
@@ -144,15 +165,6 @@ export const FALLBACK_GEMINI_MODELS = [
   { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite' }
 ];
 
-export const FALLBACK_OPENROUTER_MODELS = [
-  { id: 'google/gemini-3.6-flash', name: 'Google: Gemini 3.6 Flash' },
-  { id: 'google/gemini-3.5-flash', name: 'Google: Gemini 3.5 Flash' },
-  { id: 'google/gemini-2.5-flash', name: 'Google: Gemini 2.5 Flash' },
-  { id: 'google/gemini-2.5-pro', name: 'Google: Gemini 2.5 Pro' },
-  { id: 'meta-llama/llama-3-8b-instruct:free', name: 'Llama 3 8B Instruct (Free)' },
-  { id: 'anthropic/claude-3.5-sonnet', name: 'Anthropic: Claude 3.5 Sonnet' },
-  { id: 'deepseek/deepseek-chat', name: 'DeepSeek: DeepSeek V3' }
-];
 
 // Keys
 const KEYS = {
@@ -278,19 +290,11 @@ export const Storage = {
       const data = localStorage.getItem(KEYS.SETTINGS);
       if (data) {
         const parsed = JSON.parse(data);
-        if (parsed && (parsed.provider as string === 'anthropic' || parsed.provider as string === 'mock')) {
+        if (parsed) {
           parsed.provider = 'gemini';
-          parsed.model = 'gemini-3.6-flash';
-        }
-
-        if (parsed && !parsed.localUrl) {
-          parsed.localUrl = 'http://localhost:11434/v1';
-        }
-        if (parsed && parsed.isRagEnabled === undefined) {
-          parsed.isRagEnabled = false;
-        }
-        if (parsed && parsed.isWebSearchEnabled === undefined) {
-          parsed.isWebSearchEnabled = false;
+          if (!parsed.model || !parsed.model.includes('gemini')) {
+            parsed.model = 'gemini-3.6-flash';
+          }
         }
         if (parsed && parsed.searxngUrl === undefined) {
           parsed.searxngUrl = '';
@@ -313,8 +317,6 @@ export const Storage = {
       provider: 'gemini',
       apiKey: '',
       model: 'gemini-3.6-flash',
-      localUrl: 'http://localhost:11434/v1',
-      isRagEnabled: false,
       isWebSearchEnabled: false,
       searxngUrl: '',
       thinkingLevel: 'off',

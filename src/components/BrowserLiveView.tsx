@@ -34,7 +34,7 @@ export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
   sessionId,
   onInteract
 }) => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
 
   const handlePause = async (e: React.MouseEvent) => {

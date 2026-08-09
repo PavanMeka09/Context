@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classifySearchHeuristically, formatSearxngResults, getFaviconUrl } from '../searxng';
+import { classifySearchHeuristically, formatSearxngResults, getFaviconUrl, cleanSnippetText } from '../searxng';
 import type { SearxngResult } from '../searxng';
 
 describe('src/utils/searxng.ts', () => {
@@ -35,6 +35,28 @@ describe('src/utils/searxng.ts', () => {
       const res = classifySearchHeuristically('what is the latest stock price of Apple?');
       expect(res.shouldSearch).toBe(true);
       expect(res.searchQuery).toBe('what is the latest stock price of Apple');
+      expect(res.searchQuery).toBe('what is the latest stock price of Apple');
+    });
+
+    it('should preserve programming symbols and operators in search queries', () => {
+      const cppRes = classifySearchHeuristically('how to write a C++ function?');
+      expect(cppRes.shouldSearch).toBe(true);
+      expect(cppRes.searchQuery).toBe('how to write a C++ function');
+
+      const csharpRes = classifySearchHeuristically('what is C# language?');
+      expect(csharpRes.shouldSearch).toBe(true);
+      expect(csharpRes.searchQuery).toBe('what is C# language');
+
+      const siteRes = classifySearchHeuristically('site:github.com React hooks');
+      expect(siteRes.shouldSearch).toBe(true);
+      expect(siteRes.searchQuery).toBe('site:github.com React hooks');
+    });
+  });
+
+  describe('cleanSnippetText', () => {
+    it('should strip HTML tags and decode HTML entities', () => {
+      const raw = '<p>Hello &quot;world&quot; &amp; &lt;friends&gt; &#039;test&#039;</p>';
+      expect(cleanSnippetText(raw)).toBe('Hello "world" & <friends> \'test\'');
     });
   });
 
