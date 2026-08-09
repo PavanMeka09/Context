@@ -1064,27 +1064,26 @@ interface SyncEvent {
     Storage.saveChat(updatedChat);
   };
 
-  // Message Regeneration: Truncate last assistant reply and retry
-  const handleRegenerateResponse = async () => {
+  // Message Regeneration: Retry completion from specified message or active leaf
+  const handleRegenerateResponse = async (targetMessageId?: string) => {
     if (!activeChatId || isGenerating) return;
 
     const chatIndex = chats.findIndex(c => c.id === activeChatId);
     if (chatIndex === -1) return;
 
     const activeChat = upgradeChatToTree(chats[chatIndex]);
-    const lastMsgId = activeChat.activeLeafId;
-    if (!lastMsgId) return;
-
+    const targetId = targetMessageId ?? activeChat.activeLeafId;
+    if (!targetId) return;
     const tree = { ...activeChat.messageTree };
-    const lastNode = tree[lastMsgId];
-    if (!lastNode) return;
+    const targetNode = tree[targetId];
+    if (!targetNode) return;
 
     let parentId: string | null = null;
     
-    if (lastNode.role === 'assistant') {
-      parentId = lastNode.parentId; // The user message node that this responded to
-    } else if (lastNode.role === 'user') {
-      parentId = lastNode.id;
+    if (targetNode.role === 'assistant') {
+      parentId = targetNode.parentId; // The user message node that this responded to
+    } else if (targetNode.role === 'user') {
+      parentId = targetNode.id;
     }
 
     if (!parentId || !tree[parentId]) return;

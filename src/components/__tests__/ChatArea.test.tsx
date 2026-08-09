@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { ChatArea } from '../ChatArea';
 import type { Chat } from '../../utils/storage';
 
@@ -37,10 +37,21 @@ describe('ChatArea Component', () => {
     expect(screen.getByText('Hello user! How can I assist you today?')).toBeDefined();
   });
 
-  it('renders welcome view when chat has no messages', () => {
+  it('renders clean empty view when chat has no messages', () => {
     const emptyChat: Chat = { ...mockChat, messages: [] };
     render(<ChatArea {...defaultProps} chat={emptyChat} />);
 
-    expect(screen.getByText('how can I help you today?')).toBeDefined();
+    expect(screen.queryByText('how can I help you today?')).toBeNull();
+  });
+
+  it('triggers onRegenerateResponse with user message id when resend button is clicked', () => {
+    const onRegenerateResponse = vi.fn();
+    render(<ChatArea {...defaultProps} onRegenerateResponse={onRegenerateResponse} />);
+
+    const resendButtons = screen.getAllByTitle('Resend message');
+    expect(resendButtons.length).toBeGreaterThan(0);
+    
+    fireEvent.click(resendButtons[0]);
+    expect(onRegenerateResponse).toHaveBeenCalledWith('m1');
   });
 });

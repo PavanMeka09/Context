@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import type { Chat, Message } from '../utils/storage';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { BrowserLiveView } from './BrowserLiveView';
-import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, CheckSquare, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Compass, Volume2, VolumeX, Download } from 'lucide-react';
+import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Compass, Volume2, VolumeX, Download } from 'lucide-react';
 import { cleanSnippetText, type SearxngResult } from '../utils/searxng';
 
 function parseThinkingAndContent(content: string): { thinking: string | null; content: string } {
@@ -487,6 +487,26 @@ export const SearchStatusBadge: React.FC<SearchStatusBadgeProps> = ({
     </div>
   );
 };
+interface RegenerateButtonProps {
+  onClick: () => void;
+  disabled?: boolean;
+  title: string;
+}
+
+const RegenerateButton: React.FC<RegenerateButtonProps> = ({ onClick, disabled, title }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    className="rounded p-1 hover:bg-accent hover:text-foreground transition disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+    title={title}
+    aria-label={title}
+  >
+    <RotateCw className={`h-3.5 w-3.5 ${disabled ? 'animate-spin' : ''}`} />
+  </button>
+);
+const EmptyChatFeed: React.FC = () => null;
+
+
 
 
 interface ChatAreaProps {
@@ -495,7 +515,7 @@ interface ChatAreaProps {
   isGenerating: boolean;
   onEditMessage: (messageId: string, newContent: string) => void;
   onDeleteMessage: (messageId: string) => void;
-  onRegenerateResponse: () => void;
+  onRegenerateResponse: (messageId?: string) => void;
   isSidebarCollapsed: boolean;
   onToggleSidebar: () => void;
   onSwitchBranch?: (messageId: string) => void;
@@ -636,40 +656,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     setEditingMessageId(null);
   };
 
-  const starterPrompts = [
-    {
-      title: 'Summarize a document',
-      icon: <FileText className="h-3.5 w-3.5 text-foreground" />,
-      prompt: 'Help me summarize a long document into clear key points and action items. Ask me to paste the text or upload a file.'
-    },
-    {
-      title: 'Plan my week',
-      icon: <CheckSquare className="h-3.5 w-3.5 text-foreground" />,
-      prompt: 'Help me plan my week. Ask about my priorities, deadlines, and energy levels, then propose a realistic schedule.'
-    },
-    {
-      title: 'Explain hooks',
-      icon: <Terminal className="h-3.5 w-3.5 text-foreground" />,
-      prompt: 'Explain how React server-side streaming hooks work and why they improve UX. Provide a detailed code example.'
-    },
-    {
-      title: 'Draft a PRD',
-      icon: <HelpCircle className="h-3.5 w-3.5 text-foreground" />,
-      prompt: 'Draft a concise Product Requirements Document (PRD) template for a lightweight mobile-friendly notes app.'
-    }
-  ];
-
-  const getProviderLabel = () => {
-    if (!settings) return null;
-    return 'Gemini';
-  };
-
-  const getModelLabel = () => {
-    if (!settings?.model) return null;
-    const parts = settings.model.split('/');
-    return parts[parts.length - 1] || settings.model;
-  };
-
   return (
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-background text-foreground relative">
       
@@ -770,43 +756,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         className="flex-1 overflow-y-auto px-6 py-6 space-y-6 scrollbar-thin select-text"
       >
         {!chat || chat.messages.length === 0 ? (
-          
-          /* Welcomer Splash Welcomer */
-          <div className="mx-auto flex max-w-2xl flex-col items-center justify-center py-20 md:py-28 text-center animate-fade-in">
-            <h3 className="font-sans font-light text-3xl tracking-tight text-foreground">
-              how can I help you today?
-            </h3>
-            <p className="mt-2 text-xs text-muted-foreground font-medium select-none">
-              Your conversations are private and stored locally.
-            </p>
-
-            {settings && getProviderLabel() && (
-              <div className="mt-4 inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 py-1 text-[10px] font-medium text-muted-foreground select-none">
-                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                <span className="uppercase tracking-wider font-bold">{getProviderLabel()}</span>
-                <span className="text-border">·</span>
-                <span className="text-foreground font-semibold truncate max-w-[160px]">{getModelLabel()}</span>
-              </div>
-            )}
-
-            {/* suggestion chips */}
-            <div className="mt-8 flex flex-wrap justify-center gap-2 select-none max-w-lg">
-              {starterPrompts.map((card, i) => (
-                <button
-                  key={i}
-                  onClick={() => onSendMessage(card.prompt)}
-                  className="flex items-center gap-2 rounded-full border border-input bg-background hover:bg-accent hover:text-accent-foreground px-3.5 py-1.5 text-xs text-muted-foreground transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  {card.icon}
-                  <span>{card.title}</span>
-                </button>
-              ))}
-            </div>
-
-            <p className="mt-6 text-[10px] text-muted-foreground/80 select-none">
-              Press Enter to send · Shift+Enter for newline
-            </p>
-          </div>
+          <EmptyChatFeed />
         ) : (
           
           /* Borderless Message Feed */
@@ -976,7 +926,11 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                             >
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
-
+                            <RegenerateButton
+                              onClick={() => onRegenerateResponse(msg.id)}
+                              disabled={isGenerating}
+                              title="Resend message"
+                            />
                             <button
                               onClick={() => onDeleteMessage(msg.id)}
                               className="rounded p-1 hover:bg-accent hover:text-destructive transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -1194,15 +1148,11 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                             </button>
 
                             {index === chat.messages.length - 1 && (
-                              <button
-                                onClick={onRegenerateResponse}
+                              <RegenerateButton
+                                onClick={() => onRegenerateResponse(msg.id)}
                                 disabled={isGenerating}
-                                className="rounded p-1 hover:bg-accent hover:text-foreground transition disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                                 title="Regenerate response"
-                                aria-label="Regenerate response"
-                              >
-                                <RotateCw className={`h-3.5 w-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
-                              </button>
+                              />
                             )}
 
                             <button
