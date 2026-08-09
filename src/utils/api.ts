@@ -139,7 +139,7 @@ function formatModelMessages(messages: Message[]): ModelMessage[] {
     });
 }
 
-function getProviderOptions(thinkingLevel?: Settings['thinkingLevel'], model?: string, hasTools?: boolean): Record<string, Record<string, unknown>> | undefined {
+function getProviderOptions(thinkingLevel?: Settings['thinkingLevel'], model?: string, hasTools?: boolean) {
   if (hasTools) {
     return undefined;
   }
@@ -211,7 +211,7 @@ export async function streamChatCompletion(
           web_search: tool({
             description:
               'Search the web using SearXNG for real-time information, current facts, weather, news, or images. Formulate ONE clear, targeted search query per user request. Do NOT execute repeated or redundant web searches; synthesize the returned results directly to answer the user.',
-            parameters: webSearchToolParametersSchema,
+            inputSchema: webSearchToolParametersSchema,
             execute: async (args: WebSearchArgs) => {
               const query = extractWebSearchQuery(args);
               callbacks.onToolCall?.({ toolName: 'web_search', query });

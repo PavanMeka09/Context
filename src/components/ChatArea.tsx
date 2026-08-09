@@ -743,7 +743,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </div>
           )}
 
-
           {onOpenBrowserModal && (
             <button
               onClick={() => onOpenBrowserModal(chat?.id || undefined)}

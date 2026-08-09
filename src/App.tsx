@@ -96,6 +96,29 @@ function App() {
   // Refs for abort controllers and focus management
   const abortControllerRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const deletedChatsMapRef = useRef<Map<string, { chat: Chat; index: number }>>(new Map());
+
+  const handleRestoreChat = (id: string) => {
+    const entry = deletedChatsMapRef.current.get(id);
+    if (!entry) return;
+
+    const { chat: restoredChat, index } = entry;
+
+    setChats(prev => {
+      if (prev.some(c => c.id === id)) return prev;
+      const next = [...prev];
+      const targetIndex = Math.min(index, next.length);
+      next.splice(targetIndex, 0, restoredChat);
+      return next;
+    });
+
+    Storage.saveChat(restoredChat);
+    setActiveChatId(restoredChat.id);
+    Storage.saveActiveChatId(restoredChat.id);
+
+    deletedChatsMapRef.current.delete(id);
+    showToast(`Restored "${restoredChat.title}".`, 'success');
+  };
 
   // Load chats asynchronously on mount
   useEffect(() => {
@@ -476,6 +499,12 @@ interface SyncEvent {
   };
 
   const handleDeleteChat = (id: string) => {
+    const chatIndex = chats.findIndex(c => c.id === id);
+    const chatToDelete = chats[chatIndex];
+    if (!chatToDelete) return;
+
+    deletedChatsMapRef.current.set(id, { chat: chatToDelete, index: chatIndex });
+
     const updatedChats = chats.filter(c => c.id !== id);
     setChats(updatedChats);
     Storage.deleteChat(id);
@@ -489,21 +518,23 @@ interface SyncEvent {
         Storage.saveActiveChatId(null);
       }
     }
-  };
 
-  const handleRenameChat = (id: string, newTitle: string) => {
-    let renamedChat: Chat | undefined;
-    const updatedChats = chats.map(c => {
-      if (c.id === id) {
-        renamedChat = { ...c, title: newTitle, updatedAt: new Date().toISOString() };
-        return renamedChat;
-      }
-      return c;
-    });
-    setChats(updatedChats);
-    if (renamedChat) {
-      Storage.saveChat(renamedChat);
-    }
+    showToast(
+      <div className="flex items-center gap-3">
+        <span>Deleted "{chatToDelete.title}".</span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleRestoreChat(id);
+          }}
+          className="rounded bg-primary/20 hover:bg-primary/30 text-primary font-semibold px-2 py-0.5 text-xs transition cursor-pointer"
+        >
+          Undo
+        </button>
+      </div>,
+      'success'
+    );
   };
 
   const handleStopGenerating = () => {
@@ -1247,7 +1278,6 @@ interface SyncEvent {
         onSelectChat={handleSelectChat}
         onNewChat={handleNewChat}
         onDeleteChat={handleDeleteChat}
-        onRenameChat={handleRenameChat}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenSchedules={() => setSchedulesOpen(true)}
         isCollapsed={isSidebarCollapsed}

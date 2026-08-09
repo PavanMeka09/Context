@@ -40,7 +40,6 @@ describe('Sidebar Component', () => {
         onSelectChat={vi.fn()}
         onNewChat={vi.fn()}
         onDeleteChat={vi.fn()}
-        onRenameChat={vi.fn()}
         onOpenSettings={vi.fn()}
         onOpenSchedules={vi.fn()}
         isCollapsed={false}
@@ -64,7 +63,6 @@ describe('Sidebar Component', () => {
         onSelectChat={vi.fn()}
         onNewChat={vi.fn()}
         onDeleteChat={vi.fn()}
-        onRenameChat={vi.fn()}
         onOpenSettings={vi.fn()}
         onOpenSchedules={vi.fn()}
         isCollapsed={false}
@@ -91,7 +89,6 @@ describe('Sidebar Component', () => {
         onSelectChat={vi.fn()}
         onNewChat={handleNewChat}
         onDeleteChat={vi.fn()}
-        onRenameChat={vi.fn()}
         onOpenSettings={vi.fn()}
         onOpenSchedules={vi.fn()}
         isCollapsed={false}
@@ -107,7 +104,7 @@ describe('Sidebar Component', () => {
     expect(handleNewChat).toHaveBeenCalledTimes(1);
   });
 
-  it('shows inline deletion confirmation when delete button is clicked and calls onDeleteChat on confirm', () => {
+  it('calls onDeleteChat when delete button is clicked', () => {
     const handleDeleteChat = vi.fn();
     render(
       <Sidebar
@@ -117,7 +114,6 @@ describe('Sidebar Component', () => {
         onSelectChat={vi.fn()}
         onNewChat={vi.fn()}
         onDeleteChat={handleDeleteChat}
-        onRenameChat={vi.fn()}
         onOpenSettings={vi.fn()}
         onOpenSchedules={vi.fn()}
         isCollapsed={false}
@@ -129,12 +125,6 @@ describe('Sidebar Component', () => {
 
     const deleteBtn = screen.getByLabelText('Delete chat First Conversation');
     fireEvent.click(deleteBtn);
-
-    expect(screen.getByText('Delete?')).toBeDefined();
-    expect(handleDeleteChat).not.toHaveBeenCalled();
-
-    const confirmBtn = screen.getByLabelText('Confirm delete chat First Conversation');
-    fireEvent.click(confirmBtn);
 
     expect(handleDeleteChat).toHaveBeenCalledWith('chat-1');
   });
