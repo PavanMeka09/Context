@@ -11,10 +11,12 @@ async function callLLM(settings, systemPrompt, userPrompt, screenshotBase64 = ''
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-3.6-flash'}:generateContent?key=${apiKey}`;
   const userParts = [{ text: userPrompt }];
   if (screenshotBase64) {
+    const mimeMatch = screenshotBase64.match(/^data:(image\/\w+);base64,/);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
     const cleanBase64 = screenshotBase64.replace(/^data:image\/\w+;base64,/, '');
     userParts.push({
       inlineData: {
-        mimeType: 'image/png',
+        mimeType,
         data: cleanBase64
       }
     });

@@ -65,7 +65,7 @@ const BrowserScreenshotCard: React.FC<{
           <div className="w-2 h-2 rounded-full bg-destructive/60" />
           <div className="w-2 h-2 rounded-full bg-chart-4/60" />
           <div className="w-2 h-2 rounded-full bg-primary/60" />
-          <span className="font-semibold text-muted-foreground ml-2 font-mono tracking-wide text-[9.5px]">sandbox-screenshot.png</span>
+          <span className="font-semibold text-muted-foreground ml-2 font-mono tracking-wide text-[9.5px]">sandbox-screenshot.jpg</span>
         </div>
         <div className="flex items-center gap-2">
           <button

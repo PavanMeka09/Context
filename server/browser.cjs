@@ -10,6 +10,25 @@ const sessionCreationLocks = new Map(); // sessionId -> Promise
 let browserLaunchPromise = null;
 const activeBrowserAgents = new Map(); // sessionId -> { controller }
 const browserAgentStates = new Map(); // sessionId -> { state: 'running' | 'paused', pauseResolver: null }
+const SCREENSHOT_OPTIONS = Object.freeze({ type: 'jpeg', quality: 75, optimizeForSpeed: true });
+
+async function capturePageScreenshot(pageInstance) {
+  return await pageInstance.screenshot(SCREENSHOT_OPTIONS);
+}
+async function navigateToUrl(pageInstance, rawUrl, options = {}) {
+  if (!rawUrl || typeof rawUrl !== 'string') {
+    throw new Error('URL required for navigation');
+  }
+  let targetUrl = rawUrl.trim();
+  if (!/^https?:\/\//i.test(targetUrl)) {
+    targetUrl = 'https://' + targetUrl;
+  }
+  const timeout = options.timeout || 15000;
+  const waitUntil = options.waitUntil || 'domcontentloaded';
+  await pageInstance.goto(targetUrl, { waitUntil, timeout });
+  return targetUrl;
+}
+
 
 function pauseBrowserAgent(sessionId) {
   const sid = sessionId || 'default';
@@ -213,6 +232,11 @@ function setupPageListeners(sid, pageInstance, session) {
       await dialog.dismiss();
     } catch (err) {}
   });
+
+
+  pageInstance.on('load', () => {
+    updateScreenshotForSession(sid);
+  });
 }
 
 // Helper to get or create isolated session (concurrency-safe)
@@ -286,14 +310,12 @@ async function updateScreenshotForSession(sessionId) {
   const session = sessions.get(sessionId);
   if (session && session.page) {
     try {
-      session.latestScreenshotBuffer = await session.page.screenshot({ type: 'png' });
-      
-      const url = session.page.url();
+      session.latestScreenshotBuffer = await capturePageScreenshot(session.page);
       const title = await session.page.title();
       const elements = await scrapeInteractiveElements(session.page);
       session.lastElements = elements;
 
-      const screenshotBase64 = `data:image/png;base64,${session.latestScreenshotBuffer.toString('base64')}`;
+      const screenshotBase64 = `data:image/jpeg;base64,${session.latestScreenshotBuffer.toString('base64')}`;
 
       const hasAgent = activeBrowserAgents.has(sessionId);
       const stateObj = browserAgentStates.get(sessionId);
@@ -321,7 +343,7 @@ async function saveStepScreenshot(stepId, sessionId) {
       if (!fs.existsSync(screenshotsDir)) {
         fs.mkdirSync(screenshotsDir, { recursive: true });
       }
-      fs.writeFileSync(path.join(screenshotsDir, `${stepId}.png`), session.latestScreenshotBuffer);
+      fs.writeFileSync(path.join(screenshotsDir, `${stepId}.jpg`), session.latestScreenshotBuffer);
     } catch (e) {
       console.error(`Failed to save step screenshot to disk for session ${sessionId}`, e);
     }
@@ -349,7 +371,7 @@ async function highlightElement(selector, color = '#ef4444', sessionId) {
         }
       }, selector, color);
       
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 30));
       await updateScreenshotForSession(sessionId);
       
       await session.page.evaluate(() => {
@@ -924,7 +946,6 @@ Available Actions:
 11. { "action": "fail", "text": "Error explanation / why it was not possible to complete the task" }
 
 Select the next single action to take. Provide your thought process (concise, written in third-person) and the next action in JSON format:
-{
   "thought": "Thought text...",
   "action": "click" | "navigate" | "type" | "hover" | "back" | "key" | "scroll" | "wait" | "extract" | "done" | "fail",
   "targetId": "context-el-...",
@@ -937,9 +958,9 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
       let screenshotBase64 = '';
       try {
         await drawVisualTags(pageInstance);
-        const buffer = await pageInstance.screenshot({ type: 'png' });
+        const buffer = await capturePageScreenshot(pageInstance);
         await clearVisualTags(pageInstance);
-        screenshotBase64 = buffer.toString('base64');
+        screenshotBase64 = `data:image/jpeg;base64,${buffer.toString('base64')}`;
         session.latestScreenshotBuffer = buffer;
       } catch (e) {
         console.error('Failed to take screenshot for background LLM loop', e);
@@ -1009,7 +1030,17 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
         if (action === 'navigate') {
           let targetUrl = url.trim();
           if (!/^https?:\/\//i.test(targetUrl)) targetUrl = 'https://' + targetUrl;
-          await pageInstance.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+          try {
+            await pageInstance.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+          } catch (err) {
+            if (targetUrl.startsWith('https://')) {
+              const httpUrl = targetUrl.replace(/^https:\/\//i, 'http://');
+              await pageInstance.goto(httpUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+              targetUrl = httpUrl;
+            } else {
+              throw err;
+            }
+          }
           currentStep.status = 'success';
           currentStep.logMessage = `Navigated to ${targetUrl}`;
         } else if (action === 'click') {
@@ -1113,12 +1144,12 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
             }
           }
           if (!success) throw lastError;
-          await sleep(1000);
+          await sleep(200);
           currentStep.status = 'success';
           currentStep.logMessage = `Hovered cursor over element "${targetId}"${healedResult ? ` (healed to "${actualTargetId}")` : ''}`;
         } else if (action === 'back') {
-          await pageInstance.goBack({ waitUntil: 'networkidle2', timeout: 30000 });
-          await sleep(1000);
+          await pageInstance.goBack({ waitUntil: 'domcontentloaded', timeout: 15000 });
+          await sleep(200);
           currentStep.status = 'success';
           currentStep.logMessage = `Performed browser go-back navigation`;
         } else if (action === 'key') {
@@ -1297,6 +1328,8 @@ module.exports = {
   resumeBrowserAgent,
   stepBrowserAgent,
   executeBrowserAgent,
-  clearSessionStorage
+  clearSessionStorage,
+  navigateToUrl,
+  capturePageScreenshot
 };
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   X, RotateCw, Globe, ArrowRight, MousePointer, Keyboard, 
   ChevronUp, ChevronDown, FileText, Loader2, Search, Compass, Power, 
@@ -60,8 +60,10 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addressInput, setAddressInput] = useState('');
+  const [isAddressInputFocused, setIsAddressInputFocused] = useState(false);
   const [screenshotTimestamp, setScreenshotTimestamp] = useState(() => Date.now());
   const [searchQuery, setSearchQuery] = useState('');
+  const isFetchingRef = useRef(false);
   const [selectedElement, setSelectedElement] = useState<InteractiveElement | null>(null);
   const [typeText, setTypeText] = useState('');
   const [clickIndicator, setClickIndicator] = useState<{ x: number; y: number } | null>(null);
@@ -168,7 +170,9 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
   }, []);
 
   // Fetch current browser state
-  const fetchBrowserState = useCallback(async (showMainLoader = false) => {
+  const fetchBrowserState = useCallback(async (showMainLoader = false, skipMetadata = false) => {
+    if (isFetchingRef.current) return null;
+    isFetchingRef.current = true;
     if (showMainLoader) {
       await Promise.resolve();
       setLoading(true);
@@ -181,13 +185,16 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       }
       const data = await res.json();
       setBrowserState(data);
-      setAddressInput(data.url || '');
+      if (!isAddressInputFocused && data.url && (data.url !== 'about:blank' || !addressInput)) {
+        setAddressInput(data.url);
+      }
       setScreenshotTimestamp(Date.now());
 
-      // Async refresh tabs and logs
-      fetchTabs();
-      fetchLogs();
-      fetchActiveSessions();
+      if (!skipMetadata) {
+        fetchTabs();
+        fetchLogs();
+        fetchActiveSessions();
+      }
 
       return data;
     } catch (err: unknown) {
@@ -196,9 +203,10 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       setBrowserState(null);
       return null;
     } finally {
+      isFetchingRef.current = false;
       if (showMainLoader) setLoading(false);
     }
-  }, [sessionId, fetchTabs, fetchLogs, fetchActiveSessions]);
+  }, [sessionId, isAddressInputFocused, addressInput, fetchTabs, fetchLogs, fetchActiveSessions]);
 
   // Run load on open or when sessionId changes
   useEffect(() => {
@@ -222,7 +230,12 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
       if (data && data.sessionId === sessionId) {
         if (type === 'browser-state') {
           setBrowserState(data);
-          setAddressInput(data.url || '');
+          setAddressInput(prev => {
+            if (!isAddressInputFocused && data.url && (data.url !== 'about:blank' || !prev)) {
+              return data.url;
+            }
+            return prev;
+          });
           setScreenshotTimestamp(Date.now());
           // Fetch tabs in sync
           fetchTabs();
@@ -247,20 +260,33 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
     return () => {
       window.removeEventListener('context-live-event', handleLiveEvent);
     };
-  }, [isOpen, sessionId, fetchTabs, fetchLogs]);
+  }, [isOpen, sessionId, fetchTabs, fetchLogs, isAddressInputFocused]);
 
   // Periodic polling for background execution / dynamic changes while open (heartbeat fallback)
+  // High-speed 100ms live viewport streaming while open
+  // Throttled periodic polling while open (500ms viewport refresh with in-flight guard)
   useEffect(() => {
     let intervalId: number | undefined;
-    if (isOpen && browserState && !actionLoading) {
+    if (isOpen) {
       intervalId = window.setInterval(() => {
-        fetchBrowserState(false);
-      }, 15000); // 15 seconds heartbeat fallback
+        fetchBrowserState(false, true);
+      }, 500);
     }
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [isOpen, browserState, actionLoading, fetchBrowserState]);
+    return () => clearInterval(intervalId);
+  }, [isOpen, fetchBrowserState]);
+
+  // Background metadata sync (tabs, logs, sessions) every 3 seconds
+  useEffect(() => {
+    let intervalId: number | undefined;
+    if (isOpen && browserState) {
+      intervalId = window.setInterval(() => {
+        fetchTabs();
+        fetchLogs();
+        fetchActiveSessions();
+      }, 3000);
+    }
+    return () => clearInterval(intervalId);
+  }, [isOpen, browserState, fetchTabs, fetchLogs, fetchActiveSessions]);
 
   // Handle browser session launch
   const handleLaunchSession = async () => {
@@ -477,6 +503,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
   const handleNavigate = (e: React.FormEvent) => {
     e.preventDefault();
     if (addressInput.trim()) {
+      setIsAddressInputFocused(false);
       runAction('navigate', { url: addressInput.trim() });
     }
   };
@@ -695,6 +722,8 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                 type="text"
                 value={addressInput}
                 onChange={(e) => setAddressInput(e.target.value)}
+                onFocus={() => setIsAddressInputFocused(true)}
+                onBlur={() => setIsAddressInputFocused(false)}
                 placeholder="Enter URL (e.g. google.com) and press Enter"
                 className="flex-1 bg-transparent border-0 p-0 text-foreground focus:outline-none focus:ring-0 font-mono text-[11px]"
                 disabled={actionLoading}

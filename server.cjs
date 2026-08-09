@@ -29,7 +29,9 @@ const {
   resumeBrowserAgent,
   stepBrowserAgent,
   executeBrowserAgent,
-  clearSessionStorage
+  clearSessionStorage,
+  navigateToUrl,
+  capturePageScreenshot
 } = require('./server/browser.cjs');
 
 const {
@@ -143,10 +145,17 @@ app.get('/api/browser/screenshot', async (req, res) => {
     // Sanitize stepId to prevent directory traversal
     const safeStepId = String(stepId).replace(/[^a-zA-Z0-9_-]/g, '');
     if (safeStepId) {
-      const filePath = path.join(DATA_DIR, 'screenshots', `${safeStepId}.png`);
-      if (fs.existsSync(filePath)) {
+      const jpgPath = path.join(DATA_DIR, 'screenshots', `${safeStepId}.jpg`);
+      if (fs.existsSync(jpgPath)) {
+        res.set('Content-Type', 'image/jpeg');
+        res.set('Cache-Control', 'public, max-age=31536000, immutable');
+        return res.sendFile(jpgPath);
+      }
+      const pngPath = path.join(DATA_DIR, 'screenshots', `${safeStepId}.png`);
+      if (fs.existsSync(pngPath)) {
         res.set('Content-Type', 'image/png');
-        return res.sendFile(filePath);
+        res.set('Cache-Control', 'public, max-age=31536000, immutable');
+        return res.sendFile(pngPath);
       }
     }
   }
@@ -154,7 +163,7 @@ app.get('/api/browser/screenshot', async (req, res) => {
   const session = sessions.get(sid);
   if (session && session.page) {
     try {
-      const buffer = await session.page.screenshot({ type: 'png' });
+      const buffer = await capturePageScreenshot(session.page);
       session.latestScreenshotBuffer = buffer;
     } catch (e) {
       console.error(`Failed to take live screenshot for session ${sid}`, e);
@@ -163,8 +172,10 @@ app.get('/api/browser/screenshot', async (req, res) => {
 
   const buffer = session ? session.latestScreenshotBuffer : null;
 
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
   if (buffer) {
-    res.set('Content-Type', 'image/png');
+    const isPng = buffer.length > 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47;
+    res.set('Content-Type', isPng ? 'image/png' : 'image/jpeg');
     res.send(buffer);
   } else {
     // Return transparent 1x1 png if no screenshot is captured yet
@@ -191,8 +202,8 @@ app.get('/api/browser/state', async (req, res) => {
     let screenshotBase64 = '';
     if (session.page) {
       try {
-        const buffer = await session.page.screenshot({ type: 'png' });
-        screenshotBase64 = `data:image/png;base64,${buffer.toString('base64')}`;
+        const buffer = await capturePageScreenshot(session.page);
+        screenshotBase64 = `data:image/jpeg;base64,${buffer.toString('base64')}`;
         session.latestScreenshotBuffer = buffer;
       } catch (err) {
         console.error(`Failed to take state screenshot for session ${sessionId}`, err);
@@ -225,12 +236,7 @@ app.post('/api/browser/action', async (req, res) => {
     let logMessage = '';
 
     if (action === 'navigate') {
-      if (!url) throw new Error('URL required for navigation');
-      let targetUrl = url.trim();
-      if (!/^https?:\/\//i.test(targetUrl)) {
-        targetUrl = 'https://' + targetUrl;
-      }
-      await pageInstance.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+      const targetUrl = await navigateToUrl(pageInstance, url);
       logMessage = `Navigated to ${targetUrl}`;
     } else if (action === 'click') {
       if (targetId) {
@@ -254,14 +260,14 @@ app.post('/api/browser/action', async (req, res) => {
             lastError = err;
             if (attempts < 2) {
               console.log(`[Browser Server] Click attempt ${attempts} failed: ${err.message}. Retrying...`);
-              await new Promise(r => setTimeout(r, 1000));
+              await new Promise(r => setTimeout(r, 100));
               await scrapeInteractiveElements(session.page);
             }
           }
         }
         if (!success) throw lastError;
         logMessage = `Clicked element "${targetId}"${healedResult ? ` (healed to "${actualTargetId}")` : ''}`;
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 50));
       } else if (x !== undefined && y !== undefined) {
         // Resolve element ID at coordinates if any
         const elementId = await pageInstance.evaluate((cx, cy) => {
@@ -278,7 +284,7 @@ app.post('/api/browser/action', async (req, res) => {
         logMessage = `Clicked coordinates (${x}, ${y})`;
         
         // Wait briefly for updates/animations
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 50));
         
         await updateScreenshotForSession(sid);
         await saveStepScreenshot(stepId, sid);
@@ -326,14 +332,14 @@ app.post('/api/browser/action', async (req, res) => {
           lastError = err;
           if (attempts < 2) {
             console.log(`[Browser Server] Type attempt ${attempts} failed: ${err.message}. Retrying...`);
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 100));
             await scrapeInteractiveElements(session.page);
           }
         }
       }
       if (!success) throw lastError;
       logMessage = `Typed "${text}" into element "${targetId}"${healedResult ? ` (healed to "${actualTargetId}")` : ''}`;
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 50));
     } else if (action === 'hover') {
       if (!targetId) throw new Error('Target ID required for hover');
       let attempts = 0;
@@ -356,18 +362,18 @@ app.post('/api/browser/action', async (req, res) => {
           lastError = err;
           if (attempts < 2) {
             console.log(`[Browser Server] Hover attempt ${attempts} failed: ${err.message}. Retrying...`);
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 100));
             await scrapeInteractiveElements(session.page);
           }
         }
       }
       if (!success) throw lastError;
       logMessage = `Hovered cursor over element "${targetId}"${healedResult ? ` (healed to "${actualTargetId}")` : ''}`;
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 50));
     } else if (action === 'back') {
-      await pageInstance.goBack({ waitUntil: 'networkidle2', timeout: 30000 });
+      await pageInstance.goBack({ waitUntil: 'domcontentloaded', timeout: 15000 });
       logMessage = `Performed browser go-back navigation`;
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 50));
     } else if (action === 'key') {
       if (!text) throw new Error('Key text required for keyboard press');
       let attempts = 0;
@@ -393,14 +399,14 @@ app.post('/api/browser/action', async (req, res) => {
           lastError = err;
           if (attempts < 2) {
             console.log(`[Browser Server] Key press attempt ${attempts} failed: ${err.message}. Retrying...`);
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 100));
             await scrapeInteractiveElements(session.page);
           }
         }
       }
       if (!success) throw lastError;
       logMessage = `Pressed key "${text}"${targetId ? ` on element "${targetId}"${healedResult ? ` (healed to "${actualTargetId}")` : ''}` : ''}`;
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 50));
     } else if (action === 'scroll') {
       const direction = text === 'up' ? 'up' : 'down';
       await pageInstance.evaluate((dir) => {
