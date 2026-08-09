@@ -1,6 +1,4 @@
 const cron = require('node-cron');
-const fs = require('fs');
-const path = require('path');
 const { PATHS, readJSON, writeJSON, broadcastLiveEvent } = require('./utils.cjs');
 const { callLLM } = require('./llm.cjs');
 const { executeBrowserAgent } = require('./browser.cjs');

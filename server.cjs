@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 
 const {
   DATA_DIR,
@@ -134,25 +133,6 @@ app.post('/api/search/test', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
-
-// Register process hooks for graceful shutdown
-async function gracefulShutdown() {
-  console.log('[Browser Server] Shutting down gracefully...');
-  for (const [sid, session] of sessions.entries()) {
-    try {
-      if (session.context) {
-        await session.context.close();
-      }
-    } catch (e) {}
-  }
-  sessions.clear();
-  await closeBrowser();
-  process.exit(0);
-}
-
-process.on('SIGINT', gracefulShutdown);
-process.on('SIGTERM', gracefulShutdown);
 
 // Endpoint: Screenshot
 app.get('/api/browser/screenshot', async (req, res) => {
@@ -1143,9 +1123,18 @@ const server = app.listen(PORT, () => {
 
 // Graceful Shutdown handling
 async function gracefulShutdown(signal) {
-  console.log(`[Server] Received ${signal}. Starting graceful shutdown...`);
+  console.log(`[Server] Received ${signal || 'shutdown signal'}. Starting graceful shutdown...`);
+  for (const [, session] of sessions.entries()) {
+    try {
+      if (session.context) {
+        await session.context.close();
+      }
+    } catch {
+      // ignore context close errors during shutdown
+    }
+  }
+  sessions.clear();
   try {
-    const { closeBrowser } = require('./server/browser.cjs');
     await closeBrowser();
   } catch (err) {
     console.error('[Server] Error closing browser during shutdown:', err);

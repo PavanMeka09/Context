@@ -23,6 +23,16 @@ const ModalFallback = () => (
     </div>
   </div>
 );
+interface SyncEvent {
+  id: string;
+  chatId: string;
+  isNewChat: boolean;
+  chatTitle: string;
+  userMsg: Message;
+  assistantMsg: Message;
+  timestamp: string;
+}
+
 
 
 function addMessageToTree(chat: Chat, message: Message, parentId: string | null): Chat {
@@ -295,15 +305,6 @@ function App() {
     }).catch(err => console.error('Failed to sync settings to schedules backend', err));
   }, [settings]);
 
-interface SyncEvent {
-  id: string;
-  chatId: string;
-  isNewChat: boolean;
-  chatTitle: string;
-  userMsg: Message;
-  assistantMsg: Message;
-  timestamp: string;
-}
 
   // Background EventSource connection for real-time schedules sync and logs
   useEffect(() => {
@@ -1311,7 +1312,6 @@ interface SyncEvent {
             setBrowserModalSessionId(sid || 'interactive');
             setBrowserModalOpen(true);
           }}
-          settings={settings}
         >
           <Composer
             input={composerInput}

@@ -520,7 +520,6 @@ interface ChatAreaProps {
   onToggleSidebar: () => void;
   onSwitchBranch?: (messageId: string) => void;
   onOpenBrowserModal?: (sessionId?: string) => void;
-  settings?: { provider: string; model: string };
   children?: React.ReactNode;
 }
 
@@ -535,7 +534,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onToggleSidebar,
   onSwitchBranch,
   onOpenBrowserModal,
-  settings,
   children
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);

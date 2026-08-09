@@ -5,7 +5,11 @@ import { Storage } from '../../utils/storage';
 
 // Mock scroll and storage helpers
 beforeEach(() => {
-  global.EventSource = vi.fn().mockImplementation(() => ({ close: vi.fn(), onmessage: null, onerror: null })) as any;
+  global.EventSource = vi.fn().mockImplementation(() => ({ close: vi.fn(), onmessage: null, onerror: null })) as unknown as typeof EventSource;
+  global.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => []
+  });
   Element.prototype.scrollTo = vi.fn();
   vi.spyOn(Storage, 'getChats').mockResolvedValue([
     {
