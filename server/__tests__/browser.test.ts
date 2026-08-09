@@ -7,7 +7,9 @@ import {
   stepBrowserAgent,
   closeBrowser,
   getBrowser,
-  setBrowser
+  setBrowser,
+  navigateToUrl,
+  clearSessionStorage
 } from '../browser.cjs';
 
 describe('server/browser.cjs', () => {
@@ -57,6 +59,38 @@ describe('server/browser.cjs', () => {
 
       expect(closeMock).toHaveBeenCalledTimes(1);
       expect(getBrowser()).toBeNull();
+    });
+  });
+
+  describe('Navigation and Session Storage Helpers', () => {
+    it('normalizes URL and navigates Playwright page', async () => {
+      const gotoMock = vi.fn().mockResolvedValue(undefined);
+      const mockPage = { goto: gotoMock } as unknown as Parameters<typeof navigateToUrl>[0];
+
+      const url = await navigateToUrl(mockPage, 'example.com');
+      expect(url).toBe('https://example.com');
+      expect(gotoMock).toHaveBeenCalledWith('https://example.com', {
+        waitUntil: 'domcontentloaded',
+        timeout: 15000
+      });
+    });
+
+    it('clears session cookies and storage for valid sessions', async () => {
+      const clearCookiesMock = vi.fn().mockResolvedValue(undefined);
+      const evaluateMock = vi.fn().mockResolvedValue(undefined);
+
+      sessions.set('test-session', {
+        context: { clearCookies: clearCookiesMock },
+        page: { isClosed: () => false, evaluate: evaluateMock },
+        latestScreenshotBuffer: null,
+        logs: [],
+        lastAccessed: Date.now()
+      } as any);
+
+      const result = await clearSessionStorage('test-session');
+      expect(result).toBe(true);
+      expect(clearCookiesMock).toHaveBeenCalledTimes(1);
+      expect(evaluateMock).toHaveBeenCalledTimes(1);
     });
   });
 });

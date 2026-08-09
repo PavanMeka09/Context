@@ -1,4 +1,7 @@
-const puppeteer = require('puppeteer');
+const { chromium } = require('playwright-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+chromium.use(StealthPlugin());
+
 const fs = require('fs');
 const path = require('path');
 const { DATA_DIR, broadcastLiveEvent, safeJsonParse } = require('./utils.cjs');
@@ -10,11 +13,13 @@ const sessionCreationLocks = new Map(); // sessionId -> Promise
 let browserLaunchPromise = null;
 const activeBrowserAgents = new Map(); // sessionId -> { controller }
 const browserAgentStates = new Map(); // sessionId -> { state: 'running' | 'paused', pauseResolver: null }
-const SCREENSHOT_OPTIONS = Object.freeze({ type: 'jpeg', quality: 75, optimizeForSpeed: true });
+const SCREENSHOT_OPTIONS = Object.freeze({ type: 'jpeg', quality: 75 });
+
 
 async function capturePageScreenshot(pageInstance) {
   return await pageInstance.screenshot(SCREENSHOT_OPTIONS);
 }
+
 async function navigateToUrl(pageInstance, rawUrl, options = {}) {
   if (!rawUrl || typeof rawUrl !== 'string') {
     throw new Error('URL required for navigation');
@@ -28,7 +33,6 @@ async function navigateToUrl(pageInstance, rawUrl, options = {}) {
   await pageInstance.goto(targetUrl, { waitUntil, timeout });
   return targetUrl;
 }
-
 
 function pauseBrowserAgent(sessionId) {
   const sid = sessionId || 'default';
@@ -46,9 +50,8 @@ function resumeBrowserAgent(sessionId) {
   if (stateObj) {
     stateObj.state = 'running';
     if (stateObj.pauseResolver) {
-      const resolver = stateObj.pauseResolver;
+      stateObj.pauseResolver();
       stateObj.pauseResolver = null;
-      resolver();
     }
     return true;
   }
@@ -60,41 +63,37 @@ function stepBrowserAgent(sessionId) {
   const stateObj = browserAgentStates.get(sid);
   if (stateObj && stateObj.state === 'paused') {
     if (stateObj.pauseResolver) {
-      const resolver = stateObj.pauseResolver;
+      stateObj.pauseResolver();
       stateObj.pauseResolver = null;
-      resolver();
-      return true;
     }
+    return true;
   }
   return false;
 }
-
 
 // Periodically clean up inactive browser sessions to prevent memory and process leaks
 const SESSION_IDLE_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 setInterval(async () => {
   const now = Date.now();
   for (const [sid, session] of sessions.entries()) {
-    if (session.lastAccessed && (now - session.lastAccessed > SESSION_IDLE_TIMEOUT)) {
-      console.log(`[Browser Server] Session ${sid} exceeded idle timeout of 10 minutes. Cleaning up...`);
+    if (now - session.lastAccessed > SESSION_IDLE_TIMEOUT) {
+      console.log(`[Browser Server] Cleaning up idle session: ${sid}`);
       try {
         if (session.context) {
           await session.context.close();
         }
-      } catch (err) {
-        console.error(`Failed to close idle context for session ${sid}:`, err);
+      } catch (e) {
+        console.error(`Failed to close idle session context for ${sid}`, e);
       }
       sessions.delete(sid);
+      activeBrowserAgents.delete(sid);
+      browserAgentStates.delete(sid);
     }
   }
+
   if (sessions.size === 0 && browser) {
-    console.log(`[Browser Server] No active sessions remaining. Closing browser process to reclaim memory.`);
-    try {
-      await browser.close();
-    } catch (err) {
-      console.error('Failed to close idle browser:', err);
-    }
-    browser = null;
+    console.log('[Browser Server] All sessions idle and cleaned. Shutting down browser instance.');
+    await closeBrowser();
   }
 }, 60000); // Sweep every minute
 
@@ -118,12 +117,15 @@ async function closeBrowser() {
 
 // Helper to launch browser if not running (concurrency-safe)
 async function ensureBrowser() {
-  if (browser && !browser.connected) {
-    try {
-      await browser.close();
-    } catch (e) {}
-    browser = null;
-    sessions.clear();
+  if (browser) {
+    const isConn = typeof browser.isConnected === 'function' ? browser.isConnected() : browser.connected;
+    if (isConn === false) {
+      try {
+        await browser.close();
+      } catch (e) {}
+      browser = null;
+      sessions.clear();
+    }
   }
 
   if (browser) return;
@@ -134,39 +136,14 @@ async function ensureBrowser() {
   }
 
   browserLaunchPromise = (async () => {
-    const profileDir = path.join(DATA_DIR, 'puppeteer_profile');
-    if (!fs.existsSync(profileDir)) {
-      fs.mkdirSync(profileDir, { recursive: true });
-    }
-    const instance = await puppeteer.launch({
+    const instance = await chromium.launch({
       headless: true,
-      userDataDir: profileDir,
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-
-    // Auto-switch to newly opened pages/tabs for specific sessions (Target Created)
-    instance.on('targetcreated', async (target) => {
-      if (target.type() === 'page') {
-        try {
-          const newPage = await target.page();
-          if (newPage) {
-            const targetContext = target.browserContext();
-            for (const [sid, session] of sessions.entries()) {
-              if (session.context === targetContext) {
-                session.page = newPage;
-                await newPage.setViewport({ width: 1280, height: 800 });
-                setupPageListeners(sid, newPage, session);
-                console.log(`[Browser Server] Auto-switched session ${sid} to new page: ${newPage.url()}`);
-                await updateScreenshotForSession(sid);
-                break;
-              }
-            }
-          }
-        } catch (e) {
-          console.error('Failed to auto-switch page context to new target', e);
-        }
-      }
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-blink-features=AutomationControlled'
+      ]
     });
 
     browser = instance;
@@ -207,7 +184,7 @@ function setupPageListeners(sid, pageInstance, session) {
     let cleanType = 'info';
     if (type === 'error') cleanType = 'error';
     else if (type === 'warning') cleanType = 'warning';
-    
+
     if (text.trim()) {
       addLog(cleanType, `Console [${type}]: ${text}`, pageInstance.url());
     }
@@ -233,7 +210,6 @@ function setupPageListeners(sid, pageInstance, session) {
     } catch (err) {}
   });
 
-
   pageInstance.on('load', () => {
     updateScreenshotForSession(sid);
   });
@@ -247,10 +223,10 @@ async function ensureSession(sessionId) {
   let session = sessions.get(sid);
   if (session) {
     try {
-      const pages = await session.context.pages();
+      const pages = session.context.pages ? await session.context.pages() : [];
       if (pages.length === 0) {
         const pageInstance = await session.context.newPage();
-        await pageInstance.setViewport({ width: 1280, height: 800 });
+        await pageInstance.setViewportSize({ width: 1280, height: 800 });
         setupPageListeners(sid, pageInstance, session);
         session.page = pageInstance;
       } else if (!session.page || session.page.isClosed() || !pages.includes(session.page)) {
@@ -275,14 +251,16 @@ async function ensureSession(sessionId) {
   const creationPromise = (async () => {
     let context;
     try {
-      context = await browser.createBrowserContext();
+      context = await browser.newContext({
+        viewport: { width: 1280, height: 800 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+      });
     } catch (err) {
-      console.error(`Failed to create browser context for ${sid}, using default`, err);
-      context = browser.defaultBrowserContext();
+      console.error(`Failed to create browser context for ${sid}`, err);
+      throw err;
     }
 
     const pageInstance = await context.newPage();
-    await pageInstance.setViewport({ width: 1280, height: 800 });
 
     session = {
       context,
@@ -292,8 +270,18 @@ async function ensureSession(sessionId) {
       lastAccessed: Date.now()
     };
     sessions.set(sid, session);
+
+    if (context.on) {
+      context.on('page', async (newPage) => {
+        setupPageListeners(sid, newPage, session);
+        session.page = newPage;
+        console.log(`[Browser Server] Auto-switched session ${sid} to new page: ${newPage.url()}`);
+        await updateScreenshotForSession(sid);
+      });
+    }
+
     setupPageListeners(sid, pageInstance, session);
-    console.log(`[Browser Server] Created new isolated context for session: ${sid}`);
+    console.log(`[Browser Server] Created new isolated Playwright context for session: ${sid}`);
   })();
 
   sessionCreationLocks.set(sid, creationPromise);
@@ -311,6 +299,7 @@ async function updateScreenshotForSession(sessionId) {
   if (session && session.page) {
     try {
       session.latestScreenshotBuffer = await capturePageScreenshot(session.page);
+      const url = session.page.url();
       const title = await session.page.title();
       const elements = await scrapeInteractiveElements(session.page);
       session.lastElements = elements;
@@ -354,7 +343,7 @@ async function highlightElement(selector, color = '#ef4444', sessionId) {
   const session = sessions.get(sessionId);
   if (session && session.page) {
     try {
-      await session.page.evaluate((sel, col) => {
+      await session.page.evaluate(({ sel, col }) => {
         const item = document.querySelector(sel);
         if (item) {
           item.scrollIntoView({ block: 'center', behavior: 'instant' });
@@ -362,18 +351,18 @@ async function highlightElement(selector, color = '#ef4444', sessionId) {
           const originalOffset = item.style.outlineOffset;
           item.style.outline = `4px solid ${col}`;
           item.style.outlineOffset = '2px';
-          
+
           window._activeHighlight = {
             item,
             originalOutline,
             originalOffset
           };
         }
-      }, selector, color);
-      
+      }, { sel: selector, col: color });
+
       await new Promise(r => setTimeout(r, 30));
       await updateScreenshotForSession(sessionId);
-      
+
       await session.page.evaluate(() => {
         if (window._activeHighlight) {
           const { item, originalOutline, originalOffset } = window._activeHighlight;
@@ -421,7 +410,7 @@ async function drawVisualTags(pageInstance) {
       elements.forEach(el => {
         const id = el.getAttribute('data-context-id');
         const num = id.replace('context-el-', '');
-        
+
         const rect = el.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return;
 
@@ -430,7 +419,7 @@ async function drawVisualTags(pageInstance) {
         tag.style.left = (window.scrollX + rect.left + rect.width / 2) + 'px';
         tag.style.top = (window.scrollY + rect.top + rect.height / 2) + 'px';
         tag.innerText = num;
-        
+
         document.body.appendChild(tag);
       });
     });
@@ -464,13 +453,13 @@ async function scrapeInteractiveElements(pageInstance) {
       '[role="textbox"]', '[role="combobox"]', '[role="searchbox"]',
       '[tabindex]', '[onclick]', '[contenteditable="true"]'
     ].join(', ');
-    
+
     const els = document.querySelectorAll(interactiveSelectors);
 
     if (window._contextElementCounter === undefined) {
       window._contextElementCounter = 1;
     }
-    
+
     const visibilityCache = new Map();
     const isVisible = (el) => {
       if (visibilityCache.has(el)) return visibilityCache.get(el);
@@ -509,9 +498,9 @@ async function scrapeInteractiveElements(pageInstance) {
       while (parent) {
         const tag = parent.tagName.toLowerCase();
         if (
-          tag === 'a' || 
-          tag === 'button' || 
-          tag === 'select' || 
+          tag === 'a' ||
+          tag === 'button' ||
+          tag === 'select' ||
           tag === 'label' ||
           parent.getAttribute('role') === 'button' ||
           parent.getAttribute('role') === 'link'
@@ -634,24 +623,24 @@ async function scrapeInteractiveElements(pageInstance) {
 
     const result = [];
     const activeEls = new Set();
-    
+
     els.forEach(el => {
       if (!isVisible(el)) return;
       if (hasInteractiveAncestor(el)) return;
-      
+
       activeEls.add(el);
-      
+
       let id = el.getAttribute('data-context-id');
       if (!id) {
         id = `context-el-${window._contextElementCounter++}`;
         el.setAttribute('data-context-id', id);
       }
-      
+
       let rawText = getSemanticLabel(el);
       let text = rawText.trim().replace(/\s+/g, ' ').slice(0, 80);
-      
+
       const rect = el.getBoundingClientRect();
-      
+
       const attributes = {
         id: el.getAttribute('id') || '',
         name: el.getAttribute('name') || '',
@@ -683,7 +672,6 @@ async function scrapeInteractiveElements(pageInstance) {
       });
     });
 
-    // Cleanup data-context-id attributes from any element that is no longer active/interactive/visible
     document.querySelectorAll('[data-context-id]').forEach(el => {
       if (!activeEls.has(el)) {
         el.removeAttribute('data-context-id');
@@ -693,6 +681,14 @@ async function scrapeInteractiveElements(pageInstance) {
     return result;
   });
 }
+async function retagElementContextId(pageInstance, elementHandle, targetId) {
+  await pageInstance.evaluate(({ elObj, id }) => {
+    const old = document.querySelector(`[data-context-id="${id}"]`);
+    if (old) old.removeAttribute('data-context-id');
+    if (elObj) elObj.setAttribute('data-context-id', id);
+  }, { elObj: elementHandle, id: targetId });
+}
+
 
 async function getInteractiveElementOrHeal(session, targetId, runLog) {
   const pageInstance = session.page;
@@ -721,14 +717,7 @@ async function getInteractiveElementOrHeal(session, targetId, runLog) {
         }, cssEl);
 
         if (isInteractive) {
-          await pageInstance.evaluate((id) => {
-            const old = document.querySelector(`[data-context-id="${id}"]`);
-            if (old) old.removeAttribute('data-context-id');
-          }, targetId);
-
-          await pageInstance.evaluate((elObj, id) => {
-            elObj.setAttribute('data-context-id', id);
-          }, cssEl, targetId);
+          await retagElementContextId(pageInstance, cssEl, targetId);
           const healMsg = `Self-healed instantly: matched element "${targetId}" via CSS selector "${targetElement.selector}".`;
           console.log(`[Browser Server] ${healMsg}`);
           if (runLog) runLog.push(healMsg);
@@ -781,7 +770,7 @@ async function getInteractiveElementOrHeal(session, targetId, runLog) {
         if (attr1.title && attr1.title === attr2.title) score += 3;
         if (attr1.href && attr1.href === attr2.href) score += 3;
         if (attr1.role && attr1.role === attr2.role) score += 2;
-        
+
         if (attr1.className && attr2.className) {
           const classes1 = attr1.className.split(/\s+/).filter(Boolean);
           const classes2 = attr2.className.split(/\s+/).filter(Boolean);
@@ -817,14 +806,7 @@ async function getInteractiveElementOrHeal(session, targetId, runLog) {
       const healSelector = `[data-context-id="${bestMatch.id}"]`;
       const healedEl = await pageInstance.$(healSelector);
       if (healedEl) {
-        await pageInstance.evaluate((id) => {
-          const old = document.querySelector(`[data-context-id="${id}"]`);
-          if (old) old.removeAttribute('data-context-id');
-        }, targetId);
-
-        await pageInstance.evaluate((elObj, id) => {
-          elObj.setAttribute('data-context-id', id);
-        }, healedEl, targetId);
+        await retagElementContextId(pageInstance, healedEl, targetId);
 
         const healMsg = `Self-healed: matched mutated element "${targetId}" to new element "${bestMatch.id}" (score: ${highestScore}, tag: ${bestMatch.tagName}, text: "${bestMatch.text}").`;
         console.log(`[Browser Server] ${healMsg}`);
@@ -844,10 +826,10 @@ async function executeBrowserAgent(settings, userGoal, runLog, sessionId, abortS
   let currentTitle = '';
   const steps = [];
   try {
-    runLog.push(`Launching browser viewport for session ${sid}...`);
+    runLog.push(`Launching Playwright browser viewport for session ${sid}...`);
     const session = await ensureSession(sid);
     let pageInstance = session.page;
-    
+
     currentUrl = pageInstance.url();
     currentTitle = await pageInstance.title();
     let extractedContext = '';
@@ -908,9 +890,17 @@ async function executeBrowserAgent(settings, userGoal, runLog, sessionId, abortS
         }
       }
 
-
       const elements = await scrapeInteractiveElements(pageInstance);
       session.lastElements = elements;
+
+      let ariaTree = '';
+      try {
+        if (typeof pageInstance.ariaSnapshot === 'function') {
+          ariaTree = await pageInstance.ariaSnapshot();
+        }
+      } catch (e) {
+        ariaTree = '';
+      }
 
       const elementsForLlm = elements.map(({ rect, selector, ...rest }) => rest);
 
@@ -923,7 +913,10 @@ Goal: "${userGoal}"
 Current URL: ${currentUrl || 'about:blank'}
 Page Title: ${currentTitle || 'No Title'}
 
-IMPORTANT VISUAL LABELS: Each interactive element on the page screenshot is annotated with a red badge containing a number (e.g., [1], [2], [3]). This number corresponds exactly to the number suffix of the element's ID (e.g., badge "1" represents element ID "context-el-1", badge "42" is "context-el-42"). Examine the screenshot visually, find the target badge, and select the corresponding element ID from the JSON list.
+ACCESSIBILITY & UI TREE (ARIA Snapshot):
+${ariaTree || 'N/A'}
+
+IMPORTANT VISUAL LABELS: Each interactive element on the page screenshot is annotated with a red badge containing a number (e.g., [1], [2], [3]). This number corresponds exactly to the number suffix of the element's ID (e.g., badge "1" represents element ID "context-el-1", badge "42" is "context-el-42"). Examine the ARIA tree and screenshot visually, find the target element/badge, and select the corresponding element ID from the JSON list.
 
 List of interactive elements on the current page:
 ${JSON.stringify(elementsForLlm, null, 2)}
@@ -946,6 +939,7 @@ Available Actions:
 11. { "action": "fail", "text": "Error explanation / why it was not possible to complete the task" }
 
 Select the next single action to take. Provide your thought process (concise, written in third-person) and the next action in JSON format:
+{
   "thought": "Thought text...",
   "action": "click" | "navigate" | "type" | "hover" | "back" | "key" | "scroll" | "wait" | "extract" | "done" | "fail",
   "targetId": "context-el-...",
@@ -1001,7 +995,7 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
         currentStep.status = 'success';
         currentStep.logMessage = decision.action === 'done' ? 'Completed task' : 'Failed task';
         isFinished = true;
-        runLog.push(`Finished headless agent: ${decision.action}`);
+        runLog.push(`Finished Playwright agent: ${decision.action}`);
 
         if (messageId) {
           broadcastLiveEvent('browser-agent-update', {
@@ -1049,7 +1043,7 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
           let lastError;
           let actualTargetId = targetId;
           let healedResult = false;
-          
+
           while (attempts < 2 && !success) {
             attempts++;
             try {
@@ -1079,7 +1073,7 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
           let lastError;
           let actualTargetId = targetId;
           let healedResult = false;
-          
+
           while (attempts < 2 && !success) {
             attempts++;
             try {
@@ -1088,22 +1082,26 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
               healedResult = healed || healedResult;
               const selector = `[data-context-id="${actualId}"]`;
               await highlightElement(selector, '#3b82f6', sid);
-              await pageInstance.evaluate((sel) => {
+              await pageInstance.evaluate(({ sel }) => {
                 const item = document.querySelector(sel);
                 if (item) {
                   item.value = '';
                   item.focus();
                 }
-              }, selector);
-              await el.type(text || '');
-              await pageInstance.evaluate((sel) => {
+              }, { sel: selector });
+              if (typeof el.fill === 'function') {
+                await el.fill(text || '');
+              } else {
+                await el.type(text || '');
+              }
+              await pageInstance.evaluate(({ sel }) => {
                 const item = document.querySelector(sel);
                 if (item) {
                   item.dispatchEvent(new Event('input', { bubbles: true }));
                   item.dispatchEvent(new Event('change', { bubbles: true }));
                   item.blur();
                 }
-              }, selector);
+              }, { sel: selector });
               success = true;
             } catch (err) {
               lastError = err;
@@ -1123,7 +1121,7 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
           let lastError;
           let actualTargetId = targetId;
           let healedResult = false;
-          
+
           while (attempts < 2 && !success) {
             attempts++;
             try {
@@ -1159,7 +1157,7 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
           let lastError;
           let actualTargetId = targetId;
           let healedResult = false;
-          
+
           while (attempts < 2 && !success) {
             attempts++;
             try {
@@ -1288,20 +1286,22 @@ Respond ONLY with a JSON object. Do not include markdown code block wrappers (li
 async function clearSessionStorage(sessionId) {
   const sid = sessionId || 'default';
   const session = sessions.get(sid);
-  if (session && session.page) {
+  if (session) {
     try {
-      const client = await session.page.target().createCDPSession();
-      await client.send('Network.clearBrowserCookies');
-      await client.send('Network.clearBrowserCache');
+      if (session.context && typeof session.context.clearCookies === 'function') {
+        await session.context.clearCookies();
+      }
     } catch (e) {}
-    try {
-      await session.page.evaluate(() => {
-        try {
-          localStorage.clear();
-          sessionStorage.clear();
-        } catch (e) {}
-      });
-    } catch (e) {}
+    if (session.page && !session.page.isClosed()) {
+      try {
+        await session.page.evaluate(() => {
+          try {
+            localStorage.clear();
+            sessionStorage.clear();
+          } catch (e) {}
+        });
+      } catch (e) {}
+    }
     return true;
   }
   return false;
@@ -1332,4 +1332,3 @@ module.exports = {
   navigateToUrl,
   capturePageScreenshot
 };
-
