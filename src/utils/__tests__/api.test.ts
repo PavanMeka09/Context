@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fetchModels, extractWebSearchQuery, webSearchToolParametersSchema } from '../api';
+import { fetchModels, extractWebSearchQuery, webSearchToolParametersSchema, streamChatCompletion } from '../api';
+import type { Settings, Message } from '../storage';
+import * as aiModule from 'ai';
+type AiModule = typeof aiModule;
 
+vi.mock('ai', async (importOriginal) => {
+  const actual = await importOriginal<AiModule>();
+  return {
+    ...actual,
+    streamText: vi.fn()
+  };
+});
 describe('src/utils/api.ts', () => {
   const originalFetch = global.fetch;
 
@@ -45,24 +55,49 @@ describe('src/utils/api.ts', () => {
     });
   });
   describe('web_search parameter handling', () => {
-    it('validates schema and correctly extracts query when model sends string query, queries array, or search_query', () => {
-      const input1 = { query: 'Kiara Advani photo' };
-      const input2 = { queries: ['Kiara Advani image hd', 'Kiara Advani photos'] };
-      const input3 = { queries: 'Kiara Advani photos' };
-      const input4 = { search_query: 'Kiara Advani' };
-      const input5 = { q: 'Kiara Advani' };
+    it.each([
+      { input: { query: 'Kiara Advani photo' }, expected: 'Kiara Advani photo', label: 'single query string' },
+      { input: { queries: ['Kiara Advani image hd', 'Kiara Advani photos'] }, expected: 'Kiara Advani image hd', label: 'queries string array' },
+      { input: { queries: 'Kiara Advani photos' }, expected: 'Kiara Advani photos', label: 'queries string' },
+      { input: { search_query: 'Kiara Advani' }, expected: 'Kiara Advani', label: 'search_query parameter' },
+      { input: { q: 'Kiara Advani' }, expected: 'Kiara Advani', label: 'q parameter' },
+    ])('validates schema and extracts query for $label', ({ input, expected }) => {
+      expect(webSearchToolParametersSchema.safeParse(input).success).toBe(true);
+      expect(extractWebSearchQuery(input)).toBe(expected);
+    });
+  });
+  describe('streamChatCompletion', () => {
+    it('passes stopWhen stepCountIs condition to streamText when web search is enabled', async () => {
+      const mockStreamText = vi.mocked(aiModule.streamText);
+      mockStreamText.mockReturnValue({
+        fullStream: (async function* () {
+          yield { type: 'text-delta', textDelta: 'Response after search' };
+        })()
+      } as unknown as ReturnType<typeof aiModule.streamText>);
 
-      expect(webSearchToolParametersSchema.safeParse(input1).success).toBe(true);
-      expect(webSearchToolParametersSchema.safeParse(input2).success).toBe(true);
-      expect(webSearchToolParametersSchema.safeParse(input3).success).toBe(true);
-      expect(webSearchToolParametersSchema.safeParse(input4).success).toBe(true);
-      expect(webSearchToolParametersSchema.safeParse(input5).success).toBe(true);
+      const settings: Settings = {
+        apiKey: 'test-api-key',
+        provider: 'gemini',
+        model: 'gemini-3.6-flash',
+        isWebSearchEnabled: true
+      };
 
-      expect(extractWebSearchQuery(input1)).toBe('Kiara Advani photo');
-      expect(extractWebSearchQuery(input2)).toBe('Kiara Advani image hd');
-      expect(extractWebSearchQuery(input3)).toBe('Kiara Advani photos');
-      expect(extractWebSearchQuery(input4)).toBe('Kiara Advani');
-      expect(extractWebSearchQuery(input5)).toBe('Kiara Advani');
+      const messages: Message[] = [{ id: '1', role: 'user', content: 'search kiara advani image', timestamp: new Date().toISOString() }];
+      const callbacks = {
+        onChunk: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn()
+      };
+      const controller = new AbortController();
+
+      await streamChatCompletion(settings, messages, 'system prompt', callbacks, controller.signal);
+
+      expect(mockStreamText).toHaveBeenCalled();
+      const options = mockStreamText.mock.calls[0][0];
+      expect(options.tools).toBeDefined();
+      expect(options.stopWhen).toBeDefined();
+      expect(callbacks.onChunk).toHaveBeenCalledWith('Response after search');
+      expect(callbacks.onDone).toHaveBeenCalledWith('Response after search');
     });
   });
 });

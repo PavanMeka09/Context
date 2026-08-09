@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { generateText, streamText, tool } from 'ai';
+import { generateText, streamText, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
 import type { ModelMessage } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
@@ -22,13 +22,13 @@ export const webSearchToolParametersSchema = z.object({
 export type WebSearchArgs = z.infer<typeof webSearchToolParametersSchema>;
 
 export function extractWebSearchQuery(args: WebSearchArgs): string {
-  const rawQuery =
+  const candidate =
     args?.query ||
     (Array.isArray(args?.queries) ? args.queries[0] : args?.queries) ||
     args?.search_query ||
     args?.q ||
     '';
-  return (typeof rawQuery === 'string' ? rawQuery : String(rawQuery || '')).trim();
+  return (typeof candidate === 'string' ? candidate : String(candidate || '')).trim();
 }
 
 export async function fetchModels(apiKey?: string): Promise<ModelOption[]> {
@@ -208,9 +208,9 @@ export async function streamChatCompletion(
   try {
     const webSearchTool = settings.isWebSearchEnabled
       ? {
-          web_search: (tool as any)({
+          web_search: tool({
             description:
-              'Search the web using SearXNG for real-time information, current facts, weather, news, or images.',
+              'Search the web using SearXNG for real-time information, current facts, weather, news, or images. Formulate ONE clear, targeted search query per user request. Do NOT execute repeated or redundant web searches; synthesize the returned results directly to answer the user.',
             parameters: webSearchToolParametersSchema,
             execute: async (args: WebSearchArgs) => {
               const query = extractWebSearchQuery(args);
@@ -238,20 +238,19 @@ export async function streamChatCompletion(
         }
       : undefined;
 
-    const streamOptions: Record<string, unknown> = {
+    const result = streamText({
       model: prep.modelInstance,
       messages: prep.formattedMessages,
       system: prep.effectiveSystemInstruction || undefined,
       abortSignal: signal,
       providerOptions: prep.providerOptions,
-    };
-
-    if (webSearchTool) {
-      streamOptions.tools = webSearchTool;
-      streamOptions.maxSteps = 5;
-    }
-
-    const result = streamText(streamOptions as unknown as Parameters<typeof streamText>[0]);
+      ...(webSearchTool
+        ? {
+            tools: webSearchTool,
+            stopWhen: stepCountIs(2),
+          }
+        : {}),
+    });
 
     if (result) {
       let fullText = '';
