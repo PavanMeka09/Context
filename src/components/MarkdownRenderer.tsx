@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Check, Code, Eye, Play, Terminal as TerminalIcon, Trash2, X, Sparkles, RotateCw, ExternalLink } from 'lucide-react';
+import { Copy, Check, Code, Eye, Play, Terminal as TerminalIcon, Trash2, X, Sparkles, RotateCw, ExternalLink, Download, Layout } from 'lucide-react';
 
 interface MarkdownRendererProps {
   content: string;
@@ -627,6 +627,23 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
       console.error('Failed to copy code', err);
     }
   };
+  const handleDownload = () => {
+    const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `artifact-${Date.now()}.${language === 'python' ? 'py' : language === 'javascript' || language === 'js' ? 'js' : language === 'typescript' || language === 'ts' ? 'ts' : language === 'json' ? 'json' : language === 'html' ? 'html' : 'txt'}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleOpenArtifact = () => {
+    window.dispatchEvent(new CustomEvent('open-artifact-inspector', {
+      detail: { language, code, title: `${language.toUpperCase()} Snippet` }
+    }));
+  };
 
   const displayName = language.toUpperCase();
   const supportsPreview = language === 'html' || language === 'svg';
@@ -708,9 +725,28 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
           )}
 
           <button
+            onClick={handleOpenArtifact}
+            aria-label="Open in Workspace Panel"
+            title="Inspect in side workspace panel"
+            className="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs transition hover:bg-accent hover:text-foreground"
+          >
+            <Layout className="h-3.5 w-3.5 text-primary" />
+            <span className="hidden sm:inline">Open in Panel</span>
+          </button>
+
+          <button
+            onClick={handleDownload}
+            aria-label="Download code file"
+            title="Download file"
+            className="flex items-center gap-1 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs transition hover:bg-accent hover:text-foreground text-muted-foreground"
+          >
+            <Download className="h-3.5 w-3.5" />
+          </button>
+
+          <button
             onClick={handleCopy}
             aria-label="Copy code to clipboard"
-            className="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1 transition hover:bg-accent hover:text-foreground"
+            className="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs transition hover:bg-accent hover:text-foreground"
           >
             {copied ? (
               <>
@@ -726,8 +762,6 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
           </button>
         </div>
       </div>
-
-      {/* Content Area */}
       {supportsPreview && activeTab === 'preview' ? (
         <div className="w-full bg-muted/30 p-3 h-96 select-text overflow-hidden flex flex-col">
           <iframe

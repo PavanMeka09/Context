@@ -251,7 +251,10 @@ const KEYS = {
   FONT_SIZE: 'context_font_size',
   THEME: 'context_theme',
   MEMORIES: 'context_memories',
-  SCHEDULES: 'context_schedules'
+  SCHEDULES: 'context_schedules',
+  WORKSPACE_OPEN: 'context_workspace_open',
+  WORKSPACE_TAB: 'context_workspace_tab',
+  WORKSPACE_WIDTH: 'context_workspace_width'
 };
 
 // Debounce helper
@@ -775,6 +778,36 @@ export const Storage = {
 
   saveTheme(theme: 'dark' | 'light'): void {
     localStorage.setItem(KEYS.THEME, theme);
+  },
+  getWorkspaceOpen(): boolean {
+    return localStorage.getItem(KEYS.WORKSPACE_OPEN) === 'true';
+  },
+
+  saveWorkspaceOpen(open: boolean): void {
+    localStorage.setItem(KEYS.WORKSPACE_OPEN, String(open));
+  },
+
+  getWorkspaceTab(): 'browser' | 'schedules' | 'artifacts' {
+    const tab = localStorage.getItem(KEYS.WORKSPACE_TAB);
+    if (tab === 'browser' || tab === 'schedules' || tab === 'artifacts') return tab;
+    return 'browser';
+  },
+
+  saveWorkspaceTab(tab: 'browser' | 'schedules' | 'artifacts'): void {
+    localStorage.setItem(KEYS.WORKSPACE_TAB, tab);
+  },
+
+  getWorkspaceWidth(): number {
+    const val = localStorage.getItem(KEYS.WORKSPACE_WIDTH);
+    if (val) {
+      const num = parseInt(val, 10);
+      if (!isNaN(num) && num >= 280 && num <= 1200) return num;
+    }
+    return 420;
+  },
+
+  saveWorkspaceWidth(width: number): void {
+    localStorage.setItem(KEYS.WORKSPACE_WIDTH, String(width));
   },
 
   async exportData(): Promise<string> {

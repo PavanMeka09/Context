@@ -54,4 +54,36 @@ describe('ChatArea Component', () => {
     fireEvent.click(resendButtons[0]);
     expect(onRegenerateResponse).toHaveBeenCalledWith('m1');
   });
+  it('renders workspace panel toggle buttons and model badge in header', () => {
+    const onToggleWorkspace = vi.fn();
+    const onSelectWorkspaceTab = vi.fn();
+    
+    render(
+      <ChatArea
+        {...defaultProps}
+        settings={{
+          provider: 'gemini',
+          apiKey: 'key',
+          model: 'gemini-3.6-flash',
+          isWebSearchEnabled: true,
+          thinkingLevel: 'off',
+          isMemoryEnabled: true,
+          isBrowserAgentEnabled: true
+        }}
+        isWorkspaceOpen={false}
+        onToggleWorkspace={onToggleWorkspace}
+        onSelectWorkspaceTab={onSelectWorkspaceTab}
+      />
+    );
+
+    expect(screen.getByText('gemini-3.6-flash')).toBeDefined();
+    expect(screen.getAllByText('Browser').length).toBeGreaterThan(0);
+    const workspaceBtn = screen.getByTitle('Toggle Workspace Panel (Ctrl+\\)');
+    fireEvent.click(workspaceBtn);
+    expect(onToggleWorkspace).toHaveBeenCalledTimes(1);
+
+    const artifactsTabBtn = screen.getByTitle('Artifact Inspector Workspace Tab');
+    fireEvent.click(artifactsTabBtn);
+    expect(onSelectWorkspaceTab).toHaveBeenCalledWith('artifacts');
+  });
 });

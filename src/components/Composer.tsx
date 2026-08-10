@@ -364,6 +364,27 @@ export const Composer: React.FC<ComposerProps> = ({
         </div>
       )}
 
+      {/* Active Voice Recording Status Banner */}
+      {isRecording && (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-500 animate-pulse select-none">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+            </span>
+            <Mic className="h-4 w-4 text-red-500" />
+            <span>Listening... Speak clearly into your mic</span>
+          </div>
+          <button
+            type="button"
+            onClick={toggleRecording}
+            className="rounded px-2 py-0.5 text-[10px] uppercase font-bold bg-red-500 text-white hover:bg-red-600 transition cursor-pointer"
+          >
+            Done
+          </button>
+        </div>
+      )}
+
       {/* Input container */}
       <div className="relative rounded-lg border border-input bg-card p-1.5 transition-all flex flex-col gap-1.5 focus-within:ring-1 focus-within:ring-ring">
         <textarea

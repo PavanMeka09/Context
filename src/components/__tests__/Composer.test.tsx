@@ -107,4 +107,23 @@ describe('Composer Component', () => {
 
     expect(handleStop).toHaveBeenCalledTimes(1);
   });
+
+  it('renders voice typing mic button', () => {
+    render(
+      <Composer
+        input=""
+        onChangeInput={vi.fn()}
+        onSend={vi.fn()}
+        isGenerating={false}
+        inputRef={createRef()}
+        settings={mockSettings}
+        activePromptId="preset-general"
+        onSelectPromptId={vi.fn()}
+        customPrompts={[]}
+      />
+    );
+
+    const micBtn = screen.getByLabelText('Voice typing');
+    expect(micBtn).toBeDefined();
+  });
 });

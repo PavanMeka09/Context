@@ -1,8 +1,8 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import type { Chat, Message } from '../utils/storage';
+import type { Chat, Message, Settings } from '../utils/storage';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { BrowserLiveView } from './BrowserLiveView';
-import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Compass, Volume2, VolumeX, Download } from 'lucide-react';
+import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Compass, Volume2, VolumeX, Download, Layout, Calendar, Code, Settings as SettingsIcon, Cpu, Sparkles, Search, Brain } from 'lucide-react';
 import { cleanSnippetText, type SearxngResult } from '../utils/searxng';
 
 function parseThinkingAndContent(content: string): { thinking: string | null; content: string } {
@@ -520,6 +520,12 @@ interface ChatAreaProps {
   onToggleSidebar: () => void;
   onSwitchBranch?: (messageId: string) => void;
   onOpenBrowserModal?: (sessionId?: string) => void;
+  settings?: Settings;
+  isWorkspaceOpen?: boolean;
+  onToggleWorkspace?: () => void;
+  workspaceTab?: 'browser' | 'schedules' | 'artifacts';
+  onSelectWorkspaceTab?: (tab: 'browser' | 'schedules' | 'artifacts') => void;
+  onOpenSettings?: () => void;
   children?: React.ReactNode;
 }
 
@@ -534,6 +540,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onToggleSidebar,
   onSwitchBranch,
   onOpenBrowserModal,
+  settings,
+  isWorkspaceOpen,
+  onToggleWorkspace,
+  workspaceTab,
+  onSelectWorkspaceTab,
+  onOpenSettings,
   children
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -658,31 +670,59 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-background text-foreground relative">
       
       {/* Header Bar */}
-      <header className="flex h-14 shrink-0 items-center justify-between px-6 bg-card text-card-foreground select-none border-b border-border">
-        <div className="flex items-center gap-3 min-w-0">
+      {/* Modern Workstation Header Bar */}
+      <header className="flex h-14 shrink-0 items-center justify-between px-4 md:px-6 bg-card text-card-foreground select-none border-b border-border gap-2">
+        <div className="flex items-center gap-2.5 min-w-0">
           {isSidebarCollapsed && (
             <button
               onClick={onToggleSidebar}
-              className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition active:scale-95 cursor-pointer shrink-0"
-              title="Expand sidebar"
-              aria-label="Expand sidebar button"
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition active:scale-95 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              title="Expand sidebar (Ctrl+B)"
+              aria-label="Expand sidebar"
             >
               <PanelLeftOpen className="h-4 w-4 text-primary" />
             </button>
           )}
-          <div className="flex items-center min-w-0">
-            <h2 className="font-sans text-xs font-semibold text-foreground truncate max-w-xs md:max-w-md">
+          <div className="flex items-center gap-2 min-w-0">
+            <h2 className="font-sans text-xs font-semibold text-foreground truncate max-w-[140px] sm:max-w-xs md:max-w-md">
               {chat ? chat.title : 'New Conversation'}
             </h2>
+            
+            {/* Model Badge */}
+            {settings?.model && (
+              <div 
+                className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-mono font-medium shrink-0"
+                title={`Active AI Provider: ${settings.provider} (${settings.model})`}
+              >
+                <Sparkles className="h-2.5 w-2.5" />
+                <span className="truncate max-w-[110px]">{settings.model.split('/').pop()}</span>
+              </div>
+            )}
+
+            {/* Active Tool Indicator Badges */}
+            {settings?.isBrowserAgentEnabled && (
+              <span className="hidden md:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted text-[9.5px] font-medium text-muted-foreground border border-border" title="Browser Automation Enabled">
+                <Compass className="h-2.5 w-2.5 text-primary" />
+                <span>Browser</span>
+              </span>
+            )}
+            {settings?.isWebSearchEnabled && (
+              <span className="hidden md:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted text-[9.5px] font-medium text-muted-foreground border border-border" title="Live Web Search Enabled">
+                <Search className="h-2.5 w-2.5 text-primary" />
+                <span>Search</span>
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Right Header Toolbar */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Export Dropdown */}
           {chat && chat.messages.length > 0 && (
             <div className="relative select-none">
               <button
                 onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
-                className="flex items-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground px-2.5 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="flex items-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground px-2 py-1.5 sm:px-2.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 title="Export conversation"
                 aria-label="Export conversation"
                 aria-expanded={exportDropdownOpen}
@@ -727,21 +767,87 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </div>
           )}
 
-          {onOpenBrowserModal && (
+          {/* Workspace Panel Selector Tabs & Toggle Button */}
+          {onToggleWorkspace && (
+            <div className="flex items-center rounded-md border border-input bg-muted/40 p-0.5">
+              <button
+                onClick={() => {
+                  if (!isWorkspaceOpen) onToggleWorkspace();
+                  onSelectWorkspaceTab?.('browser');
+                }}
+                className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
+                  isWorkspaceOpen && workspaceTab === 'browser'
+                    ? 'bg-background text-foreground shadow-xs font-semibold'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title="Browser Sandbox Workspace Tab"
+                aria-label="Browser Tab"
+              >
+                <Compass className="h-3.5 w-3.5 text-primary" />
+                <span className="hidden lg:inline">Browser</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (!isWorkspaceOpen) onToggleWorkspace();
+                  onSelectWorkspaceTab?.('schedules');
+                }}
+                className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
+                  isWorkspaceOpen && workspaceTab === 'schedules'
+                    ? 'bg-background text-foreground shadow-xs font-semibold'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title="Task Schedules Workspace Tab"
+                aria-label="Schedules Tab"
+              >
+                <Calendar className="h-3.5 w-3.5 text-primary" />
+                <span className="hidden lg:inline">Schedules</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (!isWorkspaceOpen) onToggleWorkspace();
+                  onSelectWorkspaceTab?.('artifacts');
+                }}
+                className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
+                  isWorkspaceOpen && workspaceTab === 'artifacts'
+                    ? 'bg-background text-foreground shadow-xs font-semibold'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title="Artifact Inspector Workspace Tab"
+                aria-label="Artifacts Tab"
+              >
+                <Code className="h-3.5 w-3.5 text-primary" />
+                <span className="hidden lg:inline">Artifacts</span>
+              </button>
+            </div>
+          )}
+
+          {/* Toggle Workspace Button */}
+          {onToggleWorkspace && (
             <button
-              onClick={() => onOpenBrowserModal(chat?.id || undefined)}
-              className="flex items-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground px-3 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              title="Open Sandbox Browser Live View"
-              aria-label="Open Browser Sandbox"
+              onClick={onToggleWorkspace}
+              className={`flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                isWorkspaceOpen 
+                  ? 'bg-primary/10 border-primary/30 text-primary font-semibold' 
+                  : 'border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground'
+              }`}
+              title="Toggle Workspace Panel (Ctrl+\)"
+              aria-label="Toggle Workspace Panel"
+              aria-pressed={isWorkspaceOpen}
             >
-              <Compass className="h-3.5 w-3.5 text-primary" />
-              <span>Browser Sandbox</span>
-              {chat?.messages.some(m => m.browserSession && (m.browserSession.status === 'running' || m.browserSession.status === 'paused')) && (
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-                </span>
-              )}
+              <Layout className="h-3.5 w-3.5" />
+              <span className="hidden md:inline">{isWorkspaceOpen ? 'Hide Workspace' : 'Workspace'}</span>
+            </button>
+          )}
+
+          {/* Settings Quick Access Button */}
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              className="rounded-md p-1.5 border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground transition active:scale-95 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              title="Open Settings"
+              aria-label="Open Settings"
+            >
+              <SettingsIcon className="h-3.5 w-3.5" />
             </button>
           )}
         </div>

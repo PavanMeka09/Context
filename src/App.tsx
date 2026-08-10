@@ -89,6 +89,12 @@ function App() {
   const [browserModalOpen, setBrowserModalOpen] = useState(false);
   const [browserModalSessionId, setBrowserModalSessionId] = useState<string>('interactive');
 
+  // Workspace Split-Screen State
+  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(() => Storage.getWorkspaceOpen());
+  const [workspaceTab, setWorkspaceTab] = useState<'browser' | 'schedules' | 'artifacts'>(() => Storage.getWorkspaceTab());
+  const [workspaceWidth, setWorkspaceWidth] = useState(() => Storage.getWorkspaceWidth());
+  const [isResizingWorkspace, setIsResizingWorkspace] = useState(false);
+  const [selectedArtifact, setSelectedArtifact] = useState<{ language: string; code: string; title?: string } | null>(null);
   // Preference and accessibility states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => Storage.getSidebarCollapsed());
   const [theme, setTheme] = useState<'dark' | 'light'>(() => Storage.getTheme());
@@ -225,6 +231,16 @@ function App() {
         setCommandPaletteOpen(prev => !prev);
       }
 
+      // Workspace Panel Toggle: Ctrl+\ or Cmd+\
+      if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
+        e.preventDefault();
+        setIsWorkspaceOpen(prev => {
+          const next = !prev;
+          Storage.saveWorkspaceOpen(next);
+          return next;
+        });
+      }
+
       // Sidebar Toggle: Ctrl+B or Cmd+B
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();
@@ -266,10 +282,57 @@ function App() {
       setBrowserModalSessionId(sid);
       setBrowserModalOpen(true);
     };
-
     window.addEventListener('open-browser-sandbox-modal', handleOpenSandbox);
     return () => window.removeEventListener('open-browser-sandbox-modal', handleOpenSandbox);
   }, []);
+
+  useEffect(() => {
+    const handleOpenArtifact = (e: Event) => {
+      const customEvent = e as CustomEvent<{ language: string; code: string; title?: string }>;
+      if (customEvent.detail) {
+        setSelectedArtifact(customEvent.detail);
+        setWorkspaceTab('artifacts');
+        setIsWorkspaceOpen(true);
+        Storage.saveWorkspaceOpen(true);
+        Storage.saveWorkspaceTab('artifacts');
+      }
+    };
+    window.addEventListener('open-artifact-inspector', handleOpenArtifact);
+    return () => window.removeEventListener('open-artifact-inspector', handleOpenArtifact);
+  }, []);
+
+  // Drag handler for Workspace Panel resizing
+  const handleMouseDownResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingWorkspace(true);
+  };
+
+  useEffect(() => {
+    if (!isResizingWorkspace) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = window.innerWidth - e.clientX;
+      const minWidth = Math.max(320, Math.floor(window.innerWidth * 0.25));
+      const maxWidth = Math.floor(window.innerWidth * 0.7);
+      const clamped = Math.min(Math.max(newWidth, minWidth), maxWidth);
+      setWorkspaceWidth(clamped);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizingWorkspace(false);
+      setWorkspaceWidth(w => {
+        Storage.saveWorkspaceWidth(w);
+        return w;
+      });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingWorkspace]);
 
   const showToast = (message: React.ReactNode, type: 'error' | 'success' = 'error') => {
     if (toastTimerRef.current) {
@@ -1310,8 +1373,24 @@ function App() {
           onSwitchBranch={handleSwitchBranch}
           onOpenBrowserModal={(sid) => {
             setBrowserModalSessionId(sid || 'interactive');
-            setBrowserModalOpen(true);
+            setWorkspaceTab('browser');
+            setIsWorkspaceOpen(true);
+            Storage.saveWorkspaceOpen(true);
+            Storage.saveWorkspaceTab('browser');
           }}
+          settings={settings}
+          isWorkspaceOpen={isWorkspaceOpen}
+          onToggleWorkspace={() => {
+            const next = !isWorkspaceOpen;
+            setIsWorkspaceOpen(next);
+            Storage.saveWorkspaceOpen(next);
+          }}
+          workspaceTab={workspaceTab}
+          onSelectWorkspaceTab={(tab) => {
+            setWorkspaceTab(tab);
+            Storage.saveWorkspaceTab(tab);
+          }}
+          onOpenSettings={() => setSettingsOpen(true)}
         >
           <Composer
             input={composerInput}
@@ -1333,6 +1412,137 @@ function App() {
           />
         </ChatArea>
       </ErrorBoundary>
+
+      {/* Resizable Drag Divider & Workspace Side Panel */}
+      {isWorkspaceOpen && (
+        <>
+          <div
+            onMouseDown={handleMouseDownResize}
+            className={`w-1.5 hover:w-2 bg-border hover:bg-primary/50 transition-all cursor-col-resize shrink-0 select-none z-10 flex items-center justify-center ${
+              isResizingWorkspace ? 'bg-primary w-2' : ''
+            }`}
+            title="Drag to resize workspace panel"
+          >
+            <div className="h-8 w-0.5 rounded-full bg-muted-foreground/40" />
+          </div>
+
+          <aside 
+            style={{ width: `${workspaceWidth}px` }} 
+            className="h-full shrink-0 border-l border-border bg-card flex flex-col overflow-hidden animate-fade-in select-none"
+          >
+            {/* Panel Header */}
+            <div className="flex h-14 shrink-0 items-center justify-between px-4 border-b border-border bg-muted/30">
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => { setWorkspaceTab('browser'); Storage.saveWorkspaceTab('browser'); }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    workspaceTab === 'browser' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Compass className="h-3.5 w-3.5 text-primary" />
+                  <span>Browser</span>
+                </button>
+                <button
+                  onClick={() => { setWorkspaceTab('schedules'); Storage.saveWorkspaceTab('schedules'); }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    workspaceTab === 'schedules' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Calendar className="h-3.5 w-3.5 text-primary" />
+                  <span>Schedules</span>
+                </button>
+                <button
+                  onClick={() => { setWorkspaceTab('artifacts'); Storage.saveWorkspaceTab('artifacts'); }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    workspaceTab === 'artifacts' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Code className="h-3.5 w-3.5 text-primary" />
+                  <span>Artifacts</span>
+                </button>
+              </div>
+              <button
+                onClick={() => {
+                  setIsWorkspaceOpen(false);
+                  Storage.saveWorkspaceOpen(false);
+                }}
+                className="rounded-md p-1 hover:bg-accent text-muted-foreground hover:text-foreground transition cursor-pointer"
+                title="Close workspace panel (Ctrl+\)"
+                aria-label="Close workspace"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Tab Body */}
+            <div className="flex-1 overflow-y-auto p-4 relative">
+              {workspaceTab === 'browser' && (
+                <BrowserLiveView
+                  url="https://google.com"
+                  title="Interactive Browser Workspace"
+                  status={activeChat?.messages.some(m => m.browserSession?.status === 'running') ? 'running' : 'idle'}
+                  steps={activeChat?.messages.find(m => m.browserSession)?.browserSession?.steps || []}
+                  screenshotUrl=""
+                  screenshotTimestamp={Date.now()}
+                  sessionId={browserModalSessionId}
+                />
+              )}
+
+              {workspaceTab === 'schedules' && (
+                <SchedulesPanel
+                  isOpen={true}
+                  onClose={() => {
+                    setIsWorkspaceOpen(false);
+                    Storage.saveWorkspaceOpen(false);
+                  }}
+                  chats={chats}
+                  onSelectChat={handleSelectChat}
+                />
+              )}
+
+              {workspaceTab === 'artifacts' && (
+                <div className="flex flex-col h-full space-y-4 font-sans select-text">
+                  {selectedArtifact ? (
+                    <div className="flex flex-col h-full space-y-3">
+                      <div className="flex items-center justify-between border-b border-border pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-xs font-mono font-bold uppercase">
+                            {selectedArtifact.language}
+                          </span>
+                          <span className="text-xs font-semibold text-foreground">
+                            {selectedArtifact.title || 'Code Snippet'}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(selectedArtifact.code);
+                            showToast('Code copied to clipboard!', 'success');
+                          }}
+                          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-input rounded px-2 py-1 bg-background hover:bg-accent transition"
+                        >
+                          <Copy className="h-3 w-3" />
+                          <span>Copy</span>
+                        </button>
+                      </div>
+                      <pre className="flex-1 p-3 rounded-lg bg-muted/50 border border-border text-xs font-mono overflow-auto max-h-[calc(100vh-180px)] whitespace-pre-wrap">
+                        {selectedArtifact.code}
+                      </pre>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-64 text-center text-muted-foreground p-6">
+                      <Code className="h-10 w-10 text-muted-foreground/40 mb-3" />
+                      <h3 className="text-sm font-semibold text-foreground mb-1">No Artifact Selected</h3>
+                      <p className="text-xs leading-relaxed max-w-xs">
+                        Click "Open in Workspace Panel" on any code block in the chat stream to inspect code snippets and scraped artifacts here.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </aside>
+        </>
+      )}
 
       {/* Settings Panel */}
       {settingsOpen && (
