@@ -3,8 +3,11 @@ import { generateText, streamText, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
 import type { ModelMessage } from 'ai';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import type { Message, Settings, SearchExecutionResult } from './storage';
-import { FALLBACK_GEMINI_MODELS } from './storage';
+import { createAnthropic } from '@ai-sdk/anthropic';
+import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+import type { Message, Settings, SearchExecutionResult, ProviderType } from './storage';
+import { FALLBACK_MODELS, PROVIDERS } from './storage';
 import { searchSearxng, classifySearchHeuristically, formatSearxngResults, cleanSnippetText } from './searxng';
 
 export interface ModelOption {
@@ -31,14 +34,22 @@ export function extractWebSearchQuery(args: WebSearchArgs): string {
   return (typeof candidate === 'string' ? candidate : String(candidate || '')).trim();
 }
 
-export async function fetchModels(apiKey?: string): Promise<ModelOption[]> {
-  const key = apiKey;
-  try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
-    if (!response.ok) throw new Error(`Failed to fetch models: ${response.statusText}`);
-    const data = await response.json();
-    if (data && Array.isArray(data.models)) {
-      const models = data.models
+export interface FetchModelsOptions {
+  provider?: ProviderType;
+  apiKey?: string;
+}
+
+interface ProviderFetchConfig {
+  url: (key: string) => string;
+  headers?: (key: string) => Record<string, string>;
+  parse: (data: any) => ModelOption[];
+}
+
+const PROVIDER_FETCH_CONFIGS: Record<ProviderType, ProviderFetchConfig> = {
+  gemini: {
+    url: (key) => `https://generativelanguage.googleapis.com/v1beta/models?key=${key}`,
+    parse: (data) =>
+      (data?.models || [])
         .filter((m: any) => {
           if (!m.name || !m.name.includes('gemini')) return false;
           const methods: string[] = m.supportedGenerationMethods || [];
@@ -47,14 +58,77 @@ export async function fetchModels(apiKey?: string): Promise<ModelOption[]> {
         .map((m: any) => {
           const cleanId = m.name.startsWith('models/') ? m.name.slice(7) : m.name;
           return { id: cleanId, name: m.displayName || cleanId };
-        })
-        .sort((a: ModelOption, b: ModelOption) => a.name.localeCompare(b.name));
-      if (models.length > 0) return models;
+        }),
+  },
+  openai: {
+    url: () => 'https://api.openai.com/v1/models',
+    headers: (key) => ({ Authorization: `Bearer ${key}` }),
+    parse: (data) =>
+      (data?.data || [])
+        .filter((m: any) => m.id && (m.id.startsWith('gpt-') || m.id.startsWith('o1') || m.id.startsWith('o3')))
+        .map((m: any) => ({ id: m.id, name: m.id })),
+  },
+  openrouter: {
+    url: () => 'https://openrouter.ai/api/v1/models',
+    headers: (key) => ({ Authorization: `Bearer ${key}` }),
+    parse: (data) => (data?.data || []).map((m: any) => ({ id: m.id, name: m.name || m.id })),
+  },
+  anthropic: {
+    url: () => 'https://api.anthropic.com/v1/models',
+    headers: (key) => ({ 'x-api-key': key, 'anthropic-version': '2023-06-01' }),
+    parse: (data) => (data?.data || []).map((m: any) => ({ id: m.id, name: m.display_name || m.id })),
+  },
+};
+
+export async function fetchModels(
+  optionsOrProviderOrKey?: FetchModelsOptions | ProviderType | string,
+  apiKeyParam?: string
+): Promise<ModelOption[]> {
+  let provider: ProviderType = 'gemini';
+  let apiKey: string | undefined;
+
+  if (optionsOrProviderOrKey && typeof optionsOrProviderOrKey === 'object') {
+    provider = optionsOrProviderOrKey.provider || 'gemini';
+    apiKey = optionsOrProviderOrKey.apiKey;
+  } else if (
+    optionsOrProviderOrKey === 'gemini' ||
+    optionsOrProviderOrKey === 'anthropic' ||
+    optionsOrProviderOrKey === 'openai' ||
+    optionsOrProviderOrKey === 'openrouter'
+  ) {
+    provider = optionsOrProviderOrKey;
+    apiKey = apiKeyParam;
+  } else if (typeof optionsOrProviderOrKey === 'string') {
+    provider = 'gemini';
+    apiKey = optionsOrProviderOrKey;
+  } else {
+    apiKey = apiKeyParam;
+  }
+
+  const fallback = FALLBACK_MODELS[provider] || FALLBACK_MODELS.gemini;
+  if (!apiKey) {
+    return [...fallback];
+  }
+
+  try {
+    const config = PROVIDER_FETCH_CONFIGS[provider];
+    if (config) {
+      const response = await fetch(config.url(apiKey), {
+        headers: config.headers ? config.headers(apiKey) : undefined,
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const models = config.parse(data).sort((a: ModelOption, b: ModelOption) =>
+          a.name.localeCompare(b.name)
+        );
+        if (models.length > 0) return models;
+      }
     }
   } catch (e) {
-    console.warn('Error fetching Gemini models dynamically, using fallback', e);
+    console.warn(`Error fetching ${provider} models dynamically, using fallback`, e);
   }
-  return [...FALLBACK_GEMINI_MODELS];
+
+  return [...fallback];
 }
 
 export interface StreamCallbacks {
@@ -139,11 +213,33 @@ function formatModelMessages(messages: Message[]): ModelMessage[] {
     });
 }
 
-function getProviderOptions(thinkingLevel?: Settings['thinkingLevel'], model?: string, hasTools?: boolean) {
+export function createModelInstance(provider: ProviderType, apiKey: string, model: string) {
+  switch (provider) {
+    case 'anthropic': {
+      const anthropic = createAnthropic({ apiKey });
+      return anthropic(model);
+    }
+    case 'openai': {
+      const openai = createOpenAI({ apiKey });
+      return openai(model);
+    }
+    case 'openrouter': {
+      const openrouter = createOpenRouter({ apiKey });
+      return openrouter(model);
+    }
+    case 'gemini':
+    default: {
+      const google = createGoogleGenerativeAI({ apiKey });
+      return google(model);
+    }
+  }
+}
+
+function getProviderOptions(provider: ProviderType, thinkingLevel?: Settings['thinkingLevel'], model?: string, hasTools?: boolean) {
   if (hasTools) {
     return undefined;
   }
-  if (thinkingLevel && thinkingLevel !== 'off' && model && model.includes('gemini')) {
+  if (provider === 'gemini' && thinkingLevel && thinkingLevel !== 'off' && model && model.includes('gemini')) {
     const budgetMap = {
       low: 1024,
       medium: 2048,
@@ -166,7 +262,10 @@ function prepareModelAndMessages(
   systemInstruction: string,
   hasTools: boolean = false
 ) {
-  const { apiKey, model, thinkingLevel } = settings;
+  const provider = settings.provider || 'gemini';
+  const apiKey = settings.apiKey;
+  const model = settings.model || PROVIDERS[provider]?.defaultModel || 'gemini-3.6-flash';
+  const thinkingLevel = settings.thinkingLevel;
 
   if (!apiKey) {
     throw new Error('API key required. Please configure it in Settings.');
@@ -175,9 +274,8 @@ function prepareModelAndMessages(
   const effectiveSystemInstruction = getWrappedSystemInstruction(systemInstruction, hasTools ? 'off' : thinkingLevel);
   const formattedMessages = formatModelMessages(messages);
 
-  const google = createGoogleGenerativeAI({ apiKey });
-  const modelInstance = google(model);
-  const providerOptions = getProviderOptions(thinkingLevel, model, hasTools);
+  const modelInstance = createModelInstance(provider, apiKey, model);
+  const providerOptions = getProviderOptions(provider, thinkingLevel, model, hasTools);
 
   return {
     modelInstance,

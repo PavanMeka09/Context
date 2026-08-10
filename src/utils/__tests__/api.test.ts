@@ -53,6 +53,46 @@ describe('src/utils/api.ts', () => {
       expect(models.length).toBeGreaterThan(0);
       expect(models.some(m => m.id === 'gemini-3.6-flash')).toBe(true);
     });
+    it('returns fallback models for OpenAI, Anthropic, and OpenRouter when no API key is provided', async () => {
+      const openaiModels = await fetchModels('openai');
+      expect(openaiModels.some(m => m.id === 'gpt-4o')).toBe(true);
+
+      const anthropicModels = await fetchModels('anthropic');
+      expect(anthropicModels.some(m => m.id === 'claude-3-7-sonnet-20250219')).toBe(true);
+
+      const openrouterModels = await fetchModels('openrouter');
+      expect(openrouterModels.some(m => m.id === 'anthropic/claude-3.7-sonnet')).toBe(true);
+    });
+
+    it('fetches OpenAI dynamic models when provider and API key are provided', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'gpt-4o' },
+            { id: 'o3-mini' }
+          ]
+        })
+      } as Response);
+
+      const models = await fetchModels('openai', 'sk-test-openai');
+      expect(models).toHaveLength(2);
+      expect(models.map(m => m.id)).toEqual(['gpt-4o', 'o3-mini']);
+    });
+    it('supports FetchModelsOptions object signature', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'gpt-4o' }
+          ]
+        })
+      } as Response);
+
+      const models = await fetchModels({ provider: 'openai', apiKey: 'sk-test-openai' });
+      expect(models).toHaveLength(1);
+      expect(models[0].id).toBe('gpt-4o');
+    });
   });
   describe('web_search parameter handling', () => {
     it.each([

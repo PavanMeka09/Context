@@ -82,6 +82,9 @@ describe('src/utils/storage.ts', () => {
       expect(settings).toBeDefined();
       expect(settings.provider).toBe('gemini');
       expect(settings.isMemoryEnabled).toBe(true);
+      expect(settings.profiles).toHaveLength(1);
+      expect(settings.profiles![0].name).toBe('Default Profile');
+      expect(settings.activeProfileId).toBe('profile-default');
     });
 
     it('saves and retrieves updated settings', () => {
@@ -100,6 +103,118 @@ describe('src/utils/storage.ts', () => {
       const retrieved = Storage.getSettings();
       expect(retrieved.provider).toBe('gemini');
       expect(retrieved.model).toBe('gemini-2.5-flash');
+    });
+    it('auto-migrates legacy settings into a default ProviderProfile', () => {
+      localStorage.setItem(
+        'context_settings',
+        JSON.stringify({ provider: 'gemini', apiKey: 'legacy-key', model: 'gemini-2.5-flash' })
+      );
+      const settings = Storage.getSettings();
+      expect(settings.profiles).toBeDefined();
+      expect(settings.profiles).toHaveLength(1);
+      expect(settings.profiles![0].name).toBe('Default Profile');
+      expect(settings.profiles![0].apiKey).toBe('legacy-key');
+      expect(settings.activeProfileId).toBe(settings.profiles![0].id);
+    });
+
+    it('switches active profiles and syncs active profile credentials', () => {
+      const initialSettings = {
+        provider: 'gemini' as const,
+        apiKey: 'key-1',
+        model: 'gemini-3.6-flash',
+        profiles: [
+          { id: 'p1', name: 'Personal', provider: 'gemini' as const, apiKey: 'key-1', model: 'gemini-3.6-flash' },
+          { id: 'p2', name: 'Work', provider: 'gemini' as const, apiKey: 'key-2', model: 'gemini-2.5-pro' }
+        ],
+        activeProfileId: 'p2'
+      };
+      Storage.saveSettings(initialSettings);
+      const retrieved = Storage.getSettings();
+      expect(retrieved.activeProfileId).toBe('p2');
+      expect(retrieved.apiKey).toBe('key-2');
+      expect(retrieved.model).toBe('gemini-2.5-pro');
+    });
+    it('preserves unique provider per profile when switching profiles', () => {
+      const settingsWithProviders = {
+        provider: 'anthropic' as const,
+        apiKey: 'sk-ant-123',
+        model: 'claude-3-7-sonnet-20250219',
+        profiles: [
+          { id: 'p1', name: 'Gemini Profile', provider: 'gemini' as const, apiKey: 'g-key', model: 'gemini-3.6-flash' },
+          { id: 'p2', name: 'Claude Profile', provider: 'anthropic' as const, apiKey: 'sk-ant-123', model: 'claude-3-7-sonnet-20250219' },
+          { id: 'p3', name: 'OpenAI Profile', provider: 'openai' as const, apiKey: 'sk-openai-456', model: 'gpt-4o' }
+        ],
+        activeProfileId: 'p2'
+      };
+      Storage.saveSettings(settingsWithProviders);
+      let retrieved = Storage.getSettings();
+      expect(retrieved.activeProfileId).toBe('p2');
+      expect(retrieved.provider).toBe('anthropic');
+      expect(retrieved.apiKey).toBe('sk-ant-123');
+      expect(retrieved.model).toBe('claude-3-7-sonnet-20250219');
+
+      retrieved.activeProfileId = 'p3';
+      Storage.saveSettings(retrieved);
+      retrieved = Storage.getSettings();
+      expect(retrieved.activeProfileId).toBe('p3');
+      expect(retrieved.provider).toBe('openai');
+      expect(retrieved.apiKey).toBe('sk-openai-456');
+      expect(retrieved.model).toBe('gpt-4o');
+    });
+    it('saves updated model per profile independently when model is updated', () => {
+      const initial = {
+        provider: 'gemini' as const,
+        apiKey: 'key-1',
+        model: 'gemini-3.6-flash',
+        profiles: [
+          { id: 'p1', name: 'Profile 1', provider: 'gemini' as const, apiKey: 'key-1', model: 'gemini-3.6-flash' },
+          { id: 'p2', name: 'Profile 2', provider: 'openai' as const, apiKey: 'key-2', model: 'gpt-4o' }
+        ],
+        activeProfileId: 'p1'
+      };
+      Storage.saveSettings(initial);
+
+      let s = Storage.getSettings();
+      const p1 = s.profiles?.find(p => p.id === 'p1');
+      if (p1) p1.model = 'gemini-2.5-pro';
+      s.model = 'gemini-2.5-pro';
+      Storage.saveSettings(s);
+
+      s = Storage.getSettings();
+      expect(s.model).toBe('gemini-2.5-pro');
+      expect(s.profiles?.find(p => p.id === 'p1')?.model).toBe('gemini-2.5-pro');
+      expect(s.profiles?.find(p => p.id === 'p2')?.model).toBe('gpt-4o');
+
+      s.activeProfileId = 'p2';
+      const p2 = s.profiles?.find(p => p.id === 'p2');
+      if (p2) p2.model = 'gpt-4o-mini';
+      s.model = 'gpt-4o-mini';
+      Storage.saveSettings(s);
+
+      s = Storage.getSettings();
+      expect(s.activeProfileId).toBe('p2');
+      expect(s.model).toBe('gpt-4o-mini');
+      expect(s.profiles?.find(p => p.id === 'p2')?.model).toBe('gpt-4o-mini');
+
+      s.activeProfileId = 'p1';
+      Storage.saveSettings(s);
+      s = Storage.getSettings();
+      expect(s.activeProfileId).toBe('p1');
+      expect(s.model).toBe('gemini-2.5-pro');
+    });
+
+    it('ensures at least one profile remains when saving empty profiles', () => {
+      const invalidSettings = {
+        provider: 'gemini' as const,
+        apiKey: 'test-key',
+        model: 'gemini-3.6-flash',
+        profiles: [],
+        activeProfileId: ''
+      };
+      Storage.saveSettings(invalidSettings);
+      const retrieved = Storage.getSettings();
+      expect(retrieved.profiles).toHaveLength(1);
+      expect(retrieved.profiles![0].id).toBe('profile-default');
     });
   });
 
@@ -158,6 +273,32 @@ describe('src/utils/storage.ts', () => {
 
       const memories = Storage.getMemories();
       expect(memories.some(m => m.id === 'imported-m1')).toBe(true);
+    });
+    it('retains provider profiles structure during export and import', async () => {
+      Storage.saveSettings({
+        provider: 'gemini',
+        apiKey: 'work-key',
+        model: 'gemini-2.5-pro',
+        profiles: [
+          { id: 'prof-1', name: 'Personal', provider: 'gemini', apiKey: 'personal-key', model: 'gemini-3.6-flash' },
+          { id: 'prof-2', name: 'Work', provider: 'gemini', apiKey: 'work-key', model: 'gemini-2.5-pro' }
+        ],
+        activeProfileId: 'prof-2'
+      });
+
+      const exportedJson = await Storage.exportData();
+      expect(exportedJson).toContain('prof-1');
+      expect(exportedJson).toContain('Work');
+
+      localStorage.clear();
+
+      const importResult = await Storage.importData(exportedJson);
+      expect(importResult.success).toBe(true);
+
+      const importedSettings = Storage.getSettings();
+      expect(importedSettings.profiles).toHaveLength(2);
+      expect(importedSettings.activeProfileId).toBe('prof-2');
+      expect(importedSettings.apiKey).toBe('work-key');
     });
 
     it('returns error on invalid JSON import', async () => {

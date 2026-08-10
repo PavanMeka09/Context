@@ -99,10 +99,56 @@ export interface TaskSchedule {
   createdAt: string;
 }
 
-export interface Settings {
-  provider: 'gemini';
+export type ProviderType = 'gemini' | 'anthropic' | 'openai' | 'openrouter';
+
+export interface ProviderInfo {
+  id: ProviderType;
+  name: string;
+  defaultModel: string;
+  keyPlaceholder: string;
+}
+
+export const PROVIDERS: Record<ProviderType, ProviderInfo> = {
+  gemini: {
+    id: 'gemini',
+    name: 'Google Gemini',
+    defaultModel: 'gemini-3.6-flash',
+    keyPlaceholder: 'Enter Gemini API Key...'
+  },
+  anthropic: {
+    id: 'anthropic',
+    name: 'Anthropic Claude',
+    defaultModel: 'claude-3-7-sonnet-20250219',
+    keyPlaceholder: 'Enter Anthropic API Key...'
+  },
+  openai: {
+    id: 'openai',
+    name: 'OpenAI',
+    defaultModel: 'gpt-4o',
+    keyPlaceholder: 'Enter OpenAI API Key...'
+  },
+  openrouter: {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    defaultModel: 'anthropic/claude-3.7-sonnet',
+    keyPlaceholder: 'Enter OpenRouter API Key...'
+  }
+};
+
+export interface ProviderProfile {
+  id: string;
+  name: string;
+  provider: ProviderType;
   apiKey: string;
   model: string;
+}
+
+export interface Settings {
+  provider: ProviderType;
+  apiKey: string;
+  model: string;
+  profiles?: ProviderProfile[];
+  activeProfileId?: string;
   localUrl?: string;
   isWebSearchEnabled?: boolean;
   searxngUrl?: string;
@@ -110,7 +156,6 @@ export interface Settings {
   isMemoryEnabled?: boolean;
   isBrowserAgentEnabled?: boolean;
 }
-
 
 export interface SystemPrompt {
   id: string;
@@ -154,16 +199,45 @@ export const PRESET_PROMPTS: SystemPrompt[] = [
 ];
 
 // Fallback dynamic lists for offline/missing key scenarios
-export const FALLBACK_GEMINI_MODELS = [
-  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash (Default)' },
-  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash' },
-  { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite' },
-  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro (Preview)' },
-  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash-Lite' },
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite' }
-];
+export interface ModelOption {
+  id: string;
+  name: string;
+}
+
+export const FALLBACK_MODELS: Record<ProviderType, ModelOption[]> = {
+  gemini: [
+    { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash (Default)' },
+    { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash' },
+    { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite' },
+    { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro (Preview)' },
+    { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash-Lite' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+    { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' }
+  ],
+  anthropic: [
+    { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet (Default)' },
+    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' },
+    { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' },
+    { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' }
+  ],
+  openai: [
+    { id: 'gpt-4o', name: 'GPT-4o (Default)' },
+    { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+    { id: 'o1', name: 'o1' },
+    { id: 'o3-mini', name: 'o3-mini' },
+    { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' }
+  ],
+  openrouter: [
+    { id: 'anthropic/claude-3.7-sonnet', name: 'Claude 3.7 Sonnet (Default)' },
+    { id: 'google/gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+    { id: 'openai/gpt-4o', name: 'GPT-4o' },
+    { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1' },
+    { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3' },
+    { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B' }
+  ]
+};
+
+export const FALLBACK_GEMINI_MODELS = FALLBACK_MODELS.gemini;
 
 
 // Keys
@@ -283,6 +357,85 @@ export function upgradeChatToTree(chat: Chat): Chat {
   };
 }
 
+// Profile & Settings Sanitization Helpers
+export function sanitizeProfile(
+  p: Partial<ProviderProfile>,
+  fallbackProvider: ProviderType = 'gemini'
+): ProviderProfile {
+  const provider: ProviderType =
+    p.provider && PROVIDERS[p.provider] ? p.provider : fallbackProvider;
+  const defaultModel = PROVIDERS[provider]?.defaultModel || 'gemini-3.6-flash';
+  return {
+    id: p.id || `profile-${Date.now()}`,
+    name: p.name || 'Profile',
+    provider,
+    apiKey: p.apiKey ?? '',
+    model: p.model || defaultModel
+  };
+}
+
+export function normalizeSettings(raw: Partial<Settings>): Settings {
+  const fallbackProvider: ProviderType =
+    raw.provider && PROVIDERS[raw.provider] ? raw.provider : 'gemini';
+  const fallbackModel = raw.model || PROVIDERS[fallbackProvider].defaultModel;
+  const fallbackApiKey = raw.apiKey ?? '';
+
+  let profiles: ProviderProfile[] = Array.isArray(raw.profiles)
+    ? raw.profiles.map(p => sanitizeProfile(p, fallbackProvider))
+    : [];
+
+  if (profiles.length === 0) {
+    profiles = [
+      sanitizeProfile(
+        {
+          id: 'profile-default',
+          name: 'Default Profile',
+          provider: fallbackProvider,
+          apiKey: fallbackApiKey,
+          model: fallbackModel
+        },
+        fallbackProvider
+      )
+    ];
+  }
+  let activeProfileId = raw.activeProfileId;
+  if (!activeProfileId || !profiles.some(p => p.id === activeProfileId)) {
+    activeProfileId = profiles[0].id;
+  }
+  const activeIdx = profiles.findIndex(p => p.id === activeProfileId);
+  if (activeIdx !== -1) {
+    const currentActive = profiles[activeIdx];
+    profiles[activeIdx] = sanitizeProfile(
+      {
+        ...currentActive,
+        provider: currentActive.provider || fallbackProvider,
+        apiKey: currentActive.apiKey || fallbackApiKey,
+        model: currentActive.model || fallbackModel
+      },
+      fallbackProvider
+    );
+  }
+
+  const activeProfile = profiles[activeIdx] || profiles[0];
+  const activeProvider = activeProfile.provider && PROVIDERS[activeProfile.provider]
+    ? activeProfile.provider
+    : 'gemini';
+
+  return {
+    provider: activeProvider,
+    apiKey: activeProfile.apiKey ?? '',
+    model: activeProfile.model || PROVIDERS[activeProvider]?.defaultModel || 'gemini-3.6-flash',
+    profiles,
+    activeProfileId: activeProfile.id,
+    localUrl: raw.localUrl,
+    isWebSearchEnabled: raw.isWebSearchEnabled ?? false,
+    searxngUrl: raw.searxngUrl ?? '',
+    thinkingLevel: raw.thinkingLevel ?? 'off',
+    isMemoryEnabled: raw.isMemoryEnabled ?? true,
+    isBrowserAgentEnabled: raw.isBrowserAgentEnabled ?? false
+  };
+}
+
 // Storage Helpers
 export const Storage = {
   getSettings(): Settings {
@@ -290,48 +443,74 @@ export const Storage = {
       const data = localStorage.getItem(KEYS.SETTINGS);
       if (data) {
         const parsed = JSON.parse(data);
-        if (parsed) {
-          parsed.provider = 'gemini';
-          if (!parsed.model || !parsed.model.includes('gemini')) {
-            parsed.model = 'gemini-3.6-flash';
-          }
+        if (parsed && typeof parsed === 'object') {
+          return normalizeSettings(parsed);
         }
-        if (parsed && parsed.searxngUrl === undefined) {
-          parsed.searxngUrl = '';
-        }
-        if (parsed && parsed.thinkingLevel === undefined) {
-          parsed.thinkingLevel = 'off';
-        }
-        if (parsed && parsed.isMemoryEnabled === undefined) {
-          parsed.isMemoryEnabled = true;
-        }
-        if (parsed && parsed.isBrowserAgentEnabled === undefined) {
-          parsed.isBrowserAgentEnabled = false;
-        }
-        return parsed;
       }
     } catch (e) {
       console.error('Error reading settings from localStorage', e);
     }
-    return {
-      provider: 'gemini',
-      apiKey: '',
-      model: 'gemini-3.6-flash',
-      isWebSearchEnabled: false,
-      searxngUrl: '',
-      thinkingLevel: 'off',
-      isMemoryEnabled: true,
-      isBrowserAgentEnabled: false
-    };
+    return normalizeSettings({});
   },
 
   saveSettings(settings: Settings): void {
     try {
-      localStorage.setItem(KEYS.SETTINGS, JSON.stringify(settings));
+      const normalized = normalizeSettings(settings);
+      localStorage.setItem(KEYS.SETTINGS, JSON.stringify(normalized));
     } catch (e) {
       console.error('Error saving settings to localStorage', e);
     }
   },
+  getActiveProfile(settings: Settings): ProviderProfile {
+    const active = settings.profiles?.find(p => p.id === settings.activeProfileId);
+    return active || settings.profiles?.[0] || sanitizeProfile({});
+  },
+
+  updateActiveProfile(settings: Settings, changes: Partial<ProviderProfile>): Settings {
+    const profiles = settings.profiles ? [...settings.profiles] : [];
+    const activeId = settings.activeProfileId || profiles[0]?.id;
+    const activeIdx = profiles.findIndex(p => p.id === activeId);
+    if (activeIdx !== -1) {
+      profiles[activeIdx] = sanitizeProfile({
+        ...profiles[activeIdx],
+        ...changes
+      });
+    }
+    return normalizeSettings({
+      ...settings,
+      profiles,
+      activeProfileId: activeId
+    });
+  },
+
+  addProfile(settings: Settings, newProfile?: Partial<ProviderProfile>): Settings {
+    const created = sanitizeProfile(
+      newProfile || {
+        id: `profile-${Date.now()}`,
+        name: 'New Profile',
+        provider: settings.provider || 'gemini'
+      }
+    );
+    const profiles = [...(settings.profiles || []), created];
+    return normalizeSettings({
+      ...settings,
+      profiles,
+      activeProfileId: created.id
+    });
+  },
+
+  deleteProfile(settings: Settings, profileId: string): Settings {
+    const profiles = settings.profiles || [];
+    if (profiles.length <= 1) return settings;
+    const remaining = profiles.filter(p => p.id !== profileId);
+    const nextActiveId = settings.activeProfileId === profileId ? remaining[0].id : settings.activeProfileId;
+    return normalizeSettings({
+      ...settings,
+      profiles: remaining,
+      activeProfileId: nextActiveId
+    });
+  },
+
 
   getMemories(): MemoryItem[] {
     try {
@@ -640,7 +819,41 @@ export const Storage = {
       }
 
       if (parsed.settings && typeof parsed.settings === 'object') {
-        Storage.saveSettings({ ...Storage.getSettings(), ...parsed.settings });
+        const currentSettings = Storage.getSettings();
+        const importedSettings = parsed.settings;
+
+        let mergedProfiles = currentSettings.profiles ? [...currentSettings.profiles] : [];
+
+        if (Array.isArray(importedSettings.profiles) && importedSettings.profiles.length > 0) {
+          if (
+            mergedProfiles.length === 1 &&
+            mergedProfiles[0].id === 'profile-default' &&
+            !mergedProfiles[0].apiKey
+          ) {
+            mergedProfiles = [];
+          }
+          const profileMap = new Map(mergedProfiles.map(p => [p.id, p]));
+          for (const p of importedSettings.profiles) {
+            if (p && p.id) {
+              profileMap.set(p.id, sanitizeProfile(p));
+            }
+          }
+          mergedProfiles = Array.from(profileMap.values());
+        }
+
+        const activeProfileId =
+          importedSettings.activeProfileId ||
+          currentSettings.activeProfileId ||
+          mergedProfiles[0]?.id;
+
+        const mergedSettings: Settings = {
+          ...currentSettings,
+          ...importedSettings,
+          profiles: mergedProfiles,
+          activeProfileId
+        };
+
+        Storage.saveSettings(mergedSettings);
       }
 
       if (Array.isArray(parsed.customPrompts)) {
@@ -669,7 +882,6 @@ export const Storage = {
         }
         Storage.saveSchedules(Array.from(scheduleMap.values()));
       }
-
       return { success: true, count };
     } catch (e) {
       return { success: false, count: 0, error: e instanceof Error ? e.message : 'Import failed' };

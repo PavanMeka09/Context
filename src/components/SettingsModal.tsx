@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect, useCallback } from 'react';
-import { PRESET_PROMPTS, Storage } from '../utils/storage';
-import type { Settings, SystemPrompt, Chat, MemoryItem } from '../utils/storage';
+import { PRESET_PROMPTS, Storage, PROVIDERS } from '../utils/storage';
+import type { Settings, SystemPrompt, Chat, MemoryItem, ProviderProfile, ProviderType } from '../utils/storage';
 import { fetchModels, type ModelOption } from '../utils/api';
 import { X, Eye, EyeOff, Save, Plus, Trash2, Edit2, AlertCircle, Loader2, Download, CheckSquare, ChevronDown, Check, Globe, Search, Cpu, Database, FileText, Terminal, Brain } from 'lucide-react';
 import { testSearxngConnection } from '../utils/searxng';
@@ -283,7 +283,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [modelSearchQuery, setModelSearchQuery] = useState('');
 
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
-
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [editingProfileName, setEditingProfileName] = useState('');
   const [customPrompts, setCustomPrompts] = useState<SystemPrompt[]>(() => Storage.getCustomPrompts());
   const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
   const [promptName, setPromptName] = useState('');
@@ -334,33 +335,46 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
     reader.readAsText(file);
   };
+  const updateActiveProfileState = useCallback(
+    (updater: (activeProfile: ProviderProfile) => Partial<ProviderProfile>) => {
+      setSettings(prev => {
+        const active = Storage.getActiveProfile(prev);
+        return Storage.updateActiveProfile(prev, updater(active));
+      });
+    },
+    []
+  );
 
-  const loadModelsForProvider = useCallback(async (key: string, activeModelId?: string) => {
-    setLoadingModels(true);
-    setModelError(null);
-    setModelSearchQuery('');
-    try {
-      const fetched = await fetchModels(key);
-      setModels(fetched);
-      
-      if (fetched.length > 0) {
-        const modelExists = fetched.some(m => m.id === activeModelId);
-        if (!modelExists) {
-          setSettings(prev => ({ ...prev, model: fetched[0].id }));
+  const loadModelsForProvider = useCallback(
+    async (provider: ProviderType, key: string, activeModelId?: string) => {
+      setLoadingModels(true);
+      setModelError(null);
+      setModelSearchQuery('');
+      try {
+        const fetched = await fetchModels(provider, key);
+        setModels(fetched);
+
+        if (fetched.length > 0) {
+          const modelExists = fetched.some(m => m.id === activeModelId);
+          if (!modelExists) {
+            updateActiveProfileState(() => ({ model: fetched[0].id }), { model: fetched[0].id });
+          }
+        } else {
+          updateActiveProfileState(() => ({ model: '' }), { model: '' });
         }
-      } else {
-        setSettings(prev => ({ ...prev, model: '' }));
+      } catch {
+        const providerName = PROVIDERS[provider]?.name || 'API Provider';
+        setModelError(`Failed to load dynamic models for ${providerName}.`);
+      } finally {
+        setLoadingModels(false);
       }
-    } catch {
-      setModelError('Failed to load dynamic models for Google Gemini.');
-    } finally {
-      setLoadingModels(false);
-    }
-  }, []);
+    },
+    [updateActiveProfileState]
+  );
 
   useEffect(() => {
     setTimeout(() => {
-      loadModelsForProvider(settings.apiKey, settings.model);
+      loadModelsForProvider(settings.provider || 'gemini', settings.apiKey, settings.model);
     }, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadModelsForProvider]);
@@ -385,11 +399,76 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const apiKey = e.target.value;
-    setSettings(prev => ({ ...prev, apiKey }));
+    updateActiveProfileState(() => ({ apiKey }));
+  };
+
+  const handleProviderChange = (newProvider: ProviderType) => {
+    const defaultModel = PROVIDERS[newProvider]?.defaultModel || 'gemini-3.6-flash';
+    updateActiveProfileState(() => ({ provider: newProvider, model: defaultModel }));
+    loadModelsForProvider(newProvider, settings.apiKey, defaultModel);
+  };
+
+  const handleAddProfile = () => {
+    let nextActive: ProviderProfile | undefined;
+    setSettings(prev => {
+      const name = `Profile ${(prev.profiles?.length || 0) + 1}`;
+      const nextSettings = Storage.addProfile(prev, { name });
+      nextActive = Storage.getActiveProfile(nextSettings);
+      return nextSettings;
+    });
+    if (nextActive) {
+      setEditingProfileId(nextActive.id);
+      setEditingProfileName(nextActive.name);
+      loadModelsForProvider(nextActive.provider, nextActive.apiKey, nextActive.model);
+    }
+  };
+
+  const handleSelectProfile = (id: string) => {
+    let nextActive: ProviderProfile | undefined;
+    setSettings(prev => {
+      const target = prev.profiles?.find(p => p.id === id);
+      if (!target) return prev;
+      const nextSettings = Storage.updateActiveProfile(prev, {});
+      const updated = { ...nextSettings, activeProfileId: id, provider: target.provider, apiKey: target.apiKey, model: target.model };
+      nextActive = Storage.getActiveProfile(updated);
+      return updated;
+    });
+    if (nextActive) {
+      loadModelsForProvider(nextActive.provider, nextActive.apiKey, nextActive.model);
+    }
+  };
+
+  const handleStartRenameProfile = (profile: ProviderProfile) => {
+    setEditingProfileId(profile.id);
+    setEditingProfileName(profile.name);
+  };
+
+  const handleSaveProfileName = (id: string) => {
+    if (!editingProfileName.trim()) return;
+    setSettings(prev => ({
+      ...prev,
+      profiles: (prev.profiles || []).map(p =>
+        p.id === id ? { ...p, name: editingProfileName.trim() } : p
+      )
+    }));
+    setEditingProfileId(null);
+    setEditingProfileName('');
+  };
+
+  const handleDeleteProfile = (id: string) => {
+    let nextActive: ProviderProfile | undefined;
+    setSettings(prev => {
+      const nextSettings = Storage.deleteProfile(prev, id);
+      nextActive = Storage.getActiveProfile(nextSettings);
+      return nextSettings;
+    });
+    if (nextActive) {
+      loadModelsForProvider(nextActive.provider, nextActive.apiKey, nextActive.model);
+    }
   };
 
   const handleKeyBlur = () => {
-    loadModelsForProvider(settings.apiKey, settings.model);
+    loadModelsForProvider(settings.provider || 'gemini', settings.apiKey, settings.model);
   };
 
   const handleSaveSettings = () => {
@@ -534,20 +613,122 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activeTab === 'provider' ? (
             <div className="space-y-4">
               
-              {/* Provider Selection */}
-              <div>
-                <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  API Provider
-                </label>
-                <div className="flex w-full items-center justify-between rounded-md border border-input bg-muted/50 px-3.5 py-2 text-xs font-medium text-foreground">
-                  <span>Google Gemini</span>
+              {/* Provider Profiles Management */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Provider Profile
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddProfile}
+                    className="flex items-center gap-1 text-[11px] font-medium text-primary hover:underline cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>New Profile</span>
+                  </button>
                 </div>
+
+                {editingProfileId === settings.activeProfileId ? (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={editingProfileName}
+                      onChange={e => setEditingProfileName(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') handleSaveProfileName(settings.activeProfileId!);
+                        if (e.key === 'Escape') setEditingProfileId(null);
+                      }}
+                      autoFocus
+                      className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleSaveProfileName(settings.activeProfileId!)}
+                      className="rounded p-1.5 text-primary hover:bg-accent cursor-pointer"
+                      title="Save name"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingProfileId(null)}
+                      className="rounded p-1.5 text-muted-foreground hover:bg-accent cursor-pointer"
+                      title="Cancel"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <select
+                        aria-label="Select Provider Profile"
+                        value={settings.activeProfileId || ''}
+                        onChange={e => handleSelectProfile(e.target.value)}
+                        className="w-full appearance-none rounded-md border border-input bg-background pl-3.5 pr-8 py-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer"
+                      >
+                        {(settings.profiles || []).map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const activeProf = (settings.profiles || []).find(p => p.id === settings.activeProfileId);
+                        if (activeProf) handleStartRenameProfile(activeProf);
+                      }}
+                      className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:text-foreground hover:bg-accent cursor-pointer transition shrink-0"
+                      title="Rename profile"
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (settings.activeProfileId) handleDeleteProfile(settings.activeProfileId);
+                      }}
+                      disabled={(settings.profiles || []).length <= 1}
+                      className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition shrink-0"
+                      title="Delete profile"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
 
+              {/* Provider Selection */}
+              <div>
+                <label htmlFor="provider-select" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  API Provider
+                </label>
+                <div className="relative">
+                  <select
+                    id="provider-select"
+                    value={settings.provider || 'gemini'}
+                    onChange={e => handleProviderChange(e.target.value as ProviderType)}
+                    className="w-full appearance-none rounded-md border border-input bg-background pl-3.5 pr-8 py-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer"
+                  >
+                    {Object.values(PROVIDERS).map(prov => (
+                      <option key={prov.id} value={prov.id}>
+                        {prov.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                </div>
+              </div>
               {/* API Key */}
               <div className="space-y-1">
                 <label htmlFor="api-key-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  Gemini API Key
+                  {(PROVIDERS[settings.provider] || PROVIDERS.gemini).name} API Key
                 </label>
                 <div className="relative">
                   <input
@@ -556,7 +737,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     value={settings.apiKey}
                     onChange={handleKeyChange}
                     onBlur={handleKeyBlur}
-                    placeholder="Enter Gemini API Key..."
+                    placeholder={(PROVIDERS[settings.provider] || PROVIDERS.gemini).keyPlaceholder}
                     className="w-full rounded-md border border-input bg-background pl-3.5 pr-10 py-2 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   />
                   <button
@@ -657,7 +838,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               role="option"
                               aria-selected={settings.model === m.id}
                               onClick={() => {
-                                setSettings(prev => ({ ...prev, model: m.id }));
+                                updateActiveProfileState(() => ({ model: m.id }), { model: m.id });
                                 setModelDropdownOpen(false);
                                 setModelSearchQuery('');
                               }}
@@ -723,9 +904,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     )}
                     <button
                       type="submit"
-                      className="flex items-center gap-1 rounded bg-primary hover:bg-primary/95 px-3 py-1 text-[10px] font-medium text-primary-foreground shadow-sm cursor-pointer"
+                      className="rounded bg-primary px-2.5 py-1 text-[10px] font-medium text-primary-foreground hover:bg-primary/90 transition active:scale-95 cursor-pointer"
                     >
-                      <Plus className="h-3 w-3" />
                       <span>{editingPromptId ? 'Update' : 'Add'}</span>
                     </button>
                   </div>
