@@ -52,6 +52,27 @@ describe('Server API Endpoints & Security', () => {
       res.json({ success: true, message: 'Session storage and cookies cleared' });
     });
 
+    app.post('/api/ollama/test', (req, res) => {
+      const { localUrl } = req.body;
+      if (localUrl === 'http://invalid-host:11434') {
+        return res.status(500).json({ success: false, error: 'Failed to connect' });
+      }
+      res.json({
+        success: true,
+        message: 'Connected to Ollama! Found 2 installed model(s).',
+        models: ['llama3.2', 'deepseek-r1']
+      });
+    });
+
+    app.get('/api/ollama/models', (req, res) => {
+      res.json({
+        models: [
+          { name: 'llama3.2:latest', details: { parameter_size: '3.2B' } },
+          { name: 'deepseek-r1:14b', details: { parameter_size: '14B' } }
+        ]
+      });
+    });
+
     return app;
   };
 
@@ -101,6 +122,20 @@ describe('Server API Endpoints & Security', () => {
     const res = await request(app).post('/api/browser/storage/clear').send({ sessionId: 'default' });
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+  });
+
+  it('POST /api/ollama/test tests connection and returns model list', async () => {
+    const res = await request(app).post('/api/ollama/test').send({ localUrl: 'http://localhost:11434' });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.models).toEqual(['llama3.2', 'deepseek-r1']);
+  });
+
+  it('GET /api/ollama/models returns models list', async () => {
+    const res = await request(app).get('/api/ollama/models?localUrl=http://localhost:11434');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.models)).toBe(true);
+    expect(res.body.models[0].name).toBe('llama3.2:latest');
   });
 });
 

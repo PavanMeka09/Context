@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fetchModels, extractWebSearchQuery, webSearchToolParametersSchema, streamChatCompletion } from '../api';
+import { fetchModels, testOllamaConnection, extractWebSearchQuery, webSearchToolParametersSchema, streamChatCompletion } from '../api';
 import type { Settings, Message } from '../storage';
 import * as aiModule from 'ai';
 type AiModule = typeof aiModule;
@@ -93,7 +93,67 @@ describe('src/utils/api.ts', () => {
       expect(models).toHaveLength(1);
       expect(models[0].id).toBe('gpt-4o');
     });
+
+    it('returns fallback models for Ollama when offline or fetch fails', async () => {
+      global.fetch = vi.fn().mockRejectedValue(new Error('Connection refused'));
+      const models = await fetchModels({ provider: 'ollama' });
+      expect(models.length).toBeGreaterThan(0);
+      expect(models.some(m => m.id === 'llama3.2')).toBe(true);
+      expect(models.some(m => m.id === 'deepseek-r1')).toBe(true);
+    });
+
+    it('fetches dynamic models from local Ollama endpoint', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          models: [
+            { name: 'llama3.2:latest', details: { parameter_size: '3.2B' } },
+            { name: 'deepseek-r1:14b', details: { parameter_size: '14B' } },
+            { name: 'qwen2.5:7b', details: { parameter_size: '7B' } }
+          ]
+        })
+      } as Response);
+
+      const models = await fetchModels({ provider: 'ollama', localUrl: 'http://127.0.0.1:11434' });
+      expect(models).toHaveLength(3);
+      expect(models.map(m => m.id)).toEqual(['deepseek-r1:14b', 'llama3.2:latest', 'qwen2.5:7b']);
+      expect(models.find(m => m.id === 'llama3.2:latest')?.name).toBe('llama3.2:latest (3.2B)');
+    });
   });
+
+  describe('testOllamaConnection', () => {
+    it('returns success and models when direct fetch succeeds', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          models: [{ name: 'llama3.2:latest' }, { name: 'mistral:latest' }]
+        })
+      } as Response);
+
+      const result = await testOllamaConnection('http://localhost:11434');
+      expect(result.success).toBe(true);
+      expect(result.models).toEqual(['llama3.2:latest', 'mistral:latest']);
+      expect(result.message).toContain('Found 2 model(s)');
+    });
+
+    it('falls back to backend proxy /api/ollama/test when direct fetch fails', async () => {
+      global.fetch = vi.fn()
+        .mockRejectedValueOnce(new Error('CORS error'))
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            success: true,
+            message: 'Connected to Ollama via proxy',
+            models: ['llama3.2:latest']
+          })
+        } as Response);
+
+      const result = await testOllamaConnection('http://localhost:11434');
+      expect(result.success).toBe(true);
+      expect(result.models).toEqual(['llama3.2:latest']);
+    });
+  });
+
   describe('web_search parameter handling', () => {
     it.each([
       { input: { query: 'Kiara Advani photo' }, expected: 'Kiara Advani photo', label: 'single query string' },
@@ -138,6 +198,37 @@ describe('src/utils/api.ts', () => {
       expect(options.stopWhen).toBeDefined();
       expect(callbacks.onChunk).toHaveBeenCalledWith('Response after search');
       expect(callbacks.onDone).toHaveBeenCalledWith('Response after search');
+    });
+
+    it('successfully initiates stream for Ollama without requiring an API key', async () => {
+      const mockStreamText = vi.mocked(aiModule.streamText);
+      mockStreamText.mockReturnValue({
+        fullStream: (async function* () {
+          yield { type: 'text-delta', textDelta: 'Local Ollama Response' };
+        })()
+      } as unknown as ReturnType<typeof aiModule.streamText>);
+
+      const settings: Settings = {
+        apiKey: '',
+        provider: 'ollama',
+        model: 'llama3.2',
+        localUrl: 'http://localhost:11434'
+      };
+
+      const messages: Message[] = [{ id: '1', role: 'user', content: 'Hello local llama', timestamp: new Date().toISOString() }];
+      const callbacks = {
+        onChunk: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn()
+      };
+      const controller = new AbortController();
+
+      await streamChatCompletion(settings, messages, 'You are a local assistant', callbacks, controller.signal);
+
+      expect(mockStreamText).toHaveBeenCalled();
+      expect(callbacks.onError).not.toHaveBeenCalled();
+      expect(callbacks.onChunk).toHaveBeenCalledWith('Local Ollama Response');
+      expect(callbacks.onDone).toHaveBeenCalledWith('Local Ollama Response');
     });
   });
 });

@@ -9,6 +9,7 @@ interface SidebarProps {
   onSelectChat: (id: string) => void;
   onNewChat: () => void;
   onDeleteChat: (id: string) => void;
+  onRenameChat?: (id: string, newTitle: string) => void;
   onOpenSettings: () => void;
   onOpenSchedules: () => void;
   onOpenCrawl4AI?: () => void;
@@ -25,6 +26,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectChat,
   onNewChat,
   onDeleteChat,
+  onRenameChat,
   onOpenSettings,
   onOpenSchedules,
   onOpenCrawl4AI,
@@ -34,11 +36,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onThemeChanged
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
   const [mounted, setMounted] = useState(false);
+  const renameInputRef = React.useRef<HTMLInputElement | null>(null);
+
   React.useEffect(() => {
     const timer = window.setTimeout(() => setMounted(true), 50);
     return () => window.clearTimeout(timer);
   }, []);
+
+  React.useEffect(() => {
+    if (editingChatId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [editingChatId]);
+
+  const resetEditState = () => {
+    setEditingChatId(null);
+    setEditTitle('');
+  };
+
+  const handleStartRename = (chat: Chat, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setEditingChatId(chat.id);
+    setEditTitle(chat.title);
+  };
+
+  const handleSaveRename = (chatId: string) => {
+    if (onRenameChat) {
+      onRenameChat(chatId, editTitle);
+    }
+    resetEditState();
+  };
+
+  const handleCancelRename = () => {
+    resetEditState();
+  };
 
   const getModelLabel = () => {
     const parts = settings.model.split('/');
@@ -117,6 +155,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ) : (
           filteredChats.map(chat => {
             const isActive = chat.id === activeChatId;
+            const isEditing = editingChatId === chat.id;
 
             return (
               <div
@@ -132,31 +171,61 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <div className="absolute left-[2px] top-2 bottom-2 w-[2px] rounded-full bg-primary" />
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => onSelectChat(chat.id)}
-                  className="flex w-full items-center gap-2 min-w-0 px-3 py-2 pr-9 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-md"
-                  aria-current={isActive ? 'page' : undefined}
-                >
-                  <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <span className="truncate text-xs tracking-tight">{chat.title}</span>
-                </button>
-
-                {/* Delete action button */}
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200">
+                {isEditing ? (
+                  <div className="flex w-full items-center gap-2 min-w-0 px-3 py-1.5 pr-3">
+                    <MessageSquare className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    <input
+                      ref={renameInputRef}
+                      type="text"
+                      value={editTitle}
+                      aria-label="Edit chat title"
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSaveRename(chat.id);
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault();
+                          handleCancelRename();
+                        }
+                      }}
+                      onBlur={() => handleSaveRename(chat.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onDoubleClick={(e) => e.stopPropagation()}
+                      className="w-full bg-background border border-input rounded px-1.5 py-0.5 text-xs text-foreground font-normal focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                  </div>
+                ) : (
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDeleteChat(chat.id);
-                    }}
-                    className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition cursor-pointer"
-                    title="Delete chat"
-                    aria-label={`Delete chat ${chat.title}`}
+                    onClick={() => onSelectChat(chat.id)}
+                    onDoubleClick={(e) => handleStartRename(chat, e)}
+                    className="flex w-full items-center gap-2 min-w-0 px-3 py-2 pr-9 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-md select-none"
+                    aria-current={isActive ? 'page' : undefined}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <MessageSquare className={`h-3.5 w-3.5 shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <span className="truncate text-xs tracking-tight">{chat.title}</span>
                   </button>
-                </div>
+                )}
+
+                {/* Delete action button */}
+                {!isEditing && (
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteChat(chat.id);
+                      }}
+                      className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition cursor-pointer"
+                      title="Delete chat"
+                      aria-label={`Delete chat ${chat.title}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })

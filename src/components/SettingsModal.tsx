@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PRESET_PROMPTS, Storage, PROVIDERS } from '../utils/storage';
 import type { Settings, SystemPrompt, Chat, MemoryItem, ProviderProfile, ProviderType } from '../utils/storage';
-import { fetchModels, type ModelOption } from '../utils/api';
+import { fetchModels, testOllamaConnection, type ModelOption } from '../utils/api';
 import { X, Eye, EyeOff, Save, Plus, Trash2, Edit2, AlertCircle, Loader2, Download, CheckSquare, ChevronDown, Check, Globe, Search, Cpu, Database, FileText, Terminal, Brain } from 'lucide-react';
 import { testSearxngConnection } from '../utils/searxng';
 
@@ -249,6 +249,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionTestResult, setConnectionTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  const [testingOllamaConnection, setTestingOllamaConnection] = useState(false);
+  const [ollamaTestResult, setOllamaTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
   const handleTestConnection = async () => {
     setTestingConnection(true);
     setConnectionTestResult(null);
@@ -270,6 +273,40 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const errorMsg = err instanceof Error ? err.message : 'Check the URL and try again.';
       setTestingConnection(false);
       setConnectionTestResult({
+        success: false,
+        message: `Connection failed: ${errorMsg}`
+      });
+    }
+  };
+
+  const handleTestOllamaConnection = async () => {
+    setTestingOllamaConnection(true);
+    setOllamaTestResult(null);
+    try {
+      const targetUrl = settings.localUrl || 'http://localhost:11434';
+      const result = await testOllamaConnection(targetUrl);
+      setTestingOllamaConnection(false);
+      if (result.success) {
+        setOllamaTestResult({
+          success: true,
+          message: result.message || `Successfully connected to Ollama! (${result.models?.length || 0} model(s) found)`
+        });
+        loadModelsForProvider({
+          provider: 'ollama',
+          apiKey: settings.apiKey,
+          localUrl: targetUrl,
+          model: settings.model
+        });
+      } else {
+        setOllamaTestResult({
+          success: false,
+          message: `Connection failed: ${result.error || 'Check that Ollama is running.'}`
+        });
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Check that Ollama is running.';
+      setTestingOllamaConnection(false);
+      setOllamaTestResult({
         success: false,
         message: `Connection failed: ${errorMsg}`
       });
@@ -346,15 +383,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   );
 
   const loadModelsForProvider = useCallback(
-    async (config: { provider?: ProviderType; apiKey?: string; model?: string }) => {
+    async (config: { provider?: ProviderType; apiKey?: string; model?: string; localUrl?: string }) => {
       const provider = config.provider || 'gemini';
       const key = config.apiKey || '';
+      const localUrl = config.localUrl || settings.localUrl;
       const activeModelId = config.model;
       setLoadingModels(true);
       setModelError(null);
       setModelSearchQuery('');
       try {
-        const fetched = await fetchModels(provider, key);
+        const fetched = await fetchModels({ provider, apiKey: key, localUrl });
         setModels(fetched);
 
         if (fetched.length > 0) {
@@ -372,7 +410,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setLoadingModels(false);
       }
     },
-    [updateActiveProfileState]
+    [updateActiveProfileState, settings.localUrl]
   );
 
   useEffect(() => {
@@ -405,10 +443,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     updateActiveProfileState(() => ({ apiKey }));
   };
 
+  const handleLocalUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const localUrl = e.target.value;
+    updateActiveProfileState(() => ({ localUrl }));
+  };
+
   const handleProviderChange = (newProvider: ProviderType) => {
-    const defaultModel = PROVIDERS[newProvider]?.defaultModel || 'gemini-3.6-flash';
-    updateActiveProfileState(() => ({ provider: newProvider, model: defaultModel }));
-    loadModelsForProvider({ provider: newProvider, apiKey: settings.apiKey, model: defaultModel });
+    const defaultModel = PROVIDERS[newProvider]?.defaultModel || (newProvider === 'ollama' ? 'llama3.2' : 'gemini-3.6-flash');
+    const localUrl = newProvider === 'ollama' ? (settings.localUrl || 'http://localhost:11434') : settings.localUrl;
+    updateActiveProfileState(() => ({ provider: newProvider, model: defaultModel, localUrl }));
+    loadModelsForProvider({ provider: newProvider, apiKey: settings.apiKey, model: defaultModel, localUrl });
   };
 
   const handleAddProfile = () => {
@@ -716,10 +760,56 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                 </div>
               </div>
+              {/* Ollama Server URL (when provider is ollama) */}
+              {settings.provider === 'ollama' && (
+                <div className="space-y-1.5 animate-fade-in">
+                  <label htmlFor="ollama-url-input" className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Ollama Instance URL
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      id="ollama-url-input"
+                      type="text"
+                      value={settings.localUrl || ''}
+                      onChange={handleLocalUrlChange}
+                      onBlur={() => loadModelsForProvider(settings)}
+                      placeholder="http://localhost:11434"
+                      className="flex-1 min-w-0 rounded-md border border-input bg-background px-3.5 py-2 text-xs font-mono text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    />
+                    <button
+                      type="button"
+                      disabled={testingOllamaConnection}
+                      onClick={handleTestOllamaConnection}
+                      className="flex h-8 items-center justify-center rounded-md border border-input bg-background hover:bg-accent text-[10px] font-semibold text-muted-foreground hover:text-foreground px-3 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                    >
+                      {testingOllamaConnection ? (
+                        <span className="flex items-center gap-1">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <span>Testing...</span>
+                        </span>
+                      ) : (
+                        'Test Connection'
+                      )}
+                    </button>
+                  </div>
+
+                  {ollamaTestResult && (
+                    <div className={`mt-2 flex items-center gap-1.5 rounded-md border px-3 py-2 text-[10px] animate-fade-in ${
+                      ollamaTestResult.success
+                        ? 'bg-primary/10 border-primary/20 text-primary'
+                        : 'bg-destructive/10 border-destructive/20 text-destructive'
+                    }`}>
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                      <span>{ollamaTestResult.message}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* API Key */}
               <div className="space-y-1">
                 <label htmlFor="api-key-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  {(PROVIDERS[settings.provider] || PROVIDERS.gemini).name} API Key
+                  {(PROVIDERS[settings.provider] || PROVIDERS.gemini).name} API Key {settings.provider === 'ollama' && <span className="text-[9px] font-normal text-muted-foreground lowercase">(optional)</span>}
                 </label>
                 <div className="relative">
                   <input
@@ -777,7 +867,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <span className="truncate pr-2">
                     {models.find(m => m.id === settings.model)?.name || 
-                     'Configure API key above to load models...'}
+                     (settings.provider === 'ollama' ? 'Select an Ollama model...' : 'Configure API key above to load models...')}
                   </span>
                   <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                 </button>

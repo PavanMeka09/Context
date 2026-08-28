@@ -535,8 +535,18 @@ function App() {
     setActiveChatId(id);
     Storage.saveActiveChatId(id);
     setComposerInput('');
-    // Focus composer
-    setTimeout(() => textareaRef.current?.focus(), 50);
+    // Focus composer only if focus isn't currently inside an input/textarea (e.g. chat rename input or search)
+    setTimeout(() => {
+      const activeEl = document.activeElement;
+      const isInputFocused = activeEl && (
+        activeEl.tagName === 'INPUT' || 
+        (activeEl.tagName === 'TEXTAREA' && activeEl !== textareaRef.current) ||
+        activeEl.getAttribute('contenteditable') === 'true'
+      );
+      if (!isInputFocused) {
+        textareaRef.current?.focus();
+      }
+    }, 50);
   };
 
   const handleDeleteChat = (id: string) => {
@@ -576,6 +586,23 @@ function App() {
       </div>,
       'success'
     );
+  };
+
+  const handleRenameChat = (id: string, newTitle: string) => {
+    const trimmedTitle = newTitle.trim();
+    if (!trimmedTitle) return;
+
+    const chatToUpdate = chats.find(c => c.id === id);
+    if (!chatToUpdate || chatToUpdate.title === trimmedTitle) return;
+
+    const updatedChat: Chat = {
+      ...chatToUpdate,
+      title: trimmedTitle,
+      updatedAt: new Date().toISOString()
+    };
+
+    setChats(prevChats => prevChats.map(c => (c.id === id ? updatedChat : c)));
+    Storage.saveChat(updatedChat);
   };
 
   const handleStopGenerating = () => {
@@ -1371,6 +1398,7 @@ function App() {
         onSelectChat={handleSelectChat}
         onNewChat={handleNewChat}
         onDeleteChat={handleDeleteChat}
+        onRenameChat={handleRenameChat}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenSchedules={() => setSchedulesOpen(true)}
         onOpenCrawl4AI={() => {

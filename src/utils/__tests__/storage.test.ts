@@ -232,7 +232,34 @@ describe('src/utils/storage.ts', () => {
       Storage.saveSettings(invalidSettings);
       const retrieved = Storage.getSettings();
       expect(retrieved.profiles).toHaveLength(1);
-      expect(retrieved.profiles![0].id).toBe('profile-default');
+      expect(retrieved.profiles![0].name).toBe('Default Profile');
+    });
+
+    it('correctly handles Ollama provider profiles with localUrl', () => {
+      const ollamaSettings = {
+        provider: 'ollama' as const,
+        apiKey: '',
+        model: 'llama3.2',
+        localUrl: 'http://127.0.0.1:11434',
+        profiles: [
+          { id: 'p-ollama', name: 'Local Ollama', provider: 'ollama' as const, apiKey: '', model: 'llama3.2', localUrl: 'http://127.0.0.1:11434' },
+          { id: 'p-cloud', name: 'Google Cloud', provider: 'gemini' as const, apiKey: 'g-key', model: 'gemini-3.6-flash' }
+        ],
+        activeProfileId: 'p-ollama'
+      };
+      Storage.saveSettings(ollamaSettings);
+      const retrieved = Storage.getSettings();
+      expect(retrieved.provider).toBe('ollama');
+      expect(retrieved.model).toBe('llama3.2');
+      expect(retrieved.localUrl).toBe('http://127.0.0.1:11434');
+
+      const switched = Storage.switchProfile(retrieved, 'p-cloud');
+      expect(switched.provider).toBe('gemini');
+      expect(switched.apiKey).toBe('g-key');
+
+      const switchedBack = Storage.switchProfile(switched, 'p-ollama');
+      expect(switchedBack.provider).toBe('ollama');
+      expect(switchedBack.localUrl).toBe('http://127.0.0.1:11434');
     });
   });
 

@@ -128,4 +128,106 @@ describe('Sidebar Component', () => {
 
     expect(handleDeleteChat).toHaveBeenCalledWith('chat-1');
   });
+
+  it('allows renaming chat on double-click and saves on Enter', () => {
+    const handleRenameChat = vi.fn();
+    render(
+      <Sidebar
+        chats={mockChats}
+        activeChatId="chat-1"
+        settings={mockSettings}
+        onSelectChat={vi.fn()}
+        onNewChat={vi.fn()}
+        onDeleteChat={vi.fn()}
+        onRenameChat={handleRenameChat}
+        onOpenSettings={vi.fn()}
+        onOpenSchedules={vi.fn()}
+        isCollapsed={false}
+        onToggleCollapse={vi.fn()}
+        theme="dark"
+        onThemeChanged={vi.fn()}
+      />
+    );
+
+    const chatButton = screen.getByText('First Conversation').closest('button');
+    expect(chatButton).toBeDefined();
+
+    // Double-click chat button to start rename
+    fireEvent.doubleClick(chatButton!);
+
+    // Input should appear
+    const editInput = screen.getByLabelText('Edit chat title') as HTMLInputElement;
+    expect(editInput).toBeDefined();
+    expect(editInput.value).toBe('First Conversation');
+
+    // Change title and press Enter
+    fireEvent.change(editInput, { target: { value: 'Renamed Project Alpha' } });
+    fireEvent.keyDown(editInput, { key: 'Enter', code: 'Enter' });
+
+    expect(handleRenameChat).toHaveBeenCalledWith('chat-1', 'Renamed Project Alpha');
+    expect(screen.queryByLabelText('Edit chat title')).toBeNull();
+  });
+
+  it('cancels renaming when Escape key is pressed', () => {
+    const handleRenameChat = vi.fn();
+    render(
+      <Sidebar
+        chats={mockChats}
+        activeChatId="chat-1"
+        settings={mockSettings}
+        onSelectChat={vi.fn()}
+        onNewChat={vi.fn()}
+        onDeleteChat={vi.fn()}
+        onRenameChat={handleRenameChat}
+        onOpenSettings={vi.fn()}
+        onOpenSchedules={vi.fn()}
+        isCollapsed={false}
+        onToggleCollapse={vi.fn()}
+        theme="dark"
+        onThemeChanged={vi.fn()}
+      />
+    );
+
+    const chatButton = screen.getByText('First Conversation').closest('button');
+    fireEvent.doubleClick(chatButton!);
+
+    const editInput = screen.getByLabelText('Edit chat title');
+    fireEvent.change(editInput, { target: { value: 'Should Not Save' } });
+    fireEvent.keyDown(editInput, { key: 'Escape', code: 'Escape' });
+
+    expect(handleRenameChat).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Edit chat title')).toBeNull();
+  });
+
+  it('saves renamed title on blur', () => {
+    const handleRenameChat = vi.fn();
+    render(
+      <Sidebar
+        chats={mockChats}
+        activeChatId="chat-1"
+        settings={mockSettings}
+        onSelectChat={vi.fn()}
+        onNewChat={vi.fn()}
+        onDeleteChat={vi.fn()}
+        onRenameChat={handleRenameChat}
+        onOpenSettings={vi.fn()}
+        onOpenSchedules={vi.fn()}
+        isCollapsed={false}
+        onToggleCollapse={vi.fn()}
+        theme="dark"
+        onThemeChanged={vi.fn()}
+      />
+    );
+
+    const chatButton = screen.getByText('First Conversation').closest('button');
+    fireEvent.doubleClick(chatButton!);
+
+    const editInput = screen.getByLabelText('Edit chat title');
+    fireEvent.change(editInput, { target: { value: 'Saved On Blur' } });
+    fireEvent.blur(editInput);
+
+    expect(handleRenameChat).toHaveBeenCalledWith('chat-1', 'Saved On Blur');
+    expect(screen.queryByLabelText('Edit chat title')).toBeNull();
+  });
 });
+

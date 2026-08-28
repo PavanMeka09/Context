@@ -38,3 +38,10 @@ The structured result object returned by `executeCrawl()`, containing:
 - `markdown`: cleaned, token-efficient markdown representation
 - `extracted_content`: structured data output when CSS selector or JSON schema was requested
 - `stats`: token savings and byte measurements (`raw_bytes`, `markdown_bytes`, `tokens_saved_pct`, `status_code`)
+
+### OllamaProvider
+A local LLM provider interface and backend integration for executing private, on-device models. It handles:
+- OpenAI-compatible `/v1` endpoint routing for Vercel AI SDK streaming and text generation
+- Direct `/api/chat` execution with multi-modal vision image payload support for browser agent tasks
+- Dynamic model discovery from local tags (`/api/tags` and `/v1/models`) with fallback suggestions
+- Connection health diagnostics and proxying to eliminate browser CORS limitations

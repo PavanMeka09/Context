@@ -113,7 +113,7 @@ export interface TaskSchedule {
   createdAt: string;
 }
 
-export type ProviderType = 'gemini' | 'anthropic' | 'openai' | 'openrouter';
+export type ProviderType = 'gemini' | 'anthropic' | 'openai' | 'openrouter' | 'ollama';
 
 export interface ProviderInfo {
   id: ProviderType;
@@ -146,6 +146,12 @@ export const PROVIDERS: Record<ProviderType, ProviderInfo> = {
     name: 'OpenRouter',
     defaultModel: 'anthropic/claude-3.7-sonnet',
     keyPlaceholder: 'Enter OpenRouter API Key...'
+  },
+  ollama: {
+    id: 'ollama',
+    name: 'Ollama (Local)',
+    defaultModel: 'llama3.2',
+    keyPlaceholder: 'Not required for local Ollama'
   }
 };
 
@@ -155,6 +161,7 @@ export interface ProviderProfile {
   provider: ProviderType;
   apiKey: string;
   model: string;
+  localUrl?: string;
 }
 
 export interface Settings {
@@ -248,6 +255,17 @@ export const FALLBACK_MODELS: Record<ProviderType, ModelOption[]> = {
     { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1' },
     { id: 'deepseek/deepseek-chat', name: 'DeepSeek V3' },
     { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B' }
+  ],
+  ollama: [
+    { id: 'llama3.2', name: 'Llama 3.2 (3B) (Default)' },
+    { id: 'llama3.1', name: 'Llama 3.1 (8B)' },
+    { id: 'deepseek-r1', name: 'DeepSeek R1 (Local)' },
+    { id: 'qwen2.5', name: 'Qwen 2.5 (7B)' },
+    { id: 'mistral', name: 'Mistral (7B)' },
+    { id: 'phi4', name: 'Phi-4 (14B)' },
+    { id: 'gemma2', name: 'Gemma 2 (9B)' },
+    { id: 'codellama', name: 'Code Llama (7B)' },
+    { id: 'llava', name: 'LLaVA (Vision)' }
   ]
 };
 
@@ -384,7 +402,8 @@ export function sanitizeProfile(
     name: p.name || 'Profile',
     provider,
     apiKey: p.apiKey ?? '',
-    model: p.model || defaultModel
+    model: p.model || defaultModel,
+    localUrl: p.localUrl ?? (provider === 'ollama' ? 'http://localhost:11434' : undefined)
   };
 }
 
@@ -393,6 +412,7 @@ export function normalizeSettings(raw: Partial<Settings>): Settings {
     raw.provider && PROVIDERS[raw.provider] ? raw.provider : 'gemini';
   const fallbackModel = raw.model || PROVIDERS[fallbackProvider].defaultModel;
   const fallbackApiKey = raw.apiKey ?? '';
+  const fallbackLocalUrl = raw.localUrl ?? (fallbackProvider === 'ollama' ? 'http://localhost:11434' : undefined);
 
   let profiles: ProviderProfile[] = Array.isArray(raw.profiles)
     ? raw.profiles.map(p => sanitizeProfile(p, fallbackProvider))
@@ -406,7 +426,8 @@ export function normalizeSettings(raw: Partial<Settings>): Settings {
           name: 'Default Profile',
           provider: fallbackProvider,
           apiKey: fallbackApiKey,
-          model: fallbackModel
+          model: fallbackModel,
+          localUrl: fallbackLocalUrl
         },
         fallbackProvider
       )
@@ -424,7 +445,8 @@ export function normalizeSettings(raw: Partial<Settings>): Settings {
         ...currentActive,
         provider: currentActive.provider || fallbackProvider,
         apiKey: currentActive.apiKey || fallbackApiKey,
-        model: currentActive.model || fallbackModel
+        model: currentActive.model || fallbackModel,
+        localUrl: currentActive.localUrl || fallbackLocalUrl
       },
       fallbackProvider
     );
@@ -441,7 +463,7 @@ export function normalizeSettings(raw: Partial<Settings>): Settings {
     model: activeProfile.model || PROVIDERS[activeProvider]?.defaultModel || 'gemini-3.6-flash',
     profiles,
     activeProfileId: activeProfile.id,
-    localUrl: raw.localUrl,
+    localUrl: activeProfile.localUrl || raw.localUrl || (activeProvider === 'ollama' ? 'http://localhost:11434' : undefined),
     isWebSearchEnabled: raw.isWebSearchEnabled ?? false,
     searxngUrl: raw.searxngUrl ?? '',
     thinkingLevel: raw.thinkingLevel ?? 'off',
@@ -505,7 +527,8 @@ export const Storage = {
       activeProfileId: profileId,
       provider: target.provider,
       apiKey: target.apiKey,
-      model: target.model
+      model: target.model,
+      localUrl: target.localUrl
     });
   },
 

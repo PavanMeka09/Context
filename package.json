@@ -21,6 +21,7 @@
     "ai": "^7.0.58",
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "generative-loaders": "^0.1.1",
     "lucide-react": "^1.17.0",
     "node-cron": "^4.2.1",
     "playwright": "^1.62.1",

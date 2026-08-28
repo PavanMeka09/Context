@@ -26,6 +26,7 @@ describe('OpenRouter model compatibility', () => {
       { provider: 'openai', model: 'gpt-4o' },
       { provider: 'anthropic', model: 'claude-3-7-sonnet-20250219' },
       { provider: 'gemini', model: 'gemini-2.5-flash' },
+      { provider: 'ollama', model: 'llama3.2' },
     ] as const;
 
     for (const { provider, model: modelId } of providers) {

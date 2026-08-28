@@ -138,6 +138,57 @@ app.post('/api/search/test', async (req, res) => {
   }
 });
 
+// Endpoint: Ollama Connection Test
+app.post('/api/ollama/test', async (req, res) => {
+  try {
+    const { localUrl } = req.body;
+    const targetUrl = (localUrl || 'http://localhost:11434').replace(/\/+$/, '');
+    const response = await fetch(`${targetUrl}/api/tags`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!response.ok) {
+      return res.status(response.status).json({
+        success: false,
+        error: `Ollama returned HTTP ${response.status}`
+      });
+    }
+    const data = await response.json();
+    const models = Array.isArray(data?.models)
+      ? data.models.map(m => m.name || m.model)
+      : [];
+    res.json({
+      success: true,
+      message: `Connected to Ollama! Found ${models.length} installed model(s).`,
+      models
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to connect to local Ollama server'
+    });
+  }
+});
+
+// Endpoint: Ollama Models List Proxy
+app.get('/api/ollama/models', async (req, res) => {
+  try {
+    const localUrl = req.query.localUrl || 'http://localhost:11434';
+    const targetUrl = String(localUrl).replace(/\/+$/, '');
+    const response = await fetch(`${targetUrl}/api/tags`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Ollama returned HTTP ${response.status}` });
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to fetch Ollama models' });
+  }
+});
+
 // Crawl4AI Endpoints (/api/crawl, /api/crawl/extract, /api/crawl/status)
 app.use('/api/crawl', crawlRouter);
 

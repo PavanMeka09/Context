@@ -5,7 +5,7 @@ import {
   Check, ArrowLeft, EyeOff, Loader2, Clock, Compass
 } from 'lucide-react';
 import type { Chat, Settings as AppSettings, SystemPrompt } from '../utils/storage';
-import { Storage, PRESET_PROMPTS } from '../utils/storage';
+import { Storage, PRESET_PROMPTS, PROVIDERS } from '../utils/storage';
 import { fetchModels, type ModelOption } from '../utils/api';
 
 interface CommandPaletteProps {
@@ -112,7 +112,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       Promise.resolve().then(() => {
         if (!active) return;
         setIsLoadingModels(true);
-        fetchModels(settings.apiKey)
+        fetchModels({ provider: settings.provider, apiKey: settings.apiKey, localUrl: settings.localUrl })
           .catch(() => { if (active) setAvailableModels([]); })
           .finally(() => { if (active) setIsLoadingModels(false); });
       });
@@ -120,7 +120,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     return () => {
       active = false;
     };
-  }, [isOpen, activeScreen, settings.apiKey]);
+  }, [isOpen, activeScreen, settings.provider, settings.apiKey, settings.localUrl]);
   // Core navigation, activation and settings hooks
   const handleToggleWebSearch = useCallback(() => {
     const nextVal = !settings.isWebSearchEnabled;
@@ -415,7 +415,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   const getScreenTitle = () => {
     switch (activeScreen) {
-      case 'models': return 'GEMINI MODELS';
+      case 'models': return `${(PROVIDERS[settings.provider]?.name || 'AI').toUpperCase()} MODELS`;
       case 'personas': return 'SYSTEM PERSONAS';
       case 'chats': return 'RECENT CONVERSATIONS';
       case 'themes': return 'APPEARANCE THEME';

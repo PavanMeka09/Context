@@ -37,10 +37,11 @@ export function extractWebSearchQuery(args: WebSearchArgs): string {
 export interface FetchModelsOptions {
   provider?: ProviderType;
   apiKey?: string;
+  localUrl?: string;
 }
 
 interface ProviderFetchConfig {
-  url: (key: string) => string;
+  url: (key: string, localUrl?: string) => string;
   headers?: (key: string) => Record<string, string>;
   parse: (data: any) => ModelOption[];
 }
@@ -78,50 +79,86 @@ const PROVIDER_FETCH_CONFIGS: Record<ProviderType, ProviderFetchConfig> = {
     headers: (key) => ({ 'x-api-key': key, 'anthropic-version': '2023-06-01' }),
     parse: (data) => (data?.data || []).map((m: any) => ({ id: m.id, name: m.display_name || m.id })),
   },
+  ollama: {
+    url: (_key, localUrl) => `${(localUrl || 'http://localhost:11434').replace(/\/+$/, '')}/api/tags`,
+    parse: (data) => {
+      if (Array.isArray(data?.models)) {
+        return data.models.map((m: any) => {
+          const id = m.name || m.model;
+          const details = m.details;
+          let displayName = id;
+          if (details?.parameter_size) {
+            displayName = `${id} (${details.parameter_size})`;
+          }
+          return { id, name: displayName };
+        });
+      }
+      if (Array.isArray(data?.data)) {
+        return data.data.map((m: any) => ({ id: m.id, name: m.id }));
+      }
+      return [];
+    },
+  },
 };
 
 function normalizeFetchModelsOptions(
   optionsOrProviderOrKey?: FetchModelsOptions | ProviderType | string,
-  apiKeyParam?: string
-): { provider: ProviderType; apiKey?: string } {
+  apiKeyParam?: string,
+  localUrlParam?: string
+): { provider: ProviderType; apiKey?: string; localUrl?: string } {
   if (typeof optionsOrProviderOrKey === 'object' && optionsOrProviderOrKey !== null) {
     return {
       provider: optionsOrProviderOrKey.provider || 'gemini',
       apiKey: optionsOrProviderOrKey.apiKey,
+      localUrl: optionsOrProviderOrKey.localUrl,
     };
   }
 
   const isKnownProvider = (v: string): v is ProviderType =>
-    v === 'gemini' || v === 'openai' || v === 'openrouter' || v === 'anthropic';
+    v === 'gemini' || v === 'openai' || v === 'openrouter' || v === 'anthropic' || v === 'ollama';
 
   if (typeof optionsOrProviderOrKey === 'string') {
     if (isKnownProvider(optionsOrProviderOrKey)) {
-      return { provider: optionsOrProviderOrKey, apiKey: apiKeyParam };
+      return { provider: optionsOrProviderOrKey, apiKey: apiKeyParam, localUrl: localUrlParam };
     }
-    return { provider: 'gemini', apiKey: optionsOrProviderOrKey };
+    return { provider: 'gemini', apiKey: optionsOrProviderOrKey, localUrl: localUrlParam };
   }
 
-  return { provider: 'gemini', apiKey: apiKeyParam };
+  return { provider: 'gemini', apiKey: apiKeyParam, localUrl: localUrlParam };
 }
 
 export async function fetchModels(
   optionsOrProviderOrKey?: FetchModelsOptions | ProviderType | string,
-  apiKeyParam?: string
+  apiKeyParam?: string,
+  localUrlParam?: string
 ): Promise<ModelOption[]> {
-  const { provider, apiKey } = normalizeFetchModelsOptions(optionsOrProviderOrKey, apiKeyParam);
+  const { provider, apiKey, localUrl } = normalizeFetchModelsOptions(optionsOrProviderOrKey, apiKeyParam, localUrlParam);
 
   const fallback = FALLBACK_MODELS[provider] || FALLBACK_MODELS.gemini;
-  if (!apiKey) {
+  if (provider !== 'ollama' && !apiKey) {
     return [...fallback];
   }
 
   try {
     const config = PROVIDER_FETCH_CONFIGS[provider];
     if (config) {
-      const response = await fetch(config.url(apiKey), {
-        headers: config.headers ? config.headers(apiKey) : undefined,
-      });
-      if (response.ok) {
+      let response: Response | null = null;
+      try {
+        response = await fetch(config.url(apiKey || '', localUrl), {
+          headers: config.headers ? config.headers(apiKey || '') : undefined,
+        });
+      } catch {
+        if (provider === 'ollama') {
+          try {
+            const proxyUrl = `/api/ollama/models?localUrl=${encodeURIComponent(localUrl || 'http://localhost:11434')}`;
+            response = await fetch(proxyUrl);
+          } catch {
+            // let fallback handle
+          }
+        }
+      }
+
+      if (response && response.ok) {
         const data = await response.json();
         const models = config.parse(data).sort((a: ModelOption, b: ModelOption) =>
           a.name.localeCompare(b.name)
@@ -134,6 +171,53 @@ export async function fetchModels(
   }
 
   return [...fallback];
+}
+
+export async function testOllamaConnection(localUrl?: string): Promise<{
+  success: boolean;
+  message?: string;
+  error?: string;
+  models?: string[];
+}> {
+  const rawUrl = localUrl || 'http://localhost:11434';
+  const targetUrl = rawUrl.replace(/\/+$/, '');
+
+  // Try direct client fetch first
+  try {
+    const res = await fetch(`${targetUrl}/api/tags`);
+    if (res.ok) {
+      const data = await res.json();
+      const models = Array.isArray(data?.models) ? data.models.map((m: any) => m.name || m.model) : [];
+      return {
+        success: true,
+        message: `Successfully connected to Ollama! Found ${models.length} model(s).`,
+        models
+      };
+    }
+  } catch {
+    // Try backend proxy
+  }
+
+  try {
+    const res = await fetch('/api/ollama/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ localUrl: targetUrl })
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+    const errData = await res.json().catch(() => ({}));
+    return {
+      success: false,
+      error: errData.error || `Server responded with ${res.status}`
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Could not reach Ollama server.'
+    };
+  }
 }
 
 export interface StreamCallbacks {
@@ -222,26 +306,37 @@ export interface ModelProviderConfig {
   provider: ProviderType;
   apiKey: string;
   model: string;
+  localUrl?: string;
 }
 
-const MODEL_FACTORY_MAP: Record<ProviderType, (apiKey: string, model: string) => any> = {
+const MODEL_FACTORY_MAP: Record<ProviderType, (apiKey: string, model: string, localUrl?: string) => any> = {
   anthropic: (apiKey, model) => createAnthropic({ apiKey })(model),
   openai: (apiKey, model) => createOpenAI({ apiKey })(model),
   openrouter: (apiKey, model) => createOpenRouter({ apiKey })(model),
   gemini: (apiKey, model) => createGoogleGenerativeAI({ apiKey })(model),
+  ollama: (apiKey, model, localUrl) => {
+    const rawUrl = (localUrl || 'http://localhost:11434').replace(/\/+$/, '');
+    const cleanBaseUrl = rawUrl.endsWith('/v1') ? rawUrl : `${rawUrl}/v1`;
+    return createOpenAI({
+      baseURL: cleanBaseUrl,
+      apiKey: apiKey || 'ollama',
+    })(model);
+  },
 };
 
 export function createModelInstance(
   configOrProvider: ModelProviderConfig | ProviderType,
   apiKeyParam?: string,
-  modelParam?: string
+  modelParam?: string,
+  localUrlParam?: string
 ) {
   const provider = typeof configOrProvider === 'object' ? configOrProvider.provider : configOrProvider;
   const apiKey = typeof configOrProvider === 'object' ? configOrProvider.apiKey : (apiKeyParam || '');
   const model = typeof configOrProvider === 'object' ? configOrProvider.model : (modelParam || '');
+  const localUrl = typeof configOrProvider === 'object' ? configOrProvider.localUrl : localUrlParam;
 
   const factory = MODEL_FACTORY_MAP[provider] || MODEL_FACTORY_MAP.gemini;
-  return factory(apiKey, model);
+  return factory(apiKey, model, localUrl);
 }
 
 function getProviderOptions(provider: ProviderType, thinkingLevel?: Settings['thinkingLevel'], model?: string, hasTools?: boolean) {
@@ -273,17 +368,18 @@ function prepareModelAndMessages(
 ) {
   const provider = settings.provider || 'gemini';
   const apiKey = settings.apiKey;
-  const model = settings.model || PROVIDERS[provider]?.defaultModel || 'gemini-3.6-flash';
+  const localUrl = settings.localUrl;
+  const model = settings.model || PROVIDERS[provider]?.defaultModel || (provider === 'ollama' ? 'llama3.2' : 'gemini-3.6-flash');
   const thinkingLevel = settings.thinkingLevel;
 
-  if (!apiKey) {
+  if (!apiKey && provider !== 'ollama') {
     throw new Error('API key required. Please configure it in Settings.');
   }
 
   const effectiveSystemInstruction = getWrappedSystemInstruction(systemInstruction, hasTools ? 'off' : thinkingLevel);
   const formattedMessages = formatModelMessages(messages);
 
-  const modelInstance = createModelInstance({ provider, apiKey, model });
+  const modelInstance = createModelInstance({ provider, apiKey, model, localUrl });
   const providerOptions = getProviderOptions(provider, thinkingLevel, model, hasTools);
 
   return {

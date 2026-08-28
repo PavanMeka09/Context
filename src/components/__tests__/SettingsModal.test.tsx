@@ -5,7 +5,12 @@ import { SettingsModal } from '../SettingsModal';
 vi.mock('../../utils/api', () => ({
   fetchModels: vi.fn().mockResolvedValue([
     { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', provider: 'google' }
-  ])
+  ]),
+  testOllamaConnection: vi.fn().mockResolvedValue({
+    success: true,
+    message: 'Successfully connected to Ollama! (2 models found)',
+    models: ['llama3.2', 'deepseek-r1']
+  })
 }));
 
 describe('SettingsModal Component', () => {
@@ -52,6 +57,28 @@ describe('SettingsModal Component', () => {
     });
 
     expect(screen.getByText('Anthropic Claude API Key')).toBeDefined();
+  });
+
+  it('switches provider to Ollama and tests connection', async () => {
+    await act(async () => {
+      render(<SettingsModal {...defaultProps} />);
+    });
+
+    const providerSelect = screen.getByLabelText('API Provider');
+    await act(async () => {
+      fireEvent.change(providerSelect, { target: { value: 'ollama' } });
+    });
+
+    expect(screen.getByText('Ollama Instance URL')).toBeDefined();
+    expect(screen.getByText('Test Connection')).toBeDefined();
+    expect(screen.getByText(/Ollama \(Local\) API Key/i)).toBeDefined();
+
+    const testBtn = screen.getByText('Test Connection');
+    await act(async () => {
+      fireEvent.click(testBtn);
+    });
+
+    expect(screen.getByText(/Successfully connected to Ollama/i)).toBeDefined();
   });
 
   it('switches tabs when tab buttons are clicked', async () => {
