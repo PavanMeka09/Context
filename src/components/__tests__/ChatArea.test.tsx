@@ -86,4 +86,25 @@ describe('ChatArea Component', () => {
     fireEvent.click(artifactsTabBtn);
     expect(onSelectWorkspaceTab).toHaveBeenCalledWith('artifacts');
   });
+
+  it('does not render Queued status badge inside chat message list', () => {
+    const queuedChat: Chat = {
+      ...mockChat,
+      messages: [
+        { id: 'm1', role: 'user', content: 'Hello AI', timestamp: '10:00 AM' },
+        { id: 'm2', role: 'assistant', content: 'Processing...', timestamp: '10:01 AM' },
+        { id: 'm3', role: 'user', content: 'Queued user message', timestamp: '10:02 AM' }
+      ]
+    };
+    render(
+      <ChatArea
+        {...defaultProps}
+        chat={queuedChat}
+        isGenerating={true}
+        queuedMessageIds={new Set(['m3'])}
+      />
+    );
+
+    expect(screen.queryByText('Queued')).toBeNull();
+  });
 });

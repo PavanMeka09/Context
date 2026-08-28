@@ -75,6 +75,20 @@ export interface Chat {
   messageTree?: Record<string, MessageNode>;
   activeLeafId?: string | null;
 }
+export function getChatBrowserSession(chat: Chat | null | undefined): BrowserSessionData | undefined {
+  if (!chat?.messages) return undefined;
+  for (let i = chat.messages.length - 1; i >= 0; i--) {
+    if (chat.messages[i].browserSession) {
+      return chat.messages[i].browserSession;
+    }
+  }
+  return undefined;
+}
+
+export function isChatBrowserSessionActive(chat: Chat | null | undefined): boolean {
+  const session = getChatBrowserSession(chat);
+  return session?.status === 'running' || session?.status === 'paused';
+}
 
 export interface MemoryItem {
   id: string;
@@ -236,9 +250,6 @@ export const FALLBACK_MODELS: Record<ProviderType, ModelOption[]> = {
     { id: 'meta-llama/llama-3.3-70b-instruct', name: 'Llama 3.3 70B' }
   ]
 };
-
-export const FALLBACK_GEMINI_MODELS = FALLBACK_MODELS.gemini;
-
 
 // Keys
 const KEYS = {
@@ -787,13 +798,13 @@ export const Storage = {
     localStorage.setItem(KEYS.WORKSPACE_OPEN, String(open));
   },
 
-  getWorkspaceTab(): 'browser' | 'schedules' | 'artifacts' {
+  getWorkspaceTab(): 'browser' | 'schedules' | 'artifacts' | 'crawl4ai' {
     const tab = localStorage.getItem(KEYS.WORKSPACE_TAB);
-    if (tab === 'browser' || tab === 'schedules' || tab === 'artifacts') return tab;
+    if (tab === 'browser' || tab === 'schedules' || tab === 'artifacts' || tab === 'crawl4ai') return tab;
     return 'browser';
   },
 
-  saveWorkspaceTab(tab: 'browser' | 'schedules' | 'artifacts'): void {
+  saveWorkspaceTab(tab: 'browser' | 'schedules' | 'artifacts' | 'crawl4ai'): void {
     localStorage.setItem(KEYS.WORKSPACE_TAB, tab);
   },
 

@@ -85,7 +85,7 @@ describe('server/browser.cjs', () => {
         latestScreenshotBuffer: null,
         logs: [],
         lastAccessed: Date.now()
-      } as any);
+      } as unknown as Parameters<typeof sessions.set>[1]);
 
       const result = await clearSessionStorage('test-session');
       expect(result).toBe(true);

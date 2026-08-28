@@ -5,6 +5,7 @@
 ## 🌟 Key Features
 
 - 🌐 **Autonomous Browser Control**: Puppeteer-powered background browser agent with live frame streaming, self-healing element selectors, interactive step inspection, and session management.
+- 🚀 **Crawl4AI Integration**: LLM-optimized web crawler & markdown engine with token reduction metrics, media parsing, and CSS/JSON structured extractions.
 - 🔍 **Privacy Search Integration**: Automated SearXNG integration for fast, privacy-preserving live web search queries.
 - ⏰ **Scheduled Background Tasks**: Cron-driven background task runner (`node-cron`) for recurring browser web scraping and LLM summaries.
 - 🛡️ **Execution Sandbox & Safety**: Isolated Python and Node.js execution sandbox with safety pattern detection blocking destructive operations.

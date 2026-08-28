@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { RotateCw, Lock, ExternalLink, Terminal, Loader2, ChevronDown, ChevronUp, Play, Pause, SkipForward } from 'lucide-react';
+import { BrowserCanvas } from './BrowserCanvas';
 
 export interface BrowserStep {
   id: string;
@@ -192,7 +193,13 @@ export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
 
       {/* Viewport Area */}
       <div className="relative aspect-video w-full bg-muted overflow-hidden group">
-        {screenshotTimestamp > 0 ? (
+        {status === 'running' || status === 'paused' ? (
+          <BrowserCanvas
+            sessionId={sessionId || 'default'}
+            fallbackImageUrl={currentScreenshot}
+            className="w-full h-full"
+          />
+        ) : screenshotTimestamp > 0 || currentScreenshot ? (
           <img
             src={currentScreenshot}
             alt="Browser Live Screenshot"

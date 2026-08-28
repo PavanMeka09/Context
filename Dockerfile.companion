@@ -4,6 +4,7 @@ FROM node:22-slim
 RUN apt-get update && apt-get install -y \
     chromium \
     python3 \
+    python3-pip \
     fonts-ipafont-gothic \
     fonts-wqy-zenhei \
     fonts-thai-tlwg \
@@ -24,7 +25,7 @@ COPY package.json ./
 RUN node -e "\
 const fs=require('fs');\
 const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));\
-const keep=new Set(['express','cors','puppeteer','node-cron','typescript']);\
+const keep=new Set(['express','cors','playwright','playwright-extra','puppeteer-extra-plugin-stealth','ws','node-cron','typescript']);\
 pkg.dependencies=Object.fromEntries(Object.entries(pkg.dependencies||{}).filter(([k])=>keep.has(k)));\
 delete pkg.devDependencies;\
 fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));\
@@ -32,6 +33,9 @@ fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));\
   && npm install --omit=dev --no-audit --no-fund
 
 # Copy backend companion files
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt || true
+
 COPY server.cjs ./
 COPY server/ ./server/
 

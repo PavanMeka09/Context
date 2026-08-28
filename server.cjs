@@ -54,6 +54,8 @@ const {
   testConnection: testSearchConnection
 } = require('./server/webSearchEngine.cjs');
 
+const { router: crawlRouter } = require('./server/crawl4ai.cjs');
+
 // Auto-detect python command interpreter on server boot
 detectPythonCommand();
 
@@ -135,6 +137,9 @@ app.post('/api/search/test', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// Crawl4AI Endpoints (/api/crawl, /api/crawl/extract, /api/crawl/status)
+app.use('/api/crawl', crawlRouter);
 
 // Endpoint: Screenshot
 app.get('/api/browser/screenshot', async (req, res) => {
@@ -1119,12 +1124,15 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: err.message || 'Internal server error' });
 });
 
+const { initWebSocketServer } = require('./server/screencastWs.cjs');
+
 // Boot the scheduler engine
 initScheduler();
 
 const PORT = process.env.PORT || 3001;
 const server = app.listen(PORT, () => {
   console.log(`Browser Companion Server running on http://localhost:${PORT}`);
+  initWebSocketServer(server);
 });
 
 // Graceful Shutdown handling

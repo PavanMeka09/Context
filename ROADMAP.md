@@ -49,13 +49,13 @@ The proposed features aim to:
 * **Description**: Add persistent browser user profiles saved to disk (`DATA_DIR/profiles/`).
 * **Benefits**: Maintains login sessions, cookies, and localStorage across automated browser runs so tasks can act inside authenticated portals.
 
-#### C. Smart Page Content Extraction (Readability + Turndown)
-* **Description**: Process HTML pages through `@mozilla/readability` and `turndown` before sending content to the LLM.
-* **Benefits**: Strips out ads, navigation boilerplate, and scripts, reducing LLM token consumption by up to 70%.
+#### C. Smart Page Content & Crawl4AI Integration (Implemented ✅)
+* **Description**: Integrated **Crawl4AI** Python engine and Express router (`/api/crawl`) for token-efficient markdown generation, page cleaning, and structured JSON extraction.
+* **Benefits**: Strips out ads, navigation boilerplate, and scripts, reducing LLM token consumption by up to 70%, with a dedicated React UI workstation panel and ReAct agent tool.
 
-#### D. Structured Web Data Extraction (JSON Schema / Zod)
-* **Description**: Scrape any webpage into typed, structured JSON matching a user-defined Zod or JSON Schema.
-* **Benefits**: Turn unstructured HTML pages into clean datasets (price tracking, job boards, news aggregators).
+#### D. Structured Web Data Extraction (Crawl4AI CSS / JSON Schema) (Implemented ✅)
+* **Description**: Scrape any webpage into typed, structured JSON matching user-defined CSS selectors or JSON schema.
+* **Benefits**: Turns unstructured web HTML into clean datasets for downstream LLM prompt context and workspace artifacts.
 
 #### E. DOM Snapshot & Diff Tracker
 * **Description**: Compare web page snapshots over scheduled cron runs and detect visual or textual changes.

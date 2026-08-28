@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Square, ArrowUp, Paperclip, Mic, MicOff, X, FileText, Search, ChevronDown, Check, Globe, Sparkles, Brain, Compass } from 'lucide-react';
+import { Square, ArrowUp, Paperclip, Mic, MicOff, X, FileText, Search, ChevronDown, Check, Globe, Sparkles, Brain, Compass, Clock } from 'lucide-react';
 import type { Attachment, Settings, SystemPrompt } from '../utils/storage';
 import { Storage, PRESET_PROMPTS } from '../utils/storage';
 
@@ -18,6 +18,8 @@ interface ComposerProps {
   activePromptId: string;
   onSelectPromptId: (id: string) => void;
   customPrompts: SystemPrompt[];
+  queueCount?: number;
+  messageQueue?: { id: string; userGoal: string }[];
 }
 
 interface SpeechRecognitionErrorEvent extends Event {
@@ -61,7 +63,9 @@ export const Composer: React.FC<ComposerProps> = ({
   onSettingsChanged,
   activePromptId,
   onSelectPromptId,
-  customPrompts
+  customPrompts,
+  queueCount = 0,
+  messageQueue
 }) => {
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [tempInput, setTempInput] = useState('');
@@ -256,7 +260,7 @@ export const Composer: React.FC<ComposerProps> = ({
   };
 
   const handleSend = () => {
-    if ((input.trim() || attachments.length > 0) && !isGenerating) {
+    if (input.trim() || attachments.length > 0) {
       onSend(attachments);
       setAttachments([]);
       setHistoryIndex(null);
@@ -323,6 +327,26 @@ export const Composer: React.FC<ComposerProps> = ({
         </div>
       )}
 
+      {/* Queue Box at top of message box */}
+      {messageQueue && messageQueue.length > 0 && (
+        <div className="mb-2.5 flex flex-col gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300 shadow-sm animate-fade-in backdrop-blur-sm select-none">
+          <div className="flex items-center justify-between font-semibold">
+            <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-200">
+              <Clock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>Queued Messages ({messageQueue.length})</span>
+            </div>
+            <span className="text-[10px] font-medium text-amber-600/80 dark:text-amber-400/80">Will process automatically</span>
+          </div>
+          <div className="flex flex-col gap-1.5 max-h-28 overflow-y-auto pr-1">
+            {messageQueue.map((item, idx) => (
+              <div key={item.id} className="flex items-center gap-2 rounded-lg bg-background/80 border border-amber-500/20 px-2.5 py-1.5 text-foreground shadow-2xs">
+                <span className="font-mono text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/15 px-1.5 py-0.5 rounded shrink-0">#{idx + 1}</span>
+                <span className="truncate flex-1 font-medium text-xs text-foreground/90">{item.userGoal}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {/* Attachments Preview Area */}
       {attachments.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2 animate-fade-in select-none">
@@ -692,6 +716,12 @@ export const Composer: React.FC<ComposerProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {queueCount > 0 && (
+              <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded select-none animate-fade-in">
+                <Clock className="h-3 w-3" />
+                <span>Queued ({queueCount})</span>
+              </span>
+            )}
             {input.trim() && (
               <span className="text-[10px] font-medium text-muted-foreground bg-muted/40 px-2 py-0.5 rounded border border-border select-none animate-fade-in">
                 ~{Math.ceil(input.trim().length / 4)} tokens
@@ -700,10 +730,10 @@ export const Composer: React.FC<ComposerProps> = ({
             {/* Send Button */}
             <button
               onClick={handleSend}
-              disabled={(!input.trim() && attachments.length === 0) || isGenerating}
+              disabled={!input.trim() && attachments.length === 0}
               aria-label="Send message"
               className={`flex h-7 w-7 items-center justify-center rounded-md transition-all ${
-                (input.trim() || attachments.length > 0) && !isGenerating
+                input.trim() || attachments.length > 0
                   ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm cursor-pointer'
                   : 'bg-muted text-muted-foreground'
               }`}

@@ -22,7 +22,14 @@ function detectPythonCommand() {
           pythonCommand = 'python3';
           console.log('[System] Detected python3 as Python interpreter');
         } else {
-          console.log('[System] Neither python nor python3 detected in PATH. Python execution might fail.');
+          exec('py --version', (errorPy) => {
+            if (!errorPy) {
+              pythonCommand = 'py';
+              console.log('[System] Detected py as Python interpreter');
+            } else {
+              console.log('[System] Neither python, python3, nor py detected in PATH. Python execution might fail.');
+            }
+          });
         }
       });
     } else {

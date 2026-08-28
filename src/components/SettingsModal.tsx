@@ -346,7 +346,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   );
 
   const loadModelsForProvider = useCallback(
-    async (provider: ProviderType, key: string, activeModelId?: string) => {
+    async (config: { provider?: ProviderType; apiKey?: string; model?: string }) => {
+      const provider = config.provider || 'gemini';
+      const key = config.apiKey || '';
+      const activeModelId = config.model;
       setLoadingModels(true);
       setModelError(null);
       setModelSearchQuery('');
@@ -357,10 +360,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         if (fetched.length > 0) {
           const modelExists = fetched.some(m => m.id === activeModelId);
           if (!modelExists) {
-            updateActiveProfileState(() => ({ model: fetched[0].id }), { model: fetched[0].id });
+            updateActiveProfileState(() => ({ model: fetched[0].id }));
           }
         } else {
-          updateActiveProfileState(() => ({ model: '' }), { model: '' });
+          updateActiveProfileState(() => ({ model: '' }));
         }
       } catch {
         const providerName = PROVIDERS[provider]?.name || 'API Provider';
@@ -374,7 +377,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   useEffect(() => {
     setTimeout(() => {
-      loadModelsForProvider(settings.provider || 'gemini', settings.apiKey, settings.model);
+      loadModelsForProvider(settings);
     }, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadModelsForProvider]);
@@ -405,36 +408,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleProviderChange = (newProvider: ProviderType) => {
     const defaultModel = PROVIDERS[newProvider]?.defaultModel || 'gemini-3.6-flash';
     updateActiveProfileState(() => ({ provider: newProvider, model: defaultModel }));
-    loadModelsForProvider(newProvider, settings.apiKey, defaultModel);
+    loadModelsForProvider({ provider: newProvider, apiKey: settings.apiKey, model: defaultModel });
   };
 
   const handleAddProfile = () => {
-    let nextActive: ProviderProfile | undefined;
-    setSettings(prev => {
-      const name = `Profile ${(prev.profiles?.length || 0) + 1}`;
-      const nextSettings = Storage.addProfile(prev, { name });
-      nextActive = Storage.getActiveProfile(nextSettings);
-      return nextSettings;
-    });
+    const name = `Profile ${(settings.profiles?.length || 0) + 1}`;
+    const nextSettings = Storage.addProfile(settings, { name });
+    const nextActive = Storage.getActiveProfile(nextSettings);
+    setSettings(nextSettings);
     if (nextActive) {
       setEditingProfileId(nextActive.id);
       setEditingProfileName(nextActive.name);
-      loadModelsForProvider(nextActive.provider, nextActive.apiKey, nextActive.model);
+      loadModelsForProvider(nextActive);
     }
   };
 
   const handleSelectProfile = (id: string) => {
-    let nextActive: ProviderProfile | undefined;
-    setSettings(prev => {
-      const target = prev.profiles?.find(p => p.id === id);
-      if (!target) return prev;
-      const nextSettings = Storage.updateActiveProfile(prev, {});
-      const updated = { ...nextSettings, activeProfileId: id, provider: target.provider, apiKey: target.apiKey, model: target.model };
-      nextActive = Storage.getActiveProfile(updated);
-      return updated;
-    });
+    const target = settings.profiles?.find(p => p.id === id);
+    if (!target) return;
+    const nextSettings = Storage.updateActiveProfile(settings, {});
+    const updated = { ...nextSettings, activeProfileId: id, provider: target.provider, apiKey: target.apiKey, model: target.model };
+    const nextActive = Storage.getActiveProfile(updated);
+    setSettings(updated);
     if (nextActive) {
-      loadModelsForProvider(nextActive.provider, nextActive.apiKey, nextActive.model);
+      loadModelsForProvider(nextActive);
     }
   };
 
@@ -456,19 +453,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleDeleteProfile = (id: string) => {
-    let nextActive: ProviderProfile | undefined;
-    setSettings(prev => {
-      const nextSettings = Storage.deleteProfile(prev, id);
-      nextActive = Storage.getActiveProfile(nextSettings);
-      return nextSettings;
-    });
+    const nextSettings = Storage.deleteProfile(settings, id);
+    const nextActive = Storage.getActiveProfile(nextSettings);
+    setSettings(nextSettings);
     if (nextActive) {
-      loadModelsForProvider(nextActive.provider, nextActive.apiKey, nextActive.model);
+      loadModelsForProvider(nextActive);
     }
   };
 
   const handleKeyBlur = () => {
-    loadModelsForProvider(settings.provider || 'gemini', settings.apiKey, settings.model);
+    loadModelsForProvider(settings);
   };
 
   const handleSaveSettings = () => {
@@ -838,7 +832,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                               role="option"
                               aria-selected={settings.model === m.id}
                               onClick={() => {
-                                updateActiveProfileState(() => ({ model: m.id }), { model: m.id });
+                                updateActiveProfileState(() => ({ model: m.id }));
                                 setModelDropdownOpen(false);
                                 setModelSearchQuery('');
                               }}

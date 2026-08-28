@@ -7,6 +7,16 @@ const path = require('path');
 const { DATA_DIR, broadcastLiveEvent, safeJsonParse } = require('./utils.cjs');
 const { callLLM } = require('./llm.cjs');
 
+let broadcastBinaryFrame = null;
+function getBinaryBroadcaster() {
+  if (!broadcastBinaryFrame) {
+    try {
+      ({ broadcastBinaryFrame } = require('./screencastWs.cjs'));
+    } catch (_) {}
+  }
+  return broadcastBinaryFrame;
+}
+
 let browser = null;
 const sessions = new Map(); // sessionId -> { context, page, latestScreenshotBuffer, logs, lastAccessed }
 const sessionCreationLocks = new Map(); // sessionId -> Promise
@@ -310,6 +320,13 @@ async function updateScreenshotForSession(sessionId) {
       const stateObj = browserAgentStates.get(sessionId);
       const agentStatus = hasAgent ? (stateObj && stateObj.state === 'paused' ? 'paused' : 'running') : 'idle';
 
+      // 1. Broadcast binary frame over WebSocket (zero-copy buffer)
+      const binaryBroadcaster = getBinaryBroadcaster();
+      if (binaryBroadcaster && session.latestScreenshotBuffer) {
+        binaryBroadcaster(sessionId, session.latestScreenshotBuffer);
+      }
+
+      // 2. Broadcast SSE event for state & legacy clients
       broadcastLiveEvent('browser-state', {
         sessionId,
         url,

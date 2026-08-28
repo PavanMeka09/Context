@@ -40,11 +40,11 @@ export default defineConfig({
             if (id.includes('react-markdown') || id.includes('remark-gfm')) {
               return 'vendor-markdown';
             }
+            if (id.includes('@ai-sdk') || id.includes('@openrouter') || id.includes('zod')) {
+              return 'vendor-ai';
+            }
             if (id.includes('lucide-react')) {
               return 'vendor-icons';
-            }
-            if (id.includes('radix-ui')) {
-              return 'vendor-radix';
             }
           }
         }

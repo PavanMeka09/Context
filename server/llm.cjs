@@ -52,6 +52,29 @@ async function callLLM(settings, systemPrompt, userPrompt, screenshotBase64 = ''
   return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
+const { executeCrawl } = require('./crawl4ai.cjs');
+
+async function crawlWebPageTool(url, extractCss) {
+  return await executeCrawl(url, { extractCss });
+}
+
+function getCrawl4AIToolDefinition() {
+  return {
+    name: 'crawl_web_page',
+    description: 'Crawl a webpage using Crawl4AI to obtain clean Markdown, page metadata, links, and structured extractions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'The absolute target web URL to crawl' },
+        extractCss: { type: 'string', description: 'Optional CSS selector or JSON schema for structured extraction' }
+      },
+      required: ['url']
+    }
+  };
+}
+
 module.exports = {
-  callLLM
+  callLLM,
+  crawlWebPageTool,
+  getCrawl4AIToolDefinition
 };

@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import type { Chat, Message, Settings } from '../utils/storage';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { BrowserLiveView } from './BrowserLiveView';
-import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Compass, Volume2, VolumeX, Download, Layout, Calendar, Code, Settings as SettingsIcon, Cpu, Sparkles, Search, Brain } from 'lucide-react';
+import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Compass, Volume2, VolumeX, Download, Layout, Calendar, Code, Settings as SettingsIcon, Sparkles, Search } from 'lucide-react';
 import { cleanSnippetText, type SearxngResult } from '../utils/searxng';
 
 function parseThinkingAndContent(content: string): { thinking: string | null; content: string } {
@@ -506,16 +506,16 @@ const RegenerateButton: React.FC<RegenerateButtonProps> = ({ onClick, disabled, 
 );
 const EmptyChatFeed: React.FC = () => null;
 
-
-
+import type { WorkspaceTab } from '../hooks/useWorkspaceLayout';
 
 interface ChatAreaProps {
-  chat: Chat | null;
-  onSendMessage: (text: string) => void;
+  chat?: Chat | null;
+  onSendMessage: (content: string) => void;
   isGenerating: boolean;
-  onEditMessage: (messageId: string, newContent: string) => void;
-  onDeleteMessage: (messageId: string) => void;
-  onRegenerateResponse: (messageId?: string) => void;
+  queuedMessageIds?: Set<string>;
+  onEditMessage: (id: string, newContent: string) => void;
+  onDeleteMessage: (id: string) => void;
+  onRegenerateResponse: (id?: string) => void;
   isSidebarCollapsed: boolean;
   onToggleSidebar: () => void;
   onSwitchBranch?: (messageId: string) => void;
@@ -523,11 +523,23 @@ interface ChatAreaProps {
   settings?: Settings;
   isWorkspaceOpen?: boolean;
   onToggleWorkspace?: () => void;
-  workspaceTab?: 'browser' | 'schedules' | 'artifacts';
-  onSelectWorkspaceTab?: (tab: 'browser' | 'schedules' | 'artifacts') => void;
+  workspaceTab?: WorkspaceTab;
+  onSelectWorkspaceTab?: (tab: WorkspaceTab) => void;
   onOpenSettings?: () => void;
   children?: React.ReactNode;
 }
+const WORKSPACE_TAB_DESCRIPTORS: Array<{
+  id: WorkspaceTab;
+  label: string;
+  title: string;
+  ariaLabel: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { id: 'browser', label: 'Browser', title: 'Browser Sandbox Workspace Tab', ariaLabel: 'Browser Tab', icon: Compass },
+  { id: 'schedules', label: 'Schedules', title: 'Task Schedules Workspace Tab', ariaLabel: 'Schedules Tab', icon: Calendar },
+  { id: 'artifacts', label: 'Artifacts', title: 'Artifact Inspector Workspace Tab', ariaLabel: 'Artifacts Tab', icon: Code },
+  { id: 'crawl4ai', label: 'Crawler', title: 'Crawl4AI Web Scraper Workspace Tab', ariaLabel: 'Crawler Tab', icon: Globe },
+];
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
   chat,
@@ -770,54 +782,25 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           {/* Workspace Panel Selector Tabs & Toggle Button */}
           {onToggleWorkspace && (
             <div className="flex items-center rounded-md border border-input bg-muted/40 p-0.5">
-              <button
-                onClick={() => {
-                  if (!isWorkspaceOpen) onToggleWorkspace();
-                  onSelectWorkspaceTab?.('browser');
-                }}
-                className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
-                  isWorkspaceOpen && workspaceTab === 'browser'
-                    ? 'bg-background text-foreground shadow-xs font-semibold'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                title="Browser Sandbox Workspace Tab"
-                aria-label="Browser Tab"
-              >
-                <Compass className="h-3.5 w-3.5 text-primary" />
-                <span className="hidden lg:inline">Browser</span>
-              </button>
-              <button
-                onClick={() => {
-                  if (!isWorkspaceOpen) onToggleWorkspace();
-                  onSelectWorkspaceTab?.('schedules');
-                }}
-                className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
-                  isWorkspaceOpen && workspaceTab === 'schedules'
-                    ? 'bg-background text-foreground shadow-xs font-semibold'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                title="Task Schedules Workspace Tab"
-                aria-label="Schedules Tab"
-              >
-                <Calendar className="h-3.5 w-3.5 text-primary" />
-                <span className="hidden lg:inline">Schedules</span>
-              </button>
-              <button
-                onClick={() => {
-                  if (!isWorkspaceOpen) onToggleWorkspace();
-                  onSelectWorkspaceTab?.('artifacts');
-                }}
-                className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
-                  isWorkspaceOpen && workspaceTab === 'artifacts'
-                    ? 'bg-background text-foreground shadow-xs font-semibold'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                title="Artifact Inspector Workspace Tab"
-                aria-label="Artifacts Tab"
-              >
-                <Code className="h-3.5 w-3.5 text-primary" />
-                <span className="hidden lg:inline">Artifacts</span>
-              </button>
+              {WORKSPACE_TAB_DESCRIPTORS.map(({ id, label, title, ariaLabel, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => {
+                    if (!isWorkspaceOpen) onToggleWorkspace();
+                    onSelectWorkspaceTab?.(id);
+                  }}
+                  className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition cursor-pointer ${
+                    isWorkspaceOpen && workspaceTab === id
+                      ? 'bg-background text-foreground shadow-xs font-semibold'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  title={title}
+                  aria-label={ariaLabel}
+                >
+                  <Icon className="h-3.5 w-3.5 text-primary" />
+                  <span className="hidden lg:inline">{label}</span>
+                </button>
+              ))}
             </div>
           )}
 
@@ -977,7 +960,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
                       {/* Sibling navigation and actions */}
                       {!isEditing && (
-                        <div className="mt-1.5 flex items-center justify-between w-full select-none opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200 px-1">
+                        <div className="mt-1.5 flex items-center justify-between w-full select-none opacity-100 transition-opacity duration-200 px-1">
                           {hasSiblings ? (
                             <div className="flex items-center gap-1 text-[9px] font-bold text-muted-foreground select-none">
                               <button
@@ -1181,7 +1164,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
                       {/* Assistant actions */}
                       {!isEditing && (
-                        <div className="mt-1 flex items-center gap-3 select-none opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200 px-1 text-muted-foreground">
+                        <div className="mt-1 flex items-center gap-3 select-none opacity-100 transition-opacity duration-200 px-1 text-muted-foreground">
                           {hasSiblings && (
                             <div className="flex items-center gap-1 text-[9px] font-bold select-none mr-2">
                               <button

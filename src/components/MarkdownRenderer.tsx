@@ -9,6 +9,20 @@ interface MarkdownRendererProps {
   isGenerating?: boolean;
   sessionId?: string;
 }
+const LANGUAGE_EXTENSIONS: Record<string, string> = {
+  python: 'py',
+  py: 'py',
+  javascript: 'js',
+  js: 'js',
+  typescript: 'ts',
+  ts: 'ts',
+  json: 'json',
+  html: 'html',
+  svg: 'svg'
+};
+
+const getLanguageExtension = (language: string): string => LANGUAGE_EXTENSIONS[language.toLowerCase()] || 'txt';
+
 
 const BrowserScreenshotCard: React.FC<{
   src: string;
@@ -632,7 +646,8 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `artifact-${Date.now()}.${language === 'python' ? 'py' : language === 'javascript' || language === 'js' ? 'js' : language === 'typescript' || language === 'ts' ? 'ts' : language === 'json' ? 'json' : language === 'html' ? 'html' : 'txt'}`;
+    const ext = getLanguageExtension(language);
+    a.download = `artifact-${Date.now()}.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

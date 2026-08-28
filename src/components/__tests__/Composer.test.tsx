@@ -108,6 +108,55 @@ describe('Composer Component', () => {
     expect(handleStop).toHaveBeenCalledTimes(1);
   });
 
+  it('triggers onSend when Enter is pressed even while isGenerating is true (queuing message)', () => {
+    const handleSend = vi.fn();
+
+    render(
+      <Composer
+        input="Queued message text"
+        onChangeInput={vi.fn()}
+        onSend={handleSend}
+        isGenerating={true}
+        onStop={vi.fn()}
+        inputRef={createRef()}
+        settings={mockSettings}
+        activePromptId="preset-general"
+        onSelectPromptId={vi.fn()}
+        customPrompts={[]}
+      />
+    );
+
+    const textarea = screen.getByPlaceholderText('Ask anything...');
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
+
+    expect(handleSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('displays Queue box at top of input when messageQueue has items', () => {
+    render(
+      <Composer
+        input=""
+        onChangeInput={vi.fn()}
+        onSend={vi.fn()}
+        isGenerating={true}
+        onStop={vi.fn()}
+        inputRef={createRef()}
+        settings={mockSettings}
+        activePromptId="preset-general"
+        onSelectPromptId={vi.fn()}
+        customPrompts={[]}
+        queueCount={2}
+        messageQueue={[
+          { id: 'q1', userGoal: 'First queued prompt' },
+          { id: 'q2', userGoal: 'Second queued prompt' }
+        ]}
+      />
+    );
+
+    expect(screen.getByText('Queued Messages (2)')).toBeDefined();
+    expect(screen.getByText('First queued prompt')).toBeDefined();
+    expect(screen.getByText('Second queued prompt')).toBeDefined();
+  });
   it('renders voice typing mic button', () => {
     render(
       <Composer
@@ -115,6 +164,7 @@ describe('Composer Component', () => {
         onChangeInput={vi.fn()}
         onSend={vi.fn()}
         isGenerating={false}
+        onStop={vi.fn()}
         inputRef={createRef()}
         settings={mockSettings}
         activePromptId="preset-general"

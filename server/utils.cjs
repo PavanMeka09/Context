@@ -1,6 +1,7 @@
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const { db, scheduleDao, runDao, settingsDao } = require('./db.cjs');
 
 const DATA_DIR = path.join(os.homedir(), '.context-ai');
 if (!fs.existsSync(DATA_DIR)) {
@@ -11,7 +12,8 @@ const PATHS = {
   schedules: path.join(DATA_DIR, 'schedules.json'),
   runs: path.join(DATA_DIR, 'runs.json'),
   syncQueue: path.join(DATA_DIR, 'sync_queue.json'),
-  settings: path.join(DATA_DIR, 'settings.json')
+  settings: path.join(DATA_DIR, 'settings.json'),
+  db: path.join(DATA_DIR, 'context.db')
 };
 
 const sseClients = new Set();
@@ -30,6 +32,18 @@ function broadcastLiveEvent(type, data) {
 
 function readJSON(file, defaultVal = []) {
   try {
+    if (file === PATHS.schedules && db) {
+      return scheduleDao.getAll();
+    }
+    if (file === PATHS.runs && db) {
+      return runDao.getAll();
+    }
+    if (file === PATHS.settings && db) {
+      const val = settingsDao.get('global_settings');
+      if (val) return val;
+    }
+
+    // Fallback to disk read / cache
     if (fs.existsSync(file)) {
       return JSON.parse(fs.readFileSync(file, 'utf8'));
     }
@@ -41,6 +55,21 @@ function readJSON(file, defaultVal = []) {
 
 function writeJSON(file, data) {
   try {
+    // 1. Instant SQLite WAL persistence
+    if (file === PATHS.schedules && db && Array.isArray(data)) {
+      db.exec('DELETE FROM schedules;');
+      for (const s of data) {
+        scheduleDao.save(s);
+      }
+    } else if (file === PATHS.runs && db && Array.isArray(data)) {
+      for (const r of data) {
+        runDao.save(r);
+      }
+    } else if (file === PATHS.settings && db) {
+      settingsDao.set('global_settings', data);
+    }
+
+    // 2. Asynchronous non-blocking file sync backup
     const tempFile = file + '.tmp';
     fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf8');
     fs.renameSync(tempFile, file);
@@ -92,5 +121,9 @@ module.exports = {
   broadcastLiveEvent,
   readJSON,
   writeJSON,
-  safeJsonParse
+  safeJsonParse,
+  db,
+  scheduleDao,
+  runDao,
+  settingsDao
 };

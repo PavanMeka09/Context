@@ -2,11 +2,15 @@ import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { Composer } from './components/Composer';
-import { PRESET_PROMPTS, Storage, reconstructActivePath, upgradeChatToTree } from './utils/storage';
+import { BrowserLiveView } from './components/BrowserLiveView';
+import { ArtifactVisualizer } from './components/ArtifactVisualizer';
+import { PRESET_PROMPTS, Storage, reconstructActivePath, upgradeChatToTree, getChatBrowserSession, isChatBrowserSessionActive } from './utils/storage';
 import type { Chat, Message, MessageNode, Settings, SystemPrompt, Attachment, BrowserSessionData } from './utils/storage';
 import { streamChatCompletion } from './utils/api';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { AlertCircle, X, Loader2 } from 'lucide-react';
+import { AlertCircle, X, Loader2, Compass, Calendar, Code, Globe } from 'lucide-react';
+import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
+import { Crawl4AIPanel } from './components/Crawl4AIPanel';
 
 // Code splitting for modal components to optimize initial chunk size
 const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
@@ -31,6 +35,14 @@ interface SyncEvent {
   userMsg: Message;
   assistantMsg: Message;
   timestamp: string;
+}
+
+interface QueuedMessage {
+  id: string;
+  chatId: string;
+  userMessageId: string;
+  userGoal: string;
+  attachments?: Attachment[];
 }
 
 
@@ -74,6 +86,10 @@ function addMessageToTree(chat: Chat, message: Message, parentId: string | null)
 
 function App() {
   const [chats, setChats] = useState<Chat[]>([]);
+  const chatsRef = useRef<Chat[]>(chats);
+  useEffect(() => {
+    chatsRef.current = chats;
+  }, [chats]);
   const [settings, setSettings] = useState<Settings>(() => Storage.getSettings());
   const [customPrompts, setCustomPrompts] = useState<SystemPrompt[]>(() => Storage.getCustomPrompts());
   const [activePromptId, setActivePromptId] = useState<string>(() => Storage.getActivePromptId());
@@ -83,18 +99,26 @@ function App() {
   // Composer states
   const [composerInput, setComposerInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const messageQueueRef = useRef<QueuedMessage[]>([]);
+  const processNextInQueueRef = useRef<(latestChats: Chat[]) => void>(() => {});
+  const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [schedulesOpen, setSchedulesOpen] = useState(false);
   const [browserModalOpen, setBrowserModalOpen] = useState(false);
   const [browserModalSessionId, setBrowserModalSessionId] = useState<string>('interactive');
 
-  // Workspace Split-Screen State
-  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(() => Storage.getWorkspaceOpen());
-  const [workspaceTab, setWorkspaceTab] = useState<'browser' | 'schedules' | 'artifacts'>(() => Storage.getWorkspaceTab());
-  const [workspaceWidth, setWorkspaceWidth] = useState(() => Storage.getWorkspaceWidth());
-  const [isResizingWorkspace, setIsResizingWorkspace] = useState(false);
-  const [selectedArtifact, setSelectedArtifact] = useState<{ language: string; code: string; title?: string } | null>(null);
+  // Workspace Split-Screen State (encapsulated via hook)
+  const {
+    isWorkspaceOpen,
+    toggleWorkspace,
+    workspaceTab,
+    changeWorkspaceTab,
+    workspaceWidth,
+    isResizingWorkspace,
+    selectedArtifact,
+    handleMouseDownResize,
+  } = useWorkspaceLayout();
   // Preference and accessibility states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => Storage.getSidebarCollapsed());
   const [theme, setTheme] = useState<'dark' | 'light'>(() => Storage.getTheme());
@@ -234,11 +258,7 @@ function App() {
       // Workspace Panel Toggle: Ctrl+\ or Cmd+\
       if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
         e.preventDefault();
-        setIsWorkspaceOpen(prev => {
-          const next = !prev;
-          Storage.saveWorkspaceOpen(next);
-          return next;
-        });
+        toggleWorkspace();
       }
 
       // Sidebar Toggle: Ctrl+B or Cmd+B
@@ -272,7 +292,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleNewChat, confirmDialog]);
+  }, [handleNewChat, confirmDialog, toggleWorkspace]);
 
   // Listen to global open browser sandbox events
   useEffect(() => {
@@ -286,53 +306,6 @@ function App() {
     return () => window.removeEventListener('open-browser-sandbox-modal', handleOpenSandbox);
   }, []);
 
-  useEffect(() => {
-    const handleOpenArtifact = (e: Event) => {
-      const customEvent = e as CustomEvent<{ language: string; code: string; title?: string }>;
-      if (customEvent.detail) {
-        setSelectedArtifact(customEvent.detail);
-        setWorkspaceTab('artifacts');
-        setIsWorkspaceOpen(true);
-        Storage.saveWorkspaceOpen(true);
-        Storage.saveWorkspaceTab('artifacts');
-      }
-    };
-    window.addEventListener('open-artifact-inspector', handleOpenArtifact);
-    return () => window.removeEventListener('open-artifact-inspector', handleOpenArtifact);
-  }, []);
-
-  // Drag handler for Workspace Panel resizing
-  const handleMouseDownResize = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingWorkspace(true);
-  };
-
-  useEffect(() => {
-    if (!isResizingWorkspace) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const newWidth = window.innerWidth - e.clientX;
-      const minWidth = Math.max(320, Math.floor(window.innerWidth * 0.25));
-      const maxWidth = Math.floor(window.innerWidth * 0.7);
-      const clamped = Math.min(Math.max(newWidth, minWidth), maxWidth);
-      setWorkspaceWidth(clamped);
-    };
-
-    const handleMouseUp = () => {
-      setIsResizingWorkspace(false);
-      setWorkspaceWidth(w => {
-        Storage.saveWorkspaceWidth(w);
-        return w;
-      });
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isResizingWorkspace]);
 
   const showToast = (message: React.ReactNode, type: 'error' | 'success' = 'error') => {
     if (toastTimerRef.current) {
@@ -527,7 +500,11 @@ function App() {
           }
 
           if (update.status === 'completed' || update.status === 'failed') {
-            setIsGenerating(false);
+            if (messageQueueRef.current.length > 0) {
+              processNextInQueueRef.current(chatsRef.current);
+            } else {
+              setIsGenerating(false);
+            }
           }
         }
 
@@ -604,10 +581,13 @@ function App() {
   const handleStopGenerating = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      setIsGenerating(false);
     }
+    messageQueueRef.current = [];
+    setMessageQueue([]);
+    setIsGenerating(false);
+
     const activeChat = chats.find(c => c.id === activeChatId);
-    if (activeChat && activeChat.messages.some(m => m.browserSession && (m.browserSession.status === 'running' || m.browserSession.status === 'paused'))) {
+    if (isChatBrowserSessionActive(activeChat)) {
       fetch('/api/browser/agent/abort', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -662,7 +642,6 @@ function App() {
   const triggerStreamingResponse = async (chatList: Chat[], targetChatId: string) => {
     const activeChatIndex = chatList.findIndex(c => c.id === targetChatId);
     if (activeChatIndex === -1) return;
-
     const activeChat = upgradeChatToTree(chatList[activeChatIndex]);
     setIsGenerating(true);
     
@@ -739,33 +718,32 @@ function App() {
           updateStreamedContent(searchTagPrefix + accumulatedContent);
         },
         onDone: (finalText: string) => {
-          setIsGenerating(false);
           let updatedChat: Chat | undefined;
-          setChats(prevChats => {
-            const finalChats = prevChats.map(c => {
-              if (c.id === targetChatId) {
-                const upgraded = upgradeChatToTree(c);
-                const tree = { ...upgraded.messageTree };
-                if (tree[streamMessageId]) {
-                  tree[streamMessageId] = {
-                    ...tree[streamMessageId],
-                    content: searchTagPrefix + finalText,
-                    timestamp: new Date().toISOString()
-                  };
-                }
-                const messages = reconstructActivePath(tree, upgraded.activeLeafId);
-                updatedChat = {
-                  ...upgraded,
-                  messageTree: tree,
-                  messages,
-                  updatedAt: new Date().toISOString()
+          const nextChats = chatsRef.current.map(c => {
+            if (c.id === targetChatId) {
+              const upgraded = upgradeChatToTree(c);
+              const tree = { ...upgraded.messageTree };
+              if (tree[streamMessageId]) {
+                tree[streamMessageId] = {
+                  ...tree[streamMessageId],
+                  content: searchTagPrefix + finalText,
+                  timestamp: new Date().toISOString()
                 };
-                return updatedChat;
               }
-              return c;
-            });
-            return finalChats;
+              const messages = reconstructActivePath(tree, upgraded.activeLeafId);
+              updatedChat = {
+                ...upgraded,
+                messageTree: tree,
+                messages,
+                updatedAt: new Date().toISOString()
+              };
+              return updatedChat;
+            }
+            return c;
           });
+
+          chatsRef.current = nextChats;
+          setChats(nextChats);
 
           if (updatedChat) {
             Storage.saveChat(updatedChat);
@@ -780,8 +758,16 @@ function App() {
           }
 
           abortControllerRef.current = null;
+
+          if (messageQueueRef.current.length > 0) {
+            processNextInQueueRef.current(nextChats);
+          } else {
+            setIsGenerating(false);
+          }
         },
         onError: (errorMsg: string) => {
+          messageQueueRef.current = [];
+          setMessageQueue([]);
           setIsGenerating(false);
           showToast(errorMsg, 'error');
           
@@ -916,6 +902,38 @@ function App() {
     }
   };
 
+  const processNextInQueue = (latestChats: Chat[]) => {
+    if (messageQueueRef.current.length > 0) {
+      const nextItem = messageQueueRef.current.shift()!;
+      setMessageQueue([...messageQueueRef.current]);
+
+      let currentChats = latestChats && latestChats.length > 0 ? latestChats : chatsRef.current;
+      const targetChatIndex = currentChats.findIndex(c => c.id === nextItem.chatId);
+      if (targetChatIndex !== -1) {
+        const upgraded = upgradeChatToTree(currentChats[targetChatIndex]);
+        if (upgraded.messageTree && upgraded.messageTree[nextItem.userMessageId]) {
+          upgraded.activeLeafId = nextItem.userMessageId;
+          upgraded.messages = reconstructActivePath(upgraded.messageTree, nextItem.userMessageId);
+          currentChats = currentChats.map(c => c.id === nextItem.chatId ? upgraded : c);
+          chatsRef.current = currentChats;
+          setChats(currentChats);
+        }
+      }
+
+      if (settings.isBrowserAgentEnabled) {
+        triggerBrowserAgentLoop(currentChats, nextItem.chatId, nextItem.userGoal);
+      } else {
+        triggerStreamingResponse(currentChats, nextItem.chatId);
+      }
+    } else {
+      setIsGenerating(false);
+    }
+  };
+
+  useEffect(() => {
+    processNextInQueueRef.current = processNextInQueue;
+  });
+
   const handleSendMessage = async (textToSend?: string, attachmentsToSend?: Attachment[]) => {
     const text = (textToSend || composerInput).trim();
     if (!text && (!attachmentsToSend || attachmentsToSend.length === 0)) return;
@@ -974,10 +992,22 @@ function App() {
 
     // Trigger completion stream
     if (currentChatId) {
-      if (settings.isBrowserAgentEnabled) {
-        await triggerBrowserAgentLoop(currentChats, currentChatId, text);
+      if (isGenerating) {
+        const queuedItem: QueuedMessage = {
+          id: `queue-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          chatId: currentChatId,
+          userMessageId: userMessage.id,
+          userGoal: text,
+          attachments: attachmentsToSend
+        };
+        messageQueueRef.current.push(queuedItem);
+        setMessageQueue([...messageQueueRef.current]);
       } else {
-        await triggerStreamingResponse(currentChats, currentChatId);
+        if (settings.isBrowserAgentEnabled) {
+          await triggerBrowserAgentLoop(currentChats, currentChatId, text);
+        } else {
+          await triggerStreamingResponse(currentChats, currentChatId);
+        }
       }
     }
   };
@@ -1343,6 +1373,10 @@ function App() {
         onDeleteChat={handleDeleteChat}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenSchedules={() => setSchedulesOpen(true)}
+        onOpenCrawl4AI={() => {
+          changeWorkspaceTab('crawl4ai');
+          toggleWorkspace(true);
+        }}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => {
           const next = !isSidebarCollapsed;
@@ -1361,6 +1395,7 @@ function App() {
           chat={activeChat}
           onSendMessage={handleSendMessage}
           isGenerating={isGenerating}
+          queuedMessageIds={new Set(messageQueue.map(item => item.userMessageId))}
           onEditMessage={handleEditMessage}
           onDeleteMessage={handleDeleteMessage}
           onRegenerateResponse={handleRegenerateResponse}
@@ -1373,23 +1408,14 @@ function App() {
           onSwitchBranch={handleSwitchBranch}
           onOpenBrowserModal={(sid) => {
             setBrowserModalSessionId(sid || 'interactive');
-            setWorkspaceTab('browser');
-            setIsWorkspaceOpen(true);
-            Storage.saveWorkspaceOpen(true);
-            Storage.saveWorkspaceTab('browser');
+            changeWorkspaceTab('browser');
+            toggleWorkspace(true);
           }}
           settings={settings}
           isWorkspaceOpen={isWorkspaceOpen}
-          onToggleWorkspace={() => {
-            const next = !isWorkspaceOpen;
-            setIsWorkspaceOpen(next);
-            Storage.saveWorkspaceOpen(next);
-          }}
+          onToggleWorkspace={() => toggleWorkspace()}
           workspaceTab={workspaceTab}
-          onSelectWorkspaceTab={(tab) => {
-            setWorkspaceTab(tab);
-            Storage.saveWorkspaceTab(tab);
-          }}
+          onSelectWorkspaceTab={(tab) => changeWorkspaceTab(tab)}
           onOpenSettings={() => setSettingsOpen(true)}
         >
           <Composer
@@ -1409,6 +1435,8 @@ function App() {
               Storage.saveActivePromptId(id);
             }}
             customPrompts={customPrompts}
+            queueCount={messageQueue.length}
+            messageQueue={messageQueue}
           />
         </ChatArea>
       </ErrorBoundary>
@@ -1434,7 +1462,7 @@ function App() {
             <div className="flex h-14 shrink-0 items-center justify-between px-4 border-b border-border bg-muted/30">
               <div className="flex items-center gap-1.5">
                 <button
-                  onClick={() => { setWorkspaceTab('browser'); Storage.saveWorkspaceTab('browser'); }}
+                  onClick={() => changeWorkspaceTab('browser')}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
                     workspaceTab === 'browser' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
                   }`}
@@ -1443,7 +1471,7 @@ function App() {
                   <span>Browser</span>
                 </button>
                 <button
-                  onClick={() => { setWorkspaceTab('schedules'); Storage.saveWorkspaceTab('schedules'); }}
+                  onClick={() => changeWorkspaceTab('schedules')}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
                     workspaceTab === 'schedules' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
                   }`}
@@ -1452,7 +1480,7 @@ function App() {
                   <span>Schedules</span>
                 </button>
                 <button
-                  onClick={() => { setWorkspaceTab('artifacts'); Storage.saveWorkspaceTab('artifacts'); }}
+                  onClick={() => changeWorkspaceTab('artifacts')}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
                     workspaceTab === 'artifacts' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
                   }`}
@@ -1460,12 +1488,18 @@ function App() {
                   <Code className="h-3.5 w-3.5 text-primary" />
                   <span>Artifacts</span>
                 </button>
+                <button
+                  onClick={() => changeWorkspaceTab('crawl4ai')}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    workspaceTab === 'crawl4ai' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Globe className="h-3.5 w-3.5 text-primary" />
+                  <span>Crawl4AI</span>
+                </button>
               </div>
               <button
-                onClick={() => {
-                  setIsWorkspaceOpen(false);
-                  Storage.saveWorkspaceOpen(false);
-                }}
+                onClick={() => toggleWorkspace(false)}
                 className="rounded-md p-1 hover:bg-accent text-muted-foreground hover:text-foreground transition cursor-pointer"
                 title="Close workspace panel (Ctrl+\)"
                 aria-label="Close workspace"
@@ -1476,58 +1510,52 @@ function App() {
 
             {/* Tab Body */}
             <div className="flex-1 overflow-y-auto p-4 relative">
-              {workspaceTab === 'browser' && (
-                <BrowserLiveView
-                  url="https://google.com"
-                  title="Interactive Browser Workspace"
-                  status={activeChat?.messages.some(m => m.browserSession?.status === 'running') ? 'running' : 'idle'}
-                  steps={activeChat?.messages.find(m => m.browserSession)?.browserSession?.steps || []}
-                  screenshotUrl=""
-                  screenshotTimestamp={Date.now()}
-                  sessionId={browserModalSessionId}
-                />
-              )}
+              {workspaceTab === 'browser' && (() => {
+                const session = getChatBrowserSession(activeChat);
+                return (
+                  <BrowserLiveView
+                    url={session?.url || 'https://google.com'}
+                    title={session?.title || 'Interactive Browser Workspace'}
+                    status={session?.status || 'idle'}
+                    steps={session?.steps || []}
+                    screenshotUrl="/api/browser/screenshot"
+                    screenshotTimestamp={session?.screenshotTimestamp || 0}
+                    sessionId={browserModalSessionId}
+                  />
+                );
+              })()}
 
               {workspaceTab === 'schedules' && (
                 <SchedulesPanel
                   isOpen={true}
                   onClose={() => {
-                    setIsWorkspaceOpen(false);
-                    Storage.saveWorkspaceOpen(false);
+                    toggleWorkspace(false);
                   }}
                   chats={chats}
-                  onSelectChat={handleSelectChat}
+                  onShowToast={(msg, type) => showToast(msg, type)}
+                />
+              )}
+
+              {workspaceTab === 'crawl4ai' && (
+                <Crawl4AIPanel
+                  onSendToChat={(text) => {
+                    setComposerInput(text);
+                    textareaRef.current?.focus();
+                    showToast('Crawled context loaded into composer prompt', 'success');
+                  }}
+                  onSaveArtifact={(title) => {
+                    showToast(`Artifact "${title}" created`, 'success');
+                  }}
                 />
               )}
 
               {workspaceTab === 'artifacts' && (
                 <div className="flex flex-col h-full space-y-4 font-sans select-text">
                   {selectedArtifact ? (
-                    <div className="flex flex-col h-full space-y-3">
-                      <div className="flex items-center justify-between border-b border-border pb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-xs font-mono font-bold uppercase">
-                            {selectedArtifact.language}
-                          </span>
-                          <span className="text-xs font-semibold text-foreground">
-                            {selectedArtifact.title || 'Code Snippet'}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(selectedArtifact.code);
-                            showToast('Code copied to clipboard!', 'success');
-                          }}
-                          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-input rounded px-2 py-1 bg-background hover:bg-accent transition"
-                        >
-                          <Copy className="h-3 w-3" />
-                          <span>Copy</span>
-                        </button>
-                      </div>
-                      <pre className="flex-1 p-3 rounded-lg bg-muted/50 border border-border text-xs font-mono overflow-auto max-h-[calc(100vh-180px)] whitespace-pre-wrap">
-                        {selectedArtifact.code}
-                      </pre>
-                    </div>
+                    <ArtifactVisualizer
+                      artifact={selectedArtifact}
+                      onCopy={() => showToast('Code copied to clipboard!', 'success')}
+                    />
                   ) : (
                     <div className="flex flex-col items-center justify-center h-64 text-center text-muted-foreground p-6">
                       <Code className="h-10 w-10 text-muted-foreground/40 mb-3" />
@@ -1603,6 +1631,10 @@ function App() {
             onShowToast={(msg, type) => showToast(msg, type)}
             onOpenSchedules={() => setSchedulesOpen(true)}
             onOpenBrowserModal={() => setBrowserModalOpen(true)}
+            onOpenCrawl4AI={() => {
+              changeWorkspaceTab('crawl4ai');
+              toggleWorkspace(true);
+            }}
           />
         </Suspense>
       )}
@@ -1636,13 +1668,12 @@ function App() {
               activeChatId={activeChatId}
               activeChatTitle={activeChat?.title}
               initialSessionId={browserModalSessionId}
-              isBrowserAgentRunning={isGenerating && !!activeChat?.messages.some(m => m.browserSession && (m.browserSession.status === 'running' || m.browserSession.status === 'paused'))}
+              isBrowserAgentRunning={isGenerating && isChatBrowserSessionActive(activeChat)}
               onShowToast={showToast}
             />
           </Suspense>
         </ErrorBoundary>
       )}
-
     </div>
   );
 }

@@ -27,6 +27,7 @@ interface CommandPaletteProps {
   onShowToast: (msg: string, type: 'success' | 'error') => void;
   onOpenSchedules?: () => void;
   onOpenBrowserModal?: () => void;
+  onOpenCrawl4AI?: () => void;
 }
 
 type ScreenType = 'main' | 'models' | 'personas' | 'chats' | 'themes';
@@ -59,7 +60,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onToggleSettings,
   onShowToast,
   onOpenSchedules,
-  onOpenBrowserModal
+  onOpenBrowserModal,
+  onOpenCrawl4AI
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeScreen, setActiveScreen] = useState<ScreenType>('main');
@@ -159,7 +161,16 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       subtitle: 'Manage background cron tasks and recurring web scrapes',
       icon: <Clock className="h-4 w-4" />,
       category: 'Navigation',
-      action: () => { onOpenSchedules?.(); onClose(); }
+      action: () => { if (onOpenSchedules) onOpenSchedules(); onClose(); }
+    },
+    {
+      id: 'nav-crawl4ai',
+      title: 'Crawl4AI Web Crawler',
+      subtitle: 'Fast markdown generation & structured data extraction',
+      icon: <Globe className="h-4 w-4" />,
+      category: 'Navigation',
+      action: () => { if (onOpenCrawl4AI) onOpenCrawl4AI(); onClose(); },
+      shortcut: ['/crawl']
     },
     {
       id: 'nav-browser',
@@ -231,7 +242,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       category: 'Appearance',
       action: () => { setActiveScreen('themes'); setSearchQuery(''); setSelectedIndex(0); }
     },
-  ], [settings, theme, onNewChat, onClose, onToggleSettings, onToggleSidebar, onOpenBrowserModal, onOpenSchedules, handleToggleWebSearch]);
+  ], [settings, theme, onNewChat, onClose, onToggleSettings, onToggleSidebar, onOpenBrowserModal, onOpenSchedules, onOpenCrawl4AI, handleToggleWebSearch]);
 
   // Derived submenus items
   const subCommands = useMemo<CommandItem[]>(() => {

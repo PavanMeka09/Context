@@ -80,30 +80,35 @@ const PROVIDER_FETCH_CONFIGS: Record<ProviderType, ProviderFetchConfig> = {
   },
 };
 
+function normalizeFetchModelsOptions(
+  optionsOrProviderOrKey?: FetchModelsOptions | ProviderType | string,
+  apiKeyParam?: string
+): { provider: ProviderType; apiKey?: string } {
+  if (typeof optionsOrProviderOrKey === 'object' && optionsOrProviderOrKey !== null) {
+    return {
+      provider: optionsOrProviderOrKey.provider || 'gemini',
+      apiKey: optionsOrProviderOrKey.apiKey,
+    };
+  }
+
+  const isKnownProvider = (v: string): v is ProviderType =>
+    v === 'gemini' || v === 'openai' || v === 'openrouter' || v === 'anthropic';
+
+  if (typeof optionsOrProviderOrKey === 'string') {
+    if (isKnownProvider(optionsOrProviderOrKey)) {
+      return { provider: optionsOrProviderOrKey, apiKey: apiKeyParam };
+    }
+    return { provider: 'gemini', apiKey: optionsOrProviderOrKey };
+  }
+
+  return { provider: 'gemini', apiKey: apiKeyParam };
+}
+
 export async function fetchModels(
   optionsOrProviderOrKey?: FetchModelsOptions | ProviderType | string,
   apiKeyParam?: string
 ): Promise<ModelOption[]> {
-  let provider: ProviderType = 'gemini';
-  let apiKey: string | undefined;
-
-  if (optionsOrProviderOrKey && typeof optionsOrProviderOrKey === 'object') {
-    provider = optionsOrProviderOrKey.provider || 'gemini';
-    apiKey = optionsOrProviderOrKey.apiKey;
-  } else if (
-    optionsOrProviderOrKey === 'gemini' ||
-    optionsOrProviderOrKey === 'anthropic' ||
-    optionsOrProviderOrKey === 'openai' ||
-    optionsOrProviderOrKey === 'openrouter'
-  ) {
-    provider = optionsOrProviderOrKey;
-    apiKey = apiKeyParam;
-  } else if (typeof optionsOrProviderOrKey === 'string') {
-    provider = 'gemini';
-    apiKey = optionsOrProviderOrKey;
-  } else {
-    apiKey = apiKeyParam;
-  }
+  const { provider, apiKey } = normalizeFetchModelsOptions(optionsOrProviderOrKey, apiKeyParam);
 
   const fallback = FALLBACK_MODELS[provider] || FALLBACK_MODELS.gemini;
   if (!apiKey) {
@@ -213,26 +218,30 @@ function formatModelMessages(messages: Message[]): ModelMessage[] {
     });
 }
 
-export function createModelInstance(provider: ProviderType, apiKey: string, model: string) {
-  switch (provider) {
-    case 'anthropic': {
-      const anthropic = createAnthropic({ apiKey });
-      return anthropic(model);
-    }
-    case 'openai': {
-      const openai = createOpenAI({ apiKey });
-      return openai(model);
-    }
-    case 'openrouter': {
-      const openrouter = createOpenRouter({ apiKey });
-      return openrouter(model);
-    }
-    case 'gemini':
-    default: {
-      const google = createGoogleGenerativeAI({ apiKey });
-      return google(model);
-    }
-  }
+export interface ModelProviderConfig {
+  provider: ProviderType;
+  apiKey: string;
+  model: string;
+}
+
+const MODEL_FACTORY_MAP: Record<ProviderType, (apiKey: string, model: string) => any> = {
+  anthropic: (apiKey, model) => createAnthropic({ apiKey })(model),
+  openai: (apiKey, model) => createOpenAI({ apiKey })(model),
+  openrouter: (apiKey, model) => createOpenRouter({ apiKey })(model),
+  gemini: (apiKey, model) => createGoogleGenerativeAI({ apiKey })(model),
+};
+
+export function createModelInstance(
+  configOrProvider: ModelProviderConfig | ProviderType,
+  apiKeyParam?: string,
+  modelParam?: string
+) {
+  const provider = typeof configOrProvider === 'object' ? configOrProvider.provider : configOrProvider;
+  const apiKey = typeof configOrProvider === 'object' ? configOrProvider.apiKey : (apiKeyParam || '');
+  const model = typeof configOrProvider === 'object' ? configOrProvider.model : (modelParam || '');
+
+  const factory = MODEL_FACTORY_MAP[provider] || MODEL_FACTORY_MAP.gemini;
+  return factory(apiKey, model);
 }
 
 function getProviderOptions(provider: ProviderType, thinkingLevel?: Settings['thinkingLevel'], model?: string, hasTools?: boolean) {
@@ -274,7 +283,7 @@ function prepareModelAndMessages(
   const effectiveSystemInstruction = getWrappedSystemInstruction(systemInstruction, hasTools ? 'off' : thinkingLevel);
   const formattedMessages = formatModelMessages(messages);
 
-  const modelInstance = createModelInstance(provider, apiKey, model);
+  const modelInstance = createModelInstance({ provider, apiKey, model });
   const providerOptions = getProviderOptions(provider, thinkingLevel, model, hasTools);
 
   return {

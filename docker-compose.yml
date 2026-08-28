@@ -16,7 +16,7 @@ services:
     networks:
       - context-network
 
-  # Puppeteer Companion Server Backend
+  # High-Performance Companion Server Backend
   companion-server:
     build:
       context: .
@@ -27,8 +27,27 @@ services:
     environment:
       - PORT=3001
       - SEARXNG_URL=http://searxng:8080
+      - CRAWLER_DAEMON_URL=http://crawler-service:8083
     volumes:
       - companion-data:/root/.context-ai
+    depends_on:
+      crawler-service:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - context-network
+
+  # Persistent FastAPI Crawl4AI Daemon
+  crawler-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.crawler
+    container_name: context-crawler
+    ports:
+      - "8083:8083"
+    environment:
+      - CRAWLER_PORT=8083
+      - CRAWLER_HOST=0.0.0.0
     restart: unless-stopped
     networks:
       - context-network
