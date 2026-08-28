@@ -497,6 +497,18 @@ export const Storage = {
     });
   },
 
+  switchProfile(settings: Settings, profileId: string): Settings {
+    const target = settings.profiles?.find(p => p.id === profileId);
+    if (!target) return settings;
+    return normalizeSettings({
+      ...settings,
+      activeProfileId: profileId,
+      provider: target.provider,
+      apiKey: target.apiKey,
+      model: target.model
+    });
+  },
+
   addProfile(settings: Settings, newProfile?: Partial<ProviderProfile>): Settings {
     const created = sanitizeProfile(
       newProfile || {

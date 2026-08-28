@@ -8,49 +8,66 @@ const SERVICE_SCRIPT = path.join(__dirname, 'crawl4ai_service.py');
 const DAEMON_URL = process.env.CRAWLER_DAEMON_URL || 'http://127.0.0.1:8083';
 
 /**
+ * Standardized error result builder to eliminate duplicated fallback structures
+ */
+function createCrawlErrorResult(url, errorMsg, statusCode = 400, engine = 'error', rawText = '') {
+  return {
+    success: false,
+    engine,
+    url: url || '',
+    error: errorMsg,
+    markdown: rawText,
+    stats: {
+      raw_bytes: rawText ? rawText.length : 0,
+      markdown_bytes: rawText ? rawText.length : 0,
+      tokens_saved_pct: 0,
+      status_code: statusCode
+    }
+  };
+}
+
+/**
  * Execute crawl via persistent FastAPI daemon with fallback to subprocess
  */
 async function executeCrawl(url, options = {}) {
   if (!url || typeof url !== 'string') {
-    return {
-      success: false,
-      error: 'Invalid URL provided',
-      stats: { raw_bytes: 0, markdown_bytes: 0, tokens_saved_pct: 0, status_code: 400 }
-    };
+    return createCrawlErrorResult(url, 'Invalid URL provided', 400);
   }
 
   // Validate URL protocol
   try {
     const parsed = new URL(url);
     if (!['http:', 'https:'].includes(parsed.protocol)) {
-      return {
-        success: false,
-        error: 'Only HTTP and HTTPS URLs are supported',
-        stats: { raw_bytes: 0, markdown_bytes: 0, tokens_saved_pct: 0, status_code: 400 }
-      };
+      return createCrawlErrorResult(url, 'Only HTTP and HTTPS URLs are supported', 400);
     }
-  } catch (e) {
-    return {
-      success: false,
-      error: 'Malformed URL structure',
-      stats: { raw_bytes: 0, markdown_bytes: 0, tokens_saved_pct: 0, status_code: 400 }
-    };
+  } catch {
+    return createCrawlErrorResult(url, 'Malformed URL structure', 400);
   }
+
+  const cssSelector = options.cssSelector || options.extractCss || null;
+  const schema = options.schema || null;
 
   // 1. Attempt ultra-fast persistent FastAPI daemon
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    const response = await fetch(`${DAEMON_URL}/crawl`, {
+    const isExtractEndpoint = Boolean(schema || (cssSelector && options.isExtract));
+    const endpointUrl = isExtractEndpoint ? `${DAEMON_URL}/extract` : `${DAEMON_URL}/crawl`;
+    const requestBody = isExtractEndpoint
+      ? { url, cssSelector, schema }
+      : {
+          url,
+          extractCss: cssSelector,
+          schema,
+          bypassCache: options.bypassCache !== false,
+          wordLimit: options.wordLimit
+        };
+
+    const response = await fetch(endpointUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        url,
-        extractCss: options.extractCss,
-        bypassCache: options.bypassCache !== false,
-        wordLimit: options.wordLimit
-      }),
+      body: JSON.stringify(requestBody),
       signal: controller.signal
     });
     clearTimeout(timeoutId);
@@ -59,7 +76,7 @@ async function executeCrawl(url, options = {}) {
       const data = await response.json();
       return data;
     }
-  } catch (e) {
+  } catch {
     // Daemon offline or unreachable; fall back to subprocess gracefully
   }
 
@@ -68,8 +85,12 @@ async function executeCrawl(url, options = {}) {
     const pyCmd = getPythonCommand() || 'py';
     const args = [SERVICE_SCRIPT, '--url', url];
 
-    if (options.extractCss) {
-      args.push('--extract-css', options.extractCss);
+    if (cssSelector) {
+      args.push('--extract-css', cssSelector);
+    }
+    if (schema) {
+      const schemaStr = typeof schema === 'string' ? schema : JSON.stringify(schema);
+      args.push('--schema', schemaStr);
     }
     if (options.bypassCache !== false) {
       args.push('--bypass-cache');
@@ -77,28 +98,29 @@ async function executeCrawl(url, options = {}) {
 
     execFile(pyCmd, args, { maxBuffer: 10 * 1024 * 1024, timeout: 30000 }, (error, stdout, stderr) => {
       if (error && !stdout) {
-        return resolve({
-          success: false,
-          engine: 'error',
-          url,
-          error: error.message || 'Crawl process execution timed out or failed',
-          markdown: '',
-          stats: { raw_bytes: 0, markdown_bytes: 0, tokens_saved_pct: 0, status_code: 500 }
-        });
+        return resolve(
+          createCrawlErrorResult(
+            url,
+            error.message || 'Crawl process execution timed out or failed',
+            500,
+            'error'
+          )
+        );
       }
 
       try {
         const parsed = JSON.parse(stdout.trim());
         resolve(parsed);
-      } catch (parseError) {
-        resolve({
-          success: false,
-          engine: 'raw',
-          url,
-          markdown: stdout || '',
-          error: stderr || 'Failed to parse JSON response from crawler service',
-          stats: { raw_bytes: (stdout || '').length, markdown_bytes: (stdout || '').length, tokens_saved_pct: 0, status_code: 500 }
-        });
+      } catch {
+        resolve(
+          createCrawlErrorResult(
+            url,
+            stderr || 'Failed to parse JSON response from crawler service',
+            500,
+            'raw',
+            stdout || ''
+          )
+        );
       }
     });
   });
@@ -118,7 +140,7 @@ async function getCrawlStatus() {
       const data = await res.json();
       return { ...data, python_command: getPythonCommand() || 'python' };
     }
-  } catch (e) {
+  } catch {
     // Daemon offline, fallback
   }
 
@@ -137,7 +159,7 @@ async function getCrawlStatus() {
       try {
         const parsed = JSON.parse(stdout.trim());
         resolve({ ...parsed, python_command: pyCmd });
-      } catch (e) {
+      } catch {
         resolve({
           crawl4ai_installed: false,
           playwright_installed: false,
@@ -149,6 +171,29 @@ async function getCrawlStatus() {
   });
 }
 
+/**
+ * Tool definition for ReAct agent function calling loops
+ */
+function getCrawl4AIToolDefinition() {
+  return {
+    name: 'crawl_web_page',
+    description: 'Crawl a webpage using Crawl4AI to obtain clean Markdown, page metadata, links, and structured extractions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'The absolute target web URL to crawl' },
+        extractCss: { type: 'string', description: 'Optional CSS selector for targeted element extraction' },
+        schema: { type: 'object', description: 'Optional JSON schema definition for structured data extraction' }
+      },
+      required: ['url']
+    }
+  };
+}
+
+async function crawlWebPage(url, options = {}) {
+  return await executeCrawl(url, options);
+}
+
 // Router Endpoints
 router.get('/status', async (req, res) => {
   const status = await getCrawlStatus();
@@ -156,28 +201,35 @@ router.get('/status', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { url, extractCss, bypassCache } = req.body || {};
+  const { url, extractCss, cssSelector, schema, bypassCache } = req.body || {};
   if (!url) {
     return res.status(400).json({ error: 'URL parameter is required' });
   }
 
-  const result = await executeCrawl(url, { extractCss, bypassCache });
+  const result = await executeCrawl(url, { extractCss: cssSelector || extractCss, schema, bypassCache });
   res.json(result);
 });
 
 router.post('/extract', async (req, res) => {
-  const { url, schema, cssSelector } = req.body || {};
+  const { url, schema, cssSelector, extractCss, bypassCache } = req.body || {};
   if (!url) {
     return res.status(400).json({ error: 'URL parameter is required' });
   }
 
-  const extractTarget = schema ? JSON.stringify(schema) : cssSelector;
-  const result = await executeCrawl(url, { extractCss: extractTarget });
+  const result = await executeCrawl(url, {
+    schema,
+    cssSelector: cssSelector || extractCss,
+    bypassCache,
+    isExtract: true
+  });
   res.json(result);
 });
 
 module.exports = {
   router,
   executeCrawl,
-  getCrawlStatus
+  getCrawlStatus,
+  getCrawl4AIToolDefinition,
+  crawlWebPage,
+  createCrawlErrorResult
 };

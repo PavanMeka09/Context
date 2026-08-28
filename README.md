@@ -1,10 +1,10 @@
 # Context AI — Autonomous Agent & Chat Workstation
 
- Context is an advanced, production-grade autonomous AI workspace featuring real-time web browsing capabilities via Puppeteer, privacy-focused search with SearXNG, automated background task scheduling, code execution sandbox, and Google Gemini API integration via Vercel AI SDK.
+ Context is an advanced, production-grade autonomous AI workspace featuring real-time web browsing capabilities via Playwright Stealth, privacy-focused search with SearXNG, Crawl4AI web extraction, automated background task scheduling, code execution sandbox, and multi-provider LLM integration via Vercel AI SDK.
 
 ## 🌟 Key Features
 
-- 🌐 **Autonomous Browser Control**: Puppeteer-powered background browser agent with live frame streaming, self-healing element selectors, interactive step inspection, and session management.
+- 🌐 **Autonomous Browser Control**: Playwright-powered background browser agent with stealth evasions, live frame streaming, self-healing element selectors, interactive step inspection, and session management.
 - 🚀 **Crawl4AI Integration**: LLM-optimized web crawler & markdown engine with token reduction metrics, media parsing, and CSS/JSON structured extractions.
 - 🔍 **Privacy Search Integration**: Automated SearXNG integration for fast, privacy-preserving live web search queries.
 - ⏰ **Scheduled Background Tasks**: Cron-driven background task runner (`node-cron`) for recurring browser web scraping and LLM summaries.
@@ -21,19 +21,19 @@
                                │ (React + Vite + Tailw.) │
                                └────────────┬────────────┘
                                             │
-                 ┌──────────────────────────┴──────────────────────────┐
-                 │                                                     │
-                 ▼                                                     ▼
-       ┌──────────────────┐                                   ┌──────────────────┐
-       │ Companion Server │                                   │ SearXNG Search   │
-       │  (Express 5.x)   │                                   │ (Docker Service) │
-       └────────┬─────────┘                                   └──────────────────┘
+                 ┌──────────────────────────┼──────────────────────────┐
+                 │                          │                          │
+                 ▼                          ▼                          ▼
+       ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
+       │ Companion Server │       │ Crawl4AI Daemon  │       │ SearXNG Search   │
+       │  (Express 5.x)   │       │ (FastAPI/Python) │       │ (Docker Service) │
+       └────────┬─────────┘       └──────────────────┘       └──────────────────┘
                 │
      ┌──────────┴──────────┐
      ▼                     ▼
 ┌──────────────┐   ┌───────────────┐
-│ Puppeteer    │   │ Code Executor │
-│ Browser Engine│  │ (Python/Node) │
+│ Playwright   │   │ Code Executor │
+│ Stealth Page │   │ (Python/Node) │
 └──────────────┘   └───────────────┘
 ```
 

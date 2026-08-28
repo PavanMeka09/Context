@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { router as crawlRouter, executeCrawl, getCrawlStatus } from '../crawl4ai.cjs';
+import { router as crawlRouter, executeCrawl, getCrawlStatus, getCrawl4AIToolDefinition } from '../crawl4ai.cjs';
 
 describe('Crawl4AI Module & API Endpoints', () => {
   const createTestApp = () => {
@@ -61,4 +61,10 @@ describe('Crawl4AI Module & API Endpoints', () => {
       expect(typeof result.stats.tokens_saved_pct).toBe('number');
     }
   }, 15000);
+
+  it('getCrawl4AIToolDefinition provides valid function calling metadata', () => {
+    const toolDef = getCrawl4AIToolDefinition();
+    expect(toolDef.name).toBe('crawl_web_page');
+    expect(toolDef.parameters.required).toContain('url');
+  });
 });

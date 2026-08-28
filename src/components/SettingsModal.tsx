@@ -424,10 +424,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleSelectProfile = (id: string) => {
-    const target = settings.profiles?.find(p => p.id === id);
-    if (!target) return;
-    const nextSettings = Storage.updateActiveProfile(settings, {});
-    const updated = { ...nextSettings, activeProfileId: id, provider: target.provider, apiKey: target.apiKey, model: target.model };
+    const updated = Storage.switchProfile(settings, id);
     const nextActive = Storage.getActiveProfile(updated);
     setSettings(updated);
     if (nextActive) {

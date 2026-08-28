@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { safeJsonParse, readJSON, writeJSON } from '../utils.cjs';
+import { safeJsonParse, readJSON, writeJSON, PATHS, scheduleDao } from '../utils.cjs';
 
 describe('server/utils.cjs', () => {
   describe('safeJsonParse', () => {
@@ -52,6 +52,15 @@ describe('server/utils.cjs', () => {
       writeJSON(testFile, mockData);
       const readBack = readJSON(testFile, null);
       expect(readBack).toEqual(mockData);
+    });
+
+    it('should correctly save and read schedules through DAO registry', () => {
+      const testSchedule = { id: 'test-sched-123', name: 'Transactional Test Schedule', cron: '*/5 * * * *' };
+      writeJSON(PATHS.schedules, [testSchedule]);
+      const schedules = readJSON(PATHS.schedules, []);
+      expect(Array.isArray(schedules)).toBe(true);
+      expect(schedules.some((s: { id: string }) => s.id === 'test-sched-123')).toBe(true);
+      scheduleDao.delete('test-sched-123');
     });
   });
 });

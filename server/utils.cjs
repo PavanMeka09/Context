@@ -30,17 +30,26 @@ function broadcastLiveEvent(type, data) {
   }
 }
 
+const DAO_HANDLERS = {
+  [PATHS.schedules]: {
+    read: () => scheduleDao.getAll(),
+    write: (data) => scheduleDao.saveAll(data)
+  },
+  [PATHS.runs]: {
+    read: () => runDao.getAll(),
+    write: (data) => runDao.saveAll(data)
+  },
+  [PATHS.settings]: {
+    read: () => settingsDao.get('global_settings'),
+    write: (data) => settingsDao.set('global_settings', data)
+  }
+};
+
 function readJSON(file, defaultVal = []) {
   try {
-    if (file === PATHS.schedules && db) {
-      return scheduleDao.getAll();
-    }
-    if (file === PATHS.runs && db) {
-      return runDao.getAll();
-    }
-    if (file === PATHS.settings && db) {
-      const val = settingsDao.get('global_settings');
-      if (val) return val;
+    if (db && DAO_HANDLERS[file]) {
+      const val = DAO_HANDLERS[file].read();
+      if (val !== null && val !== undefined) return val;
     }
 
     // Fallback to disk read / cache
@@ -55,21 +64,12 @@ function readJSON(file, defaultVal = []) {
 
 function writeJSON(file, data) {
   try {
-    // 1. Instant SQLite WAL persistence
-    if (file === PATHS.schedules && db && Array.isArray(data)) {
-      db.exec('DELETE FROM schedules;');
-      for (const s of data) {
-        scheduleDao.save(s);
-      }
-    } else if (file === PATHS.runs && db && Array.isArray(data)) {
-      for (const r of data) {
-        runDao.save(r);
-      }
-    } else if (file === PATHS.settings && db) {
-      settingsDao.set('global_settings', data);
+    // 1. Instant SQLite WAL persistence via DAO handlers
+    if (db && DAO_HANDLERS[file]) {
+      DAO_HANDLERS[file].write(data);
     }
 
-    // 2. Asynchronous non-blocking file sync backup
+    // 2. File sync backup
     const tempFile = file + '.tmp';
     fs.writeFileSync(tempFile, JSON.stringify(data, null, 2), 'utf8');
     fs.renameSync(tempFile, file);

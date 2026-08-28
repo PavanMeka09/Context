@@ -134,6 +134,24 @@ describe('src/utils/storage.ts', () => {
       expect(retrieved.apiKey).toBe('key-2');
       expect(retrieved.model).toBe('gemini-2.5-pro');
     });
+
+    it('switches profile using Storage.switchProfile method', () => {
+      const settings = {
+        provider: 'gemini' as const,
+        apiKey: 'key-1',
+        model: 'gemini-3.6-flash',
+        profiles: [
+          { id: 'p1', name: 'Personal', provider: 'gemini' as const, apiKey: 'key-1', model: 'gemini-3.6-flash' },
+          { id: 'p2', name: 'Work', provider: 'anthropic' as const, apiKey: 'key-2', model: 'claude-3-7-sonnet-20250219' }
+        ],
+        activeProfileId: 'p1'
+      };
+      const switched = Storage.switchProfile(settings, 'p2');
+      expect(switched.activeProfileId).toBe('p2');
+      expect(switched.provider).toBe('anthropic');
+      expect(switched.apiKey).toBe('key-2');
+      expect(switched.model).toBe('claude-3-7-sonnet-20250219');
+    });
     it('preserves unique provider per profile when switching profiles', () => {
       const settingsWithProviders = {
         provider: 'anthropic' as const,

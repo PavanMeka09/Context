@@ -22,3 +22,19 @@ The structured result object returned by `WebSearchEngine.searchAndFormat()`, co
 - `results`: array of normalized search hits (title, url, snippet, favicon)
 - `source`: search provider used (`'searxng'`, `'wikipedia'`, `'bypassed'`, `'none'`)
 - `error`: optional error details if search failed
+
+### Crawl4AIEngine
+A deep module and service layer encapsulating LLM-optimized web crawling, token reduction, and structured extraction. It handles:
+- LLM markdown conversion with boilerplate and noise removal
+- Structured schema extraction via typed CSS selectors or JSON schema definitions
+- Dual-execution routing (FastAPI persistent daemon with graceful subprocess fallback)
+- Tool definitions for autonomous ReAct agent function calling loops
+
+### CrawlResult
+The structured result object returned by `executeCrawl()`, containing:
+- `success`: boolean flag indicating whether crawl and markdown conversion succeeded
+- `engine`: crawler backend used (`'crawl4ai'`, `'fallback'`, `'error'`)
+- `url`: target webpage URL
+- `markdown`: cleaned, token-efficient markdown representation
+- `extracted_content`: structured data output when CSS selector or JSON schema was requested
+- `stats`: token savings and byte measurements (`raw_bytes`, `markdown_bytes`, `tokens_saved_pct`, `status_code`)

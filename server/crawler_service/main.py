@@ -172,14 +172,29 @@ async def run_crawl_fallback(url: str, extract_css: Optional[str] = None, word_l
     }
 
 
-async def run_crawl4ai_crawl(url: str, extract_css: Optional[str] = None, bypass_cache: bool = True, word_limit: Optional[int] = None) -> Dict[str, Any]:
+async def run_crawl4ai_crawl(
+    url: str,
+    extract_css: Optional[str] = None,
+    schema_definition: Optional[Dict[str, Any]] = None,
+    bypass_cache: bool = True,
+    word_limit: Optional[int] = None
+) -> Dict[str, Any]:
     if not CRAWL4AI_AVAILABLE:
         return await run_crawl_fallback(url, extract_css, word_limit)
 
     try:
+        extraction_strategy = None
+        if schema_definition:
+            try:
+                from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
+                extraction_strategy = JsonCssExtractionStrategy(schema=schema_definition)
+            except Exception:
+                pass
+
         config = CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS if bypass_cache else CacheMode.ENABLED,
-            css_selector=extract_css if extract_css else None,
+            css_selector=extract_css if extract_css and not extraction_strategy else None,
+            extraction_strategy=extraction_strategy,
             word_count_threshold=10,
             excluded_tags=['nav', 'footer', 'script', 'style', 'noscript', 'header', 'svg'],
             verbose=False
@@ -246,6 +261,7 @@ if FASTAPI_AVAILABLE:
     class CrawlRequest(BaseModel):
         url: str
         extract_css: Optional[str] = Field(default=None, alias="extractCss")
+        schema_definition: Optional[Dict[str, Any]] = Field(default=None, alias="schema")
         bypass_cache: Optional[bool] = Field(default=True, alias="bypassCache")
         word_limit: Optional[int] = Field(default=None, alias="wordLimit")
 
@@ -285,15 +301,25 @@ if FASTAPI_AVAILABLE:
     async def crawl_endpoint(req: CrawlRequest):
         if not req.url:
             raise HTTPException(status_code=400, detail="URL parameter is required")
-        res = await run_crawl4ai_crawl(req.url, req.extract_css, req.bypass_cache if req.bypass_cache is not None else True, req.word_limit)
+        res = await run_crawl4ai_crawl(
+            req.url,
+            extract_css=req.extract_css,
+            schema_definition=req.schema_definition,
+            bypass_cache=req.bypass_cache if req.bypass_cache is not None else True,
+            word_limit=req.word_limit
+        )
         return res
 
     @app.post("/extract")
     async def extract_endpoint(req: ExtractRequest):
         if not req.url:
             raise HTTPException(status_code=400, detail="URL parameter is required")
-        extract_target = json.dumps(req.schema_definition) if req.schema_definition else req.css_selector
-        res = await run_crawl4ai_crawl(req.url, extract_target, True)
+        res = await run_crawl4ai_crawl(
+            req.url,
+            extract_css=req.css_selector,
+            schema_definition=req.schema_definition,
+            bypass_cache=True
+        )
         return res
 
 

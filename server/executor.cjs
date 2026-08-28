@@ -44,8 +44,37 @@ function getExecutionCapabilities() {
     python: Boolean(pythonCommand),
     pythonInterpreter: pythonCommand,
     maxTimeoutMs: 10000,
-    supportedLanguages: ['javascript', 'js', 'python', 'py']
+    supportedLanguages: ['javascript', 'js', 'python', 'py'],
+    tools: ['crawl_web_page', 'web_search', 'execute_code']
   };
+}
+
+async function executeAgentTool(toolName, args = {}) {
+  if (toolName === 'crawl_web_page' || toolName === 'crawlWebPage') {
+    const { executeCrawl } = require('./crawl4ai.cjs');
+    return await executeCrawl(args.url, {
+      extractCss: args.extractCss || args.cssSelector,
+      schema: args.schema,
+      bypassCache: args.bypassCache
+    });
+  }
+  if (toolName === 'web_search' || toolName === 'webSearch') {
+    const { searchAndFormat } = require('./webSearchEngine.cjs');
+    const query = args.query || (Array.isArray(args.queries) ? args.queries[0] : args.queries) || args.search_query || args.q || '';
+    return await searchAndFormat(query, {
+      forceSearch: args.forceSearch,
+      customUrl: args.customUrl
+    });
+  }
+  if (toolName === 'execute_code' || toolName === 'run_code') {
+    return new Promise((resolve) => {
+      executeCode(args.language || 'javascript', args.code || '', (err, res) => {
+        if (err) return resolve({ success: false, error: err.message });
+        resolve({ success: true, ...res });
+      });
+    });
+  }
+  throw new Error(`Unsupported tool: ${toolName}`);
 }
 
 const dangerousPatterns = [
@@ -185,6 +214,7 @@ module.exports = {
   detectPythonCommand,
   getExecutionCapabilities,
   executeCode,
+  executeAgentTool,
   formatStdoutTable
 };
 

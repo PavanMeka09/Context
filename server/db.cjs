@@ -270,6 +270,43 @@ const scheduleDao = {
     return true;
   },
 
+  saveAll(schedules) {
+    if (!db || !Array.isArray(schedules)) return schedules;
+    const now = new Date().toISOString();
+    const stmt = db.prepare(`
+      INSERT OR REPLACE INTO schedules (id, name, cron, targetUrl, prompt, enabled, lastRun, lastStatus, nextRun, createdAt, updatedAt, config)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    try {
+      db.exec('BEGIN TRANSACTION;');
+      db.exec('DELETE FROM schedules;');
+      for (const s of schedules) {
+        if (!s || !s.id) continue;
+        const configStr = JSON.stringify(s);
+        stmt.run(
+          s.id,
+          s.name || 'Untitled Schedule',
+          s.cron || '',
+          s.targetUrl || '',
+          s.prompt || '',
+          s.enabled ? 1 : 0,
+          s.lastRun || null,
+          s.lastStatus || null,
+          s.nextRun || null,
+          s.createdAt || now,
+          s.updatedAt || now,
+          configStr
+        );
+      }
+      db.exec('COMMIT;');
+    } catch (e) {
+      try { db.exec('ROLLBACK;'); } catch (_) {}
+      throw e;
+    }
+    return schedules;
+  },
+
   clearAll() {
     if (!db) return;
     db.exec('DELETE FROM runs; DELETE FROM schedules;');
@@ -320,6 +357,39 @@ const runDao = {
       run.summary || ''
     );
     return run;
+  },
+
+  saveAll(runs) {
+    if (!db || !Array.isArray(runs)) return runs;
+    const stmt = db.prepare(`
+      INSERT OR REPLACE INTO runs (id, scheduleId, timestamp, status, duration, output, tokens, model, error, steps, summary)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    try {
+      db.exec('BEGIN TRANSACTION;');
+      for (const r of runs) {
+        if (!r || !r.id) continue;
+        stmt.run(
+          r.id,
+          r.scheduleId || null,
+          r.timestamp || new Date().toISOString(),
+          r.status || 'completed',
+          r.duration || 0,
+          r.output || '',
+          r.tokens || 0,
+          r.model || '',
+          r.error || null,
+          r.steps ? JSON.stringify(r.steps) : null,
+          r.summary || ''
+        );
+      }
+      db.exec('COMMIT;');
+    } catch (e) {
+      try { db.exec('ROLLBACK;'); } catch (_) {}
+      throw e;
+    }
+    return runs;
   },
 
   clearAll() {

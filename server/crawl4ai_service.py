@@ -66,7 +66,7 @@ class FallbackHTMLToMarkdown(HTMLParser):
         # Clean up excess whitespace
         return re.sub(r'\n{3,}', '\n\n', raw).strip()
 
-async def run_crawl4ai(url, extract_css=None, bypass_cache=True, word_limit=None):
+async def run_crawl4ai(url, extract_css=None, schema=None, bypass_cache=True, word_limit=None):
     try:
         from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
         
@@ -75,9 +75,20 @@ async def run_crawl4ai(url, extract_css=None, bypass_cache=True, word_limit=None
             verbose=False
         )
         
+        extraction_strategy = None
+        if schema:
+            try:
+                schema_dict = json.loads(schema) if isinstance(schema, str) else schema
+                from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
+                extraction_strategy = JsonCssExtractionStrategy(schema=schema_dict)
+            except Exception:
+                pass
+
         cache_mode = CacheMode.BYPASS if bypass_cache else CacheMode.ENABLED
         run_config = CrawlerRunConfig(
             cache_mode=cache_mode,
+            css_selector=extract_css if extract_css and not extraction_strategy else None,
+            extraction_strategy=extraction_strategy,
             word_count_threshold=10,
             remove_overlay_elements=True
         )
@@ -87,13 +98,18 @@ async def run_crawl4ai(url, extract_css=None, bypass_cache=True, word_limit=None
             
             raw_html_len = len(result.html or "")
             markdown_content = result.markdown or ""
+            if word_limit and word_limit > 0:
+                words = markdown_content.split()
+                if len(words) > word_limit:
+                    markdown_content = " ".join(words[:word_limit]) + f"\n\n... [Content truncated to {word_limit} words]"
+
             markdown_len = len(markdown_content)
             tokens_saved_pct = round((1 - (markdown_len / max(raw_html_len, 1))) * 100, 1)
             if tokens_saved_pct < 0:
                 tokens_saved_pct = 0.0
 
             structured_data = None
-            if extract_css and hasattr(result, 'extracted_content') and result.extracted_content:
+            if (extract_css or schema) and hasattr(result, 'extracted_content') and result.extracted_content:
                 try:
                     structured_data = json.loads(result.extracted_content)
                 except Exception:
@@ -122,7 +138,7 @@ async def run_crawl4ai(url, extract_css=None, bypass_cache=True, word_limit=None
     except ImportError:
         return None
 
-def run_fallback(url, extract_css=None):
+def run_fallback(url, extract_css=None, schema=None):
     try:
         req = urllib.request.Request(
             url,
@@ -192,7 +208,8 @@ def check_status():
 async def main():
     parser = argparse.ArgumentParser(description="Context AI Crawl4AI Service")
     parser.add_argument("--url", type=str, help="Target URL to crawl")
-    parser.add_argument("--extract-css", type=str, help="CSS selector or schema for extraction")
+    parser.add_argument("--extract-css", type=str, help="CSS selector for extraction")
+    parser.add_argument("--schema", type=str, help="JSON schema for structured extraction")
     parser.add_argument("--bypass-cache", action="store_true", default=True, help="Bypass crawler cache")
     parser.add_argument("--status", action="store_true", help="Check python environment status")
     
@@ -206,9 +223,9 @@ async def main():
         print(json.dumps({"error": "No URL provided"}))
         sys.exit(1)
 
-    result = await run_crawl4ai(args.url, extract_css=args.extract_css, bypass_cache=args.bypass_cache)
+    result = await run_crawl4ai(args.url, extract_css=args.extract_css, schema=args.schema, bypass_cache=args.bypass_cache)
     if result is None:
-        result = run_fallback(args.url, extract_css=args.extract_css)
+        result = run_fallback(args.url, extract_css=args.extract_css, schema=args.schema)
 
     print(json.dumps(result, ensure_ascii=False))
 
