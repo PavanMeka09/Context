@@ -24,6 +24,74 @@ export const webSearchToolParametersSchema = z.object({
 });
 export type WebSearchArgs = z.infer<typeof webSearchToolParametersSchema>;
 
+export const crawlWebPageToolParametersSchema = z.object({
+  url: z.string().describe('The absolute web URL (http or https) to crawl and extract clean markdown content and context from'),
+  extractCss: z.string().optional().describe('Optional CSS selector for targeted element extraction'),
+});
+export type CrawlWebPageArgs = z.infer<typeof crawlWebPageToolParametersSchema>;
+
+export interface CrawlResult {
+  success: boolean;
+  engine: string;
+  url: string;
+  title?: string;
+  markdown?: string;
+  extracted_content?: unknown;
+  structured_data?: unknown;
+  stats?: {
+    raw_bytes?: number;
+    markdown_bytes?: number;
+    tokens_saved_pct?: number;
+    status_code?: number;
+  };
+  error?: string;
+}
+export type CrawlExecutionResult = CrawlResult;
+
+export async function executeCrawl(
+  url: string,
+  options?: { extractCss?: string; schema?: Record<string, unknown> | string; bypassCache?: boolean }
+): Promise<CrawlResult> {
+  if (!url || typeof url !== 'string') {
+    return { success: false, engine: 'error', url: url || '', error: 'Invalid URL provided' };
+  }
+  try {
+    const res = await fetch('/api/crawl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: url.trim(),
+        extractCss: options?.extractCss,
+        schema: options?.schema,
+        bypassCache: options?.bypassCache !== false
+      })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        ...data,
+        extracted_content: data.extracted_content ?? data.structured_data,
+        structured_data: data.structured_data ?? data.extracted_content
+      };
+    }
+    const errText = await res.text();
+    return {
+      success: false,
+      engine: 'error',
+      url,
+      error: `Crawl service returned status ${res.status}: ${errText}`
+    };
+  } catch (err: unknown) {
+    return {
+      success: false,
+      engine: 'error',
+      url,
+      error: err instanceof Error ? err.message : 'Network request to crawler service failed'
+    };
+  }
+}
+export const crawlUrl = executeCrawl;
+
 export function extractWebSearchQuery(args: WebSearchArgs): string {
   const candidate =
     args?.query ||
@@ -224,8 +292,8 @@ export interface StreamCallbacks {
   onChunk: (text: string) => void;
   onDone: (fullText: string) => void;
   onError: (errorMsg: string) => void;
-  onToolCall?: (toolCall: { toolName: string; query: string }) => void;
-  onToolResult?: (toolResult: { toolName: string; query: string; results: any[]; source: string }) => void;
+  onToolCall?: (toolCall: { toolName: string; query: string; url?: string }) => void;
+  onToolResult?: (toolResult: { toolName: string; query: string; url?: string; results: any[]; source: string; error?: string }) => void;
 }
 
 // Custom error handling mapping
@@ -265,6 +333,7 @@ function cleanMessageContent(content: string): string {
   if (!content) return '';
   return content
     .replace(/<search_status[\s\S]*?<\/search_status>/gi, '')
+    .replace(/<crawl_status[\s\S]*?<\/crawl_status>/gi, '')
     .trim();
 }
 
@@ -398,7 +467,9 @@ export async function streamChatCompletion(
   callbacks: StreamCallbacks,
   signal: AbortSignal
 ): Promise<void> {
-  const hasTools = Boolean(settings.isWebSearchEnabled);
+  const isWebSearch = Boolean(settings.isWebSearchEnabled);
+  const isWebContext = Boolean(settings.isWebContextEnabled);
+  const hasTools = isWebSearch || isWebContext;
   let prep;
   try {
     prep = prepareModelAndMessages(settings, messages, systemInstruction, hasTools);
@@ -409,37 +480,71 @@ export async function streamChatCompletion(
   }
 
   try {
-    const webSearchTool = settings.isWebSearchEnabled
-      ? {
-          web_search: tool({
-            description:
-              'Search the web using SearXNG for real-time information, current facts, weather, news, or images. Formulate ONE clear, targeted search query per user request. Do NOT execute repeated or redundant web searches; synthesize the returned results directly to answer the user.',
-            inputSchema: webSearchToolParametersSchema,
-            execute: async (args: WebSearchArgs) => {
-              const query = extractWebSearchQuery(args);
-              callbacks.onToolCall?.({ toolName: 'web_search', query });
-              const searchExec = await searchWeb(query, { customUrl: settings.searxngUrl, forceSearch: true });
-              const results = (searchExec.results || []).map((r: { title: string; url: string; snippet?: string; content?: string; img_src?: string }) => ({
-                title: r.title,
-                url: r.url,
-                snippet: r.snippet || r.content || '',
-                img_src: r.img_src,
-              }));
-              callbacks.onToolResult?.({
-                toolName: 'web_search',
-                query,
-                results,
-                source: searchExec.source || 'searxng',
-              });
-              return {
-                query,
-                results,
-                contextText: searchExec.contextText || '',
-              };
-            },
-          }),
-        }
-      : undefined;
+    const tools: Record<string, any> = {};
+
+    if (isWebSearch) {
+      tools.web_search = tool({
+        description:
+          'Search the web using SearXNG for real-time information, current facts, weather, news, or images. Formulate ONE clear, targeted search query per user request. Do NOT execute repeated or redundant web searches; synthesize the returned results directly to answer the user.',
+        inputSchema: webSearchToolParametersSchema,
+        execute: async (args: WebSearchArgs) => {
+          const query = extractWebSearchQuery(args);
+          callbacks.onToolCall?.({ toolName: 'web_search', query });
+          const searchExec = await searchWeb(query, { customUrl: settings.searxngUrl, forceSearch: true });
+          const results = (searchExec.results || []).map((r: { title: string; url: string; snippet?: string; content?: string; img_src?: string }) => ({
+            title: r.title,
+            url: r.url,
+            snippet: r.snippet || r.content || '',
+            img_src: r.img_src,
+          }));
+          callbacks.onToolResult?.({
+            toolName: 'web_search',
+            query,
+            results,
+            source: searchExec.source || 'searxng',
+          });
+          return {
+            query,
+            results,
+            contextText: searchExec.contextText || '',
+          };
+        },
+      });
+    }
+
+    if (isWebContext) {
+      tools.crawl_web_page = tool({
+        description:
+          'Crawl a webpage or URL using Crawl4AI to extract clean, token-efficient Markdown, page metadata, links, and structured context. Use this when the user asks to read, summarize, analyze, or fetch context from a specific web URL or link. Optionally supply "extractCss" to target a specific container or element on the page.',
+        inputSchema: crawlWebPageToolParametersSchema,
+        execute: async (args: CrawlWebPageArgs) => {
+          const targetUrl = args?.url ? args.url.trim() : '';
+          callbacks.onToolCall?.({ toolName: 'crawl_web_page', query: targetUrl, url: targetUrl });
+          const crawlRes = await executeCrawl(targetUrl, { extractCss: args?.extractCss });
+          const results = crawlRes.success
+            ? [{ title: crawlRes.title || targetUrl, url: targetUrl, content: crawlRes.markdown || '', stats: crawlRes.stats }]
+            : [];
+          callbacks.onToolResult?.({
+            toolName: 'crawl_web_page',
+            query: targetUrl,
+            url: targetUrl,
+            results,
+            source: crawlRes.engine || 'crawler',
+            error: crawlRes.error,
+          });
+          return {
+            url: targetUrl,
+            title: crawlRes.title || targetUrl,
+            markdown: crawlRes.markdown || '',
+            success: crawlRes.success,
+            stats: crawlRes.stats,
+            error: crawlRes.error,
+          };
+        },
+      });
+    }
+
+    const hasAnyTools = Object.keys(tools).length > 0;
 
     const result = streamText({
       model: prep.modelInstance,
@@ -447,10 +552,10 @@ export async function streamChatCompletion(
       system: prep.effectiveSystemInstruction || undefined,
       abortSignal: signal,
       providerOptions: prep.providerOptions,
-      ...(webSearchTool
+      ...(hasAnyTools
         ? {
-            tools: webSearchTool,
-            stopWhen: stepCountIs(2),
+            tools,
+            stopWhen: stepCountIs(4),
           }
         : {}),
     });

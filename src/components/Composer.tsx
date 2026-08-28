@@ -94,6 +94,13 @@ export const Composer: React.FC<ComposerProps> = ({
     onSettingsChanged?.(updatedSettings);
   };
 
+  const toggleWebContext = () => {
+    const nextWebContext = !settings.isWebContextEnabled;
+    const updatedSettings = { ...settings, isWebContextEnabled: nextWebContext };
+    Storage.saveSettings(updatedSettings);
+    onSettingsChanged?.(updatedSettings);
+  };
+
   const toggleBrowserAgent = () => {
     const nextBrowserAgent = !settings.isBrowserAgentEnabled;
     const updatedSettings = { ...settings, isBrowserAgentEnabled: nextBrowserAgent };
@@ -525,7 +532,7 @@ export const Composer: React.FC<ComposerProps> = ({
                 aria-expanded={toolsDropdownOpen}
                 aria-haspopup="menu"
                 className={`flex h-7 px-2.5 items-center gap-1.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                  settings.isWebSearchEnabled || settings.isBrowserAgentEnabled
+                  settings.isWebSearchEnabled || settings.isBrowserAgentEnabled || settings.isWebContextEnabled
                     ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/95'
                     : 'border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
                 }`}
@@ -537,7 +544,7 @@ export const Composer: React.FC<ComposerProps> = ({
               {toolsDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-20" onClick={() => setToolsDropdownOpen(false)} />
-                  <div role="menu" className="absolute left-0 bottom-8.5 z-30 w-44 rounded-md border border-border bg-popover p-1 shadow-md animate-fade-in">
+                  <div role="menu" className="absolute left-0 bottom-8.5 z-30 w-48 rounded-md border border-border bg-popover p-1 shadow-md animate-fade-in">
                     <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border mb-1">
                       Context Tools
                     </div>
@@ -552,6 +559,18 @@ export const Composer: React.FC<ComposerProps> = ({
                       <Globe className="h-3.5 w-3.5" />
                       <span className="flex-1">Web Search</span>
                       {settings.isWebSearchEnabled && <Check className="h-3.5 w-3.5 text-primary" />}
+                    </button>
+                    <button
+                      role="menuitem"
+                      type="button"
+                      onClick={() => { toggleWebContext(); setToolsDropdownOpen(false); }}
+                      className={`flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
+                        settings.isWebContextEnabled ? 'bg-accent text-accent-foreground font-semibold' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                      }`}
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      <span className="flex-1">Web Context</span>
+                      {settings.isWebContextEnabled && <Check className="h-3.5 w-3.5 text-primary" />}
                     </button>
                     <button
                       role="menuitem"
@@ -586,6 +605,23 @@ export const Composer: React.FC<ComposerProps> = ({
             >
               <Globe className="h-3.5 w-3.5" />
               {settings.isWebSearchEnabled && <span className="text-[10px] font-semibold">Web</span>}
+            </button>
+
+            {/* Web Context Toggle — md+ */}
+            <button
+              type="button"
+              onClick={toggleWebContext}
+              title={settings.isWebContextEnabled ? "Disable Web Context (AI auto-crawls links & page content)" : "Enable Web Context (AI auto-crawls links & page content)"}
+              aria-label="Toggle Web Context"
+              aria-pressed={settings.isWebContextEnabled}
+              className={`hidden md:flex h-7 items-center gap-1.5 rounded-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                settings.isWebContextEnabled
+                  ? 'px-2 border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
+                  : 'w-7 justify-center border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
+              }`}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              {settings.isWebContextEnabled && <span className="text-[10px] font-semibold">Context</span>}
             </button>
 
             {/* Browser Agent Toggle — md+ */}

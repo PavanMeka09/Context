@@ -176,6 +176,7 @@ export interface Settings {
   thinkingLevel?: 'off' | 'low' | 'medium' | 'high';
   isMemoryEnabled?: boolean;
   isBrowserAgentEnabled?: boolean;
+  isWebContextEnabled?: boolean;
 }
 
 export interface SystemPrompt {
@@ -468,7 +469,8 @@ export function normalizeSettings(raw: Partial<Settings>): Settings {
     searxngUrl: raw.searxngUrl ?? '',
     thinkingLevel: raw.thinkingLevel ?? 'off',
     isMemoryEnabled: raw.isMemoryEnabled ?? true,
-    isBrowserAgentEnabled: raw.isBrowserAgentEnabled ?? false
+    isBrowserAgentEnabled: raw.isBrowserAgentEnabled ?? false,
+    isWebContextEnabled: raw.isWebContextEnabled ?? false
   };
 }
 
@@ -833,13 +835,13 @@ export const Storage = {
     localStorage.setItem(KEYS.WORKSPACE_OPEN, String(open));
   },
 
-  getWorkspaceTab(): 'browser' | 'schedules' | 'artifacts' | 'crawl4ai' {
+  getWorkspaceTab(): 'browser' | 'schedules' | 'artifacts' {
     const tab = localStorage.getItem(KEYS.WORKSPACE_TAB);
-    if (tab === 'browser' || tab === 'schedules' || tab === 'artifacts' || tab === 'crawl4ai') return tab;
+    if (tab === 'browser' || tab === 'schedules' || tab === 'artifacts') return tab;
     return 'browser';
   },
 
-  saveWorkspaceTab(tab: 'browser' | 'schedules' | 'artifacts' | 'crawl4ai'): void {
+  saveWorkspaceTab(tab: 'browser' | 'schedules' | 'artifacts'): void {
     localStorage.setItem(KEYS.WORKSPACE_TAB, tab);
   },
 

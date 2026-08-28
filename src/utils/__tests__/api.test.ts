@@ -200,6 +200,40 @@ describe('src/utils/api.ts', () => {
       expect(callbacks.onDone).toHaveBeenCalledWith('Response after search');
     });
 
+    it('passes crawl_web_page tool to streamText when web context is enabled', async () => {
+      const mockStreamText = vi.mocked(aiModule.streamText);
+      mockStreamText.mockReturnValue({
+        fullStream: (async function* () {
+          yield { type: 'text-delta', textDelta: 'Response with web context' };
+        })()
+      } as unknown as ReturnType<typeof aiModule.streamText>);
+
+      const settings: Settings = {
+        apiKey: 'test-api-key',
+        provider: 'gemini',
+        model: 'gemini-3.6-flash',
+        isWebContextEnabled: true
+      };
+
+      const messages: Message[] = [{ id: '1', role: 'user', content: 'read https://example.com', timestamp: new Date().toISOString() }];
+      const callbacks = {
+        onChunk: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn()
+      };
+      const controller = new AbortController();
+
+      await streamChatCompletion(settings, messages, 'system prompt', callbacks, controller.signal);
+
+      expect(mockStreamText).toHaveBeenCalled();
+      const options = mockStreamText.mock.calls[0][0];
+      expect(options.tools).toBeDefined();
+      expect(options.tools?.crawl_web_page).toBeDefined();
+      expect(options.stopWhen).toBeDefined();
+      expect(callbacks.onChunk).toHaveBeenCalledWith('Response with web context');
+      expect(callbacks.onDone).toHaveBeenCalledWith('Response with web context');
+    });
+
     it('successfully initiates stream for Ollama without requiring an API key', async () => {
       const mockStreamText = vi.mocked(aiModule.streamText);
       mockStreamText.mockReturnValue({

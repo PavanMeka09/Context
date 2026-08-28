@@ -61,4 +61,20 @@ describe('ArtifactVisualizer Component', () => {
     expect(await screen.findByText('Sandbox Terminal Output')).toBeDefined();
     expect(screen.getByText('Hello Artifact')).toBeDefined();
   });
+
+  it('renders iframe with enhanced sandbox permissions and responsive srcDoc for embeds', () => {
+    const iframeSnippet = {
+      language: 'html',
+      code: '<iframe src="https://www.youtube.com/embed/zzaj4ucQc8U"></iframe>',
+      title: 'YouTube Embed',
+    };
+    render(<ArtifactVisualizer artifact={iframeSnippet} />);
+    const iframe = screen.getByTitle('YouTube Embed') as HTMLIFrameElement;
+    expect(iframe).toBeDefined();
+    expect(iframe.getAttribute('sandbox')).toContain('allow-same-origin');
+    expect(iframe.getAttribute('sandbox')).toContain('allow-scripts');
+    expect(iframe.getAttribute('sandbox')).toContain('allow-presentation');
+    expect(iframe.getAttribute('allow')).toContain('accelerometer');
+    expect(iframe.getAttribute('srcdoc')).toContain('max-width: 100%');
+  });
 });

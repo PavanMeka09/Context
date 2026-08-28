@@ -1053,6 +1053,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           ) : activeTab === 'websearch' ? (
             <div className="space-y-4 animate-fade-in select-none">
               
+              {/* Web Search Toggle */}
+              <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3.5">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-semibold text-foreground">Enable Live Web Search</span>
+                  <p className="text-[10px] text-muted-foreground">Allows the AI to search the internet via SearXNG for up-to-date queries.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSettings(prev => ({ ...prev, isWebSearchEnabled: !prev.isWebSearchEnabled }))}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    settings.isWebSearchEnabled ? 'bg-primary' : 'bg-muted'
+                  }`}
+                  role="switch"
+                  aria-checked={Boolean(settings.isWebSearchEnabled)}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out ${
+                      settings.isWebSearchEnabled ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Auto Web Context Toggle */}
+              <div className="flex items-center justify-between rounded-md border border-border bg-muted/20 p-3.5">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-semibold text-foreground">Enable Autonomous Web Context (Crawler)</span>
+                  <p className="text-[10px] text-muted-foreground">Allows the AI to autonomously crawl and extract clean Markdown from webpages when URLs are referenced.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSettings(prev => ({ ...prev, isWebContextEnabled: !prev.isWebContextEnabled }))}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    settings.isWebContextEnabled ? 'bg-primary' : 'bg-muted'
+                  }`}
+                  role="switch"
+                  aria-checked={Boolean(settings.isWebContextEnabled)}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out ${
+                      settings.isWebContextEnabled ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
               {/* SearXNG Instance URL */}
               <div className="space-y-1.5">
                 <label htmlFor="searxng-url-input" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
@@ -1107,10 +1153,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="rounded-md border border-border bg-muted/20 p-3.5 space-y-2">
                 <h4 className="font-sans text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                   <Globe className="h-3.5 w-3.5 text-primary" />
-                  <span>How does Web Search work?</span>
+                  <span>How do Web Tools work?</span>
                 </h4>
                 <p className="text-[10px] text-muted-foreground leading-relaxed">
-                  When Web Search is enabled, Context queries SearXNG before the LLM generation starts, retrieves the top search snippets, and automatically injects them into the model's context. This allows Gemini models to answer with up-to-date information.
+                  When Web Search is enabled, Context queries SearXNG and supplies results to the AI. When Autonomous Web Context is enabled, Crawl4AI crawls targeted links to extract high-signal Markdown, enabling the AI to answer complex questions from web content.
                 </p>
               </div>
 

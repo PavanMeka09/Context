@@ -8,9 +8,8 @@ import { PRESET_PROMPTS, Storage, reconstructActivePath, upgradeChatToTree, getC
 import type { Chat, Message, MessageNode, Settings, SystemPrompt, Attachment, BrowserSessionData } from './utils/storage';
 import { streamChatCompletion } from './utils/api';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { AlertCircle, X, Loader2, Compass, Calendar, Code, Globe } from 'lucide-react';
+import { AlertCircle, X, Loader2, Compass, Calendar, Code } from 'lucide-react';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
-import { Crawl4AIPanel } from './components/Crawl4AIPanel';
 
 // Code splitting for modal components to optimize initial chunk size
 const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
@@ -698,7 +697,8 @@ function App() {
     );
     setChats(chatsWithPlaceholder);
 
-    let searchTagPrefix = '';
+    const toolStatusTags: Record<string, string> = {};
+    const getFullPrefix = () => Object.values(toolStatusTags).join('');
     const systemInstruction = getSystemPromptText();
     const apiHistory = activeChat.messages;
     let accumulatedContent = '';
@@ -728,21 +728,39 @@ function App() {
       apiHistory,
       systemInstruction,
       {
-        onToolCall: ({ query }: { toolName: string; query: string }) => {
-          searchTagPrefix = `<search_status query="${query.replace(/"/g, '&quot;')}" status="searching" />`;
-          updateStreamedContent(searchTagPrefix + accumulatedContent);
-        },
-        onToolResult: ({ query, results }: { toolName: string; query: string; results: unknown[]; source: string }) => {
-          if (results && results.length > 0) {
-            searchTagPrefix = `<search_status query="${query.replace(/"/g, '&quot;')}" status="done">${JSON.stringify(results)}</search_status>\n\n`;
+        onToolCall: ({ toolName, query, url }: { toolName: string; query: string; url?: string }) => {
+          const key = `${toolName}:${url || query}`;
+          if (toolName === 'crawl_web_page') {
+            const targetUrl = url || query;
+            toolStatusTags[key] = `<crawl_status url="${targetUrl.replace(/"/g, '&quot;')}" status="crawling" />`;
           } else {
-            searchTagPrefix = `<search_status query="${query.replace(/"/g, '&quot;')}" status="failed" error="No search results found"></search_status>\n\n`;
+            toolStatusTags[key] = `<search_status query="${query.replace(/"/g, '&quot;')}" status="searching" />`;
           }
-          updateStreamedContent(searchTagPrefix + accumulatedContent);
+          updateStreamedContent(getFullPrefix() + accumulatedContent);
+        },
+        onToolResult: ({ toolName, query, url, results, error }: { toolName: string; query: string; url?: string; results: unknown[]; source: string; error?: string }) => {
+          const key = `${toolName}:${url || query}`;
+          if (toolName === 'crawl_web_page') {
+            const targetUrl = url || query;
+            if (results && results.length > 0) {
+              const resObj = results[0] as { title?: string };
+              const titleAttr = resObj?.title ? ` title="${resObj.title.replace(/"/g, '&quot;')}"` : '';
+              toolStatusTags[key] = `<crawl_status url="${targetUrl.replace(/"/g, '&quot;')}" status="done"${titleAttr}>${JSON.stringify(results)}</crawl_status>\n\n`;
+            } else {
+              toolStatusTags[key] = `<crawl_status url="${targetUrl.replace(/"/g, '&quot;')}" status="failed" error="${(error || 'Failed to crawl webpage').replace(/"/g, '&quot;')}"></crawl_status>\n\n`;
+            }
+          } else {
+            if (results && results.length > 0) {
+              toolStatusTags[key] = `<search_status query="${query.replace(/"/g, '&quot;')}" status="done">${JSON.stringify(results)}</search_status>\n\n`;
+            } else {
+              toolStatusTags[key] = `<search_status query="${query.replace(/"/g, '&quot;')}" status="failed" error="No search results found"></search_status>\n\n`;
+            }
+          }
+          updateStreamedContent(getFullPrefix() + accumulatedContent);
         },
         onChunk: (chunk: string) => {
           accumulatedContent += chunk;
-          updateStreamedContent(searchTagPrefix + accumulatedContent);
+          updateStreamedContent(getFullPrefix() + accumulatedContent);
         },
         onDone: (finalText: string) => {
           let updatedChat: Chat | undefined;
@@ -753,7 +771,7 @@ function App() {
               if (tree[streamMessageId]) {
                 tree[streamMessageId] = {
                   ...tree[streamMessageId],
-                  content: searchTagPrefix + finalText,
+                  content: getFullPrefix() + finalText,
                   timestamp: new Date().toISOString()
                 };
               }
@@ -807,7 +825,7 @@ function App() {
                 if (tree[streamMessageId]) {
                   tree[streamMessageId] = {
                     ...tree[streamMessageId],
-                    content: searchTagPrefix + (accumulatedContent ? accumulatedContent + `\n\n⚠️ ${errorMsg}` : `⚠️ ${errorMsg}`),
+                    content: getFullPrefix() + (accumulatedContent ? accumulatedContent + `\n\n⚠️ ${errorMsg}` : `⚠️ ${errorMsg}`),
                     timestamp: new Date().toISOString()
                   };
                 }
@@ -1401,10 +1419,6 @@ function App() {
         onRenameChat={handleRenameChat}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenSchedules={() => setSchedulesOpen(true)}
-        onOpenCrawl4AI={() => {
-          changeWorkspaceTab('crawl4ai');
-          toggleWorkspace(true);
-        }}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => {
           const next = !isSidebarCollapsed;
@@ -1516,15 +1530,6 @@ function App() {
                   <Code className="h-3.5 w-3.5 text-primary" />
                   <span>Artifacts</span>
                 </button>
-                <button
-                  onClick={() => changeWorkspaceTab('crawl4ai')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
-                    workspaceTab === 'crawl4ai' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Globe className="h-3.5 w-3.5 text-primary" />
-                  <span>Crawl4AI</span>
-                </button>
               </div>
               <button
                 onClick={() => toggleWorkspace(false)}
@@ -1561,19 +1566,6 @@ function App() {
                   }}
                   chats={chats}
                   onShowToast={(msg, type) => showToast(msg, type)}
-                />
-              )}
-
-              {workspaceTab === 'crawl4ai' && (
-                <Crawl4AIPanel
-                  onSendToChat={(text) => {
-                    setComposerInput(text);
-                    textareaRef.current?.focus();
-                    showToast('Crawled context loaded into composer prompt', 'success');
-                  }}
-                  onSaveArtifact={(title) => {
-                    showToast(`Artifact "${title}" created`, 'success');
-                  }}
                 />
               )}
 
@@ -1659,10 +1651,6 @@ function App() {
             onShowToast={(msg, type) => showToast(msg, type)}
             onOpenSchedules={() => setSchedulesOpen(true)}
             onOpenBrowserModal={() => setBrowserModalOpen(true)}
-            onOpenCrawl4AI={() => {
-              changeWorkspaceTab('crawl4ai');
-              toggleWorkspace(true);
-            }}
           />
         </Suspense>
       )}

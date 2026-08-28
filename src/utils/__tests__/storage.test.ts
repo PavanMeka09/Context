@@ -96,13 +96,15 @@ describe('src/utils/storage.ts', () => {
         searxngUrl: 'http://localhost:8082',
         thinkingLevel: 'medium' as const,
         isMemoryEnabled: true,
-        isBrowserAgentEnabled: true
+        isBrowserAgentEnabled: true,
+        isWebContextEnabled: true
       };
 
       Storage.saveSettings(updated);
       const retrieved = Storage.getSettings();
       expect(retrieved.provider).toBe('gemini');
       expect(retrieved.model).toBe('gemini-2.5-flash');
+      expect(retrieved.isWebContextEnabled).toBe(true);
     });
     it('auto-migrates legacy settings into a default ProviderProfile', () => {
       localStorage.setItem(

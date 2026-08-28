@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Copy, Check, Code, Eye, Play, Terminal as TerminalIcon, Trash2, X, Sparkles, RotateCw, ExternalLink, Download, Layout } from 'lucide-react';
+import { wrapHtmlPreview, IFRAME_SANDBOX_PERMISSIONS, IFRAME_ALLOW_FEATURES } from '../utils/preview';
 
 interface MarkdownRendererProps {
   content: string;
@@ -663,6 +664,10 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
   const displayName = language.toUpperCase();
   const supportsPreview = language === 'html' || language === 'svg';
 
+  const previewSrcDoc = useMemo(() => {
+    return wrapHtmlPreview(code || '');
+  }, [code]);
+
   return (
     <div className="developer-dark-code group relative my-4 overflow-hidden rounded-xl border border-border bg-card shadow-lg">
       {/* Code Header Bar */}
@@ -780,9 +785,11 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
       {supportsPreview && activeTab === 'preview' ? (
         <div className="w-full bg-muted/30 p-3 h-96 select-text overflow-hidden flex flex-col">
           <iframe
-            srcDoc={code}
+            srcDoc={previewSrcDoc}
             title="Live Code Preview"
-            sandbox="allow-scripts"
+            sandbox={IFRAME_SANDBOX_PERMISSIONS}
+            allow={IFRAME_ALLOW_FEATURES}
+            allowFullScreen
             className="w-full h-full border border-border rounded-lg bg-background shadow-inner"
           />
         </div>

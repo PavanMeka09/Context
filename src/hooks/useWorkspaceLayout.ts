@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Storage } from '../utils/storage';
 
-export type WorkspaceTab = 'browser' | 'schedules' | 'artifacts' | 'crawl4ai';
+export type WorkspaceTab = 'browser' | 'schedules' | 'artifacts';
 
 export interface ArtifactData {
   language: string;

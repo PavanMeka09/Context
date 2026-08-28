@@ -176,4 +176,32 @@ describe('Composer Component', () => {
     const micBtn = screen.getByLabelText('Voice typing');
     expect(micBtn).toBeDefined();
   });
+
+  it('renders Web Context toggle button and triggers onSettingsChanged when clicked', () => {
+    const handleSettingsChanged = vi.fn();
+
+    render(
+      <Composer
+        input=""
+        onChangeInput={vi.fn()}
+        onSend={vi.fn()}
+        isGenerating={false}
+        onStop={vi.fn()}
+        inputRef={createRef()}
+        settings={mockSettings}
+        onSettingsChanged={handleSettingsChanged}
+        activePromptId="preset-general"
+        onSelectPromptId={vi.fn()}
+        customPrompts={[]}
+      />
+    );
+
+    const contextBtn = screen.getByLabelText('Toggle Web Context');
+    expect(contextBtn).toBeDefined();
+    fireEvent.click(contextBtn);
+
+    expect(handleSettingsChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ isWebContextEnabled: true })
+    );
+  });
 });

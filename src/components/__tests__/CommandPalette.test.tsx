@@ -97,4 +97,40 @@ describe('CommandPalette Component', () => {
     expect(handleNewChat).toHaveBeenCalledTimes(1);
     expect(handleClose).toHaveBeenCalledTimes(1);
   });
+
+  it('toggles web context setting when Toggle Auto Web Context command is executed', () => {
+    const handleSettingsChanged = vi.fn();
+    const handleToast = vi.fn();
+    const handleClose = vi.fn();
+
+    render(
+      <CommandPalette
+        isOpen={true}
+        onClose={handleClose}
+        chats={mockChats}
+        activeChatId={null}
+        onSelectChat={vi.fn()}
+        onNewChat={vi.fn()}
+        settings={mockSettings}
+        onSettingsChanged={handleSettingsChanged}
+        activePromptId="preset-general"
+        onSelectPromptId={vi.fn()}
+        customPrompts={[]}
+        theme="dark"
+        onThemeChanged={vi.fn()}
+        onToggleSidebar={vi.fn()}
+        onToggleSettings={vi.fn()}
+        onShowToast={handleToast}
+      />
+    );
+
+    const toggleContextCmd = screen.getByText('Toggle Auto Web Context (Crawler)');
+    fireEvent.click(toggleContextCmd);
+
+    expect(handleSettingsChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ isWebContextEnabled: true })
+    );
+    expect(handleToast).toHaveBeenCalledWith('Auto Web Context (Crawler) enabled!', 'success');
+    expect(handleClose).toHaveBeenCalledTimes(1);
+  });
 });

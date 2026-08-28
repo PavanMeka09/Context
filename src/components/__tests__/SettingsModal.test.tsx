@@ -176,4 +176,18 @@ describe('SettingsModal Component', () => {
     expect(screen.queryByText('Profile 2')).toBeNull();
     expect(screen.getByText('Default Profile')).toBeDefined();
   });
+
+  it('renders Web Search and Web Context toggles in Web Search tab', async () => {
+    await act(async () => {
+      render(<SettingsModal {...defaultProps} />);
+    });
+
+    const webSearchTab = screen.getByText('Web Search');
+    await act(async () => {
+      fireEvent.click(webSearchTab);
+    });
+
+    expect(screen.getByText('Enable Live Web Search')).toBeDefined();
+    expect(screen.getByText('Enable Autonomous Web Context (Crawler)')).toBeDefined();
+  });
 });

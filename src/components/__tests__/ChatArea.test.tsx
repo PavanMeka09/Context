@@ -107,4 +107,65 @@ describe('ChatArea Component', () => {
 
     expect(screen.queryByText('Queued')).toBeNull();
   });
+
+  it('does not spin previous message reload icons but spins active response when isGenerating is true', () => {
+    const multiMsgChat: Chat = {
+      ...mockChat,
+      messages: [
+        { id: 'm1', role: 'user', content: 'First message', timestamp: '10:00 AM' },
+        { id: 'm2', role: 'assistant', content: 'First reply', timestamp: '10:01 AM' },
+        { id: 'm3', role: 'user', content: 'Second message', timestamp: '10:02 AM' },
+        { id: 'm4', role: 'assistant', content: 'Generating reply...', timestamp: '10:03 AM' }
+      ]
+    };
+
+    render(
+      <ChatArea
+        {...defaultProps}
+        chat={multiMsgChat}
+        isGenerating={true}
+      />
+    );
+
+    const resendButtons = screen.getAllByTitle('Resend message');
+    expect(resendButtons.length).toBe(2);
+    resendButtons.forEach(button => {
+      expect(button.hasAttribute('disabled')).toBe(true);
+      const icon = button.querySelector('svg');
+      expect(icon).not.toBeNull();
+      expect(icon?.classList.contains('animate-spin')).toBe(false);
+    });
+
+    const regenerateButton = screen.getByTitle('Regenerate response');
+    expect(regenerateButton.hasAttribute('disabled')).toBe(true);
+    const regenerateIcon = regenerateButton.querySelector('svg');
+    expect(regenerateIcon).not.toBeNull();
+    expect(regenerateIcon?.classList.contains('animate-spin')).toBe(true);
+  });
+
+  it('renders CrawlStatusBadge when message contains <crawl_status>', () => {
+    const crawlChat: Chat = {
+      ...mockChat,
+      messages: [
+        { id: 'm1', role: 'user', content: 'read https://example.com', timestamp: '10:00 AM' },
+        {
+          id: 'm2',
+          role: 'assistant',
+          content: '<crawl_status url="https://example.com" status="done" title="Example Domain">[{"title":"Example Domain","content":"Sample web content"}]</crawl_status>\n\nHere is the summary of the webpage.',
+          timestamp: '10:01 AM'
+        }
+      ]
+    };
+
+    render(
+      <ChatArea
+        {...defaultProps}
+        chat={crawlChat}
+      />
+    );
+
+    expect(screen.getByText('Web Context Extracted')).toBeDefined();
+    expect(screen.getByText('Example Domain')).toBeDefined();
+    expect(screen.getByText('Here is the summary of the webpage.')).toBeDefined();
+  });
 });

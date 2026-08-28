@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { 
   Search, Terminal, MessageSquare, Sparkles, Globe, 
    Settings, Palette, ChevronRight, CornerDownLeft, 
-  Check, ArrowLeft, EyeOff, Loader2, Clock, Compass
+  Check, ArrowLeft, EyeOff, Loader2, Clock, Compass, FileText
 } from 'lucide-react';
 import type { Chat, Settings as AppSettings, SystemPrompt } from '../utils/storage';
 import { Storage, PRESET_PROMPTS, PROVIDERS } from '../utils/storage';
@@ -27,7 +27,6 @@ interface CommandPaletteProps {
   onShowToast: (msg: string, type: 'success' | 'error') => void;
   onOpenSchedules?: () => void;
   onOpenBrowserModal?: () => void;
-  onOpenCrawl4AI?: () => void;
 }
 
 type ScreenType = 'main' | 'models' | 'personas' | 'chats' | 'themes';
@@ -60,8 +59,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onToggleSettings,
   onShowToast,
   onOpenSchedules,
-  onOpenBrowserModal,
-  onOpenCrawl4AI
+  onOpenBrowserModal
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeScreen, setActiveScreen] = useState<ScreenType>('main');
@@ -131,7 +129,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     onClose();
   }, [settings, onSettingsChanged, onShowToast, onClose]);
 
-
+  const handleToggleWebContext = useCallback(() => {
+    const nextVal = !settings.isWebContextEnabled;
+    const nextSettings = { ...settings, isWebContextEnabled: nextVal };
+    Storage.saveSettings(nextSettings);
+    onSettingsChanged(nextSettings);
+    onShowToast(nextVal ? 'Auto Web Context (Crawler) enabled!' : 'Auto Web Context disabled.', 'success');
+    onClose();
+  }, [settings, onSettingsChanged, onShowToast, onClose]);
 
   const handleSelectModel = useCallback((modelId: string) => {
     const nextSettings = { ...settings, model: modelId };
@@ -140,8 +145,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     onShowToast(`Active model updated to ${modelId}.`, 'success');
     onClose();
   }, [settings, onSettingsChanged, onShowToast, onClose]);
-
-
 
   // Group commands depending on screen
   const mainCommands = useMemo<CommandItem[]>(() => [
@@ -162,15 +165,6 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       icon: <Clock className="h-4 w-4" />,
       category: 'Navigation',
       action: () => { if (onOpenSchedules) onOpenSchedules(); onClose(); }
-    },
-    {
-      id: 'nav-crawl4ai',
-      title: 'Crawl4AI Web Crawler',
-      subtitle: 'Fast markdown generation & structured data extraction',
-      icon: <Globe className="h-4 w-4" />,
-      category: 'Navigation',
-      action: () => { if (onOpenCrawl4AI) onOpenCrawl4AI(); onClose(); },
-      shortcut: ['/crawl']
     },
     {
       id: 'nav-browser',
@@ -229,8 +223,16 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       title: 'Toggle Web Search (SearXNG)',
       subtitle: settings.isWebSearchEnabled ? 'Disable internet search (enabled)' : 'Enable internet search (disabled)',
       icon: <Globe className="h-4 w-4" />,
-      category: 'Web Search',
+      category: 'Web Tools',
       action: handleToggleWebSearch
+    },
+    {
+      id: 'toggle-web-context',
+      title: 'Toggle Auto Web Context (Crawler)',
+      subtitle: settings.isWebContextEnabled ? 'Disable deep page crawling (enabled)' : 'Enable deep page crawling (disabled)',
+      icon: <FileText className="h-4 w-4" />,
+      category: 'Web Tools',
+      action: handleToggleWebContext
     },
 
     // APPEARANCE
@@ -242,7 +244,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       category: 'Appearance',
       action: () => { setActiveScreen('themes'); setSearchQuery(''); setSelectedIndex(0); }
     },
-  ], [settings, theme, onNewChat, onClose, onToggleSettings, onToggleSidebar, onOpenBrowserModal, onOpenSchedules, onOpenCrawl4AI, handleToggleWebSearch]);
+  ], [settings, theme, onNewChat, onClose, onToggleSettings, onToggleSidebar, onOpenBrowserModal, onOpenSchedules, handleToggleWebSearch, handleToggleWebContext]);
 
   // Derived submenus items
   const subCommands = useMemo<CommandItem[]>(() => {

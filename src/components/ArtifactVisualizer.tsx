@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Code, Eye, BarChart2, Copy, Play, Loader2, Check } from 'lucide-react';
 import type { ArtifactData } from '../hooks/useWorkspaceLayout';
+import { wrapHtmlPreview, IFRAME_SANDBOX_PERMISSIONS, IFRAME_ALLOW_FEATURES } from '../utils/preview';
 
 interface ArtifactVisualizerProps {
   artifact: ArtifactData;
@@ -117,11 +118,7 @@ export const ArtifactVisualizer: React.FC<ArtifactVisualizerProps> = ({ artifact
 
   // Safe HTML srcDoc
   const previewSrcDoc = useMemo(() => {
-    if (!artifact.code) return '';
-    if (artifact.code.trim().toLowerCase().startsWith('<svg')) {
-      return `<!DOCTYPE html><html><body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#090d16;">${artifact.code}</body></html>`;
-    }
-    return artifact.code;
+    return wrapHtmlPreview(artifact.code || '');
   }, [artifact.code]);
 
   const maxChartVal = useMemo(() => {
@@ -231,7 +228,9 @@ export const ArtifactVisualizer: React.FC<ArtifactVisualizerProps> = ({ artifact
             <iframe
               title={artifact.title || 'Interactive Canvas Preview'}
               srcDoc={previewSrcDoc}
-              sandbox="allow-scripts"
+              sandbox={IFRAME_SANDBOX_PERMISSIONS}
+              allow={IFRAME_ALLOW_FEATURES}
+              allowFullScreen
               className="w-full h-full border-0 bg-white dark:bg-zinc-950"
             />
           </div>
