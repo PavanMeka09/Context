@@ -79,6 +79,26 @@ describe('SettingsModal Component', () => {
     });
 
     expect(screen.getByText(/Successfully connected to Ollama/i)).toBeDefined();
+
+    const apiKeyInput = screen.getByPlaceholderText('Not required for local Ollama') as HTMLInputElement;
+    expect(apiKeyInput.value).toBe('');
+  });
+
+  it('allows clearing API key to empty value in input field', async () => {
+    await act(async () => {
+      render(<SettingsModal {...defaultProps} />);
+    });
+
+    const apiKeyInput = screen.getByPlaceholderText('Enter Gemini API Key...') as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(apiKeyInput, { target: { value: 'temp-key' } });
+    });
+    expect(apiKeyInput.value).toBe('temp-key');
+
+    await act(async () => {
+      fireEvent.change(apiKeyInput, { target: { value: '' } });
+    });
+    expect(apiKeyInput.value).toBe('');
   });
 
   it('switches tabs when tab buttons are clicked', async () => {

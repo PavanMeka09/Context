@@ -3,7 +3,7 @@ import {
   X, RotateCw, Globe, ArrowRight, MousePointer, Keyboard, 
   ChevronUp, ChevronDown, FileText, Loader2, Search, Compass, Power, 
   AlertTriangle, Eye, EyeOff, Terminal, Plus, Trash2, ArrowLeft,
-  Play, Pause, SkipForward
+  Play, Pause, SkipForward, Maximize2, Minimize2
 } from 'lucide-react';
 
 interface InteractiveElement {
@@ -68,6 +68,7 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
   const [typeText, setTypeText] = useState('');
   const [clickIndicator, setClickIndicator] = useState<{ x: number; y: number } | null>(null);
   const [showOverlays, setShowOverlays] = useState(true);
+  const [isMaximized, setIsMaximized] = useState(false);
 
   // Advanced browser features: Multi-tab and Real-time Console logs
   const [tabs, setTabs] = useState<{ id: string; title: string; url: string; isActive: boolean }[]>([]);
@@ -547,9 +548,11 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm animate-fade-in font-sans">
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm animate-fade-in font-sans ${isMaximized ? 'p-0' : 'p-4'}`}>
       {/* Modal Dialog Container */}
-      <div className="relative w-full max-w-6xl h-[85vh] rounded-xl border border-border bg-card shadow-2xl z-10 flex flex-col overflow-hidden animate-scale-in">
+      <div className={`relative w-full border border-border bg-card shadow-2xl z-10 flex flex-col overflow-hidden animate-scale-in ${
+        isMaximized ? 'w-full h-full max-w-none max-h-none rounded-none border-0' : 'max-w-6xl h-[85vh] rounded-xl'
+      }`}>
         
         {/* Modal Header */}
         <div className="flex h-14 shrink-0 items-center justify-between px-6 border-b border-border bg-card select-none">
@@ -658,6 +661,14 @@ export const BrowserModal: React.FC<BrowserModalProps> = ({
                 <span>End Session</span>
               </button>
             )}
+            <button
+              onClick={() => setIsMaximized(!isMaximized)}
+              className="rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition cursor-pointer active:scale-90"
+              title={isMaximized ? "Restore window size" : "Maximize to large full screen"}
+              aria-label={isMaximized ? "Restore window size" : "Maximize window to full screen"}
+            >
+              {isMaximized ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </button>
             <button
               onClick={onClose}
               className="rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition cursor-pointer active:scale-90"

@@ -229,5 +229,32 @@ describe('Sidebar Component', () => {
     expect(handleRenameChat).toHaveBeenCalledWith('chat-1', 'Saved On Blur');
     expect(screen.queryByLabelText('Edit chat title')).toBeNull();
   });
+
+  it('calls onOpenBrowserModal when Browser Sandbox button is clicked', () => {
+    const handleOpenBrowser = vi.fn();
+    render(
+      <Sidebar
+        chats={mockChats}
+        activeChatId="chat-1"
+        settings={mockSettings}
+        onSelectChat={vi.fn()}
+        onNewChat={vi.fn()}
+        onDeleteChat={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onOpenSchedules={vi.fn()}
+        onOpenBrowserModal={handleOpenBrowser}
+        isCollapsed={false}
+        onToggleCollapse={vi.fn()}
+        theme="dark"
+        onThemeChanged={vi.fn()}
+      />
+    );
+
+    const browserBtn = screen.getByLabelText('Open Browser Sandbox');
+    expect(browserBtn).toBeDefined();
+    fireEvent.click(browserBtn);
+
+    expect(handleOpenBrowser).toHaveBeenCalledTimes(1);
+  });
 });
 

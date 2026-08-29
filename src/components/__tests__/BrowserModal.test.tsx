@@ -82,4 +82,17 @@ describe('BrowserModal Component', () => {
 
     expect(defaultProps.onClose).toHaveBeenCalled();
   });
+
+  it('toggles maximize mode when maximize button is clicked', () => {
+    render(<BrowserModal {...defaultProps} />);
+
+    const maxBtn = screen.getByLabelText('Maximize window to full screen');
+    expect(maxBtn).toBeDefined();
+
+    fireEvent.click(maxBtn);
+    expect(screen.getByLabelText('Restore window size')).toBeDefined();
+
+    fireEvent.click(screen.getByLabelText('Restore window size'));
+    expect(screen.getByLabelText('Maximize window to full screen')).toBeDefined();
+  });
 });

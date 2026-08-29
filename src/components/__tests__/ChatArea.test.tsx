@@ -168,4 +168,49 @@ describe('ChatArea Component', () => {
     expect(screen.getByText('Example Domain')).toBeDefined();
     expect(screen.getByText('Here is the summary of the webpage.')).toBeDefined();
   });
+
+  it('renders live markdown with typing cursor during streaming response', () => {
+    const streamingChat: Chat = {
+      ...mockChat,
+      messages: [
+        { id: 'm1', role: 'user', content: 'Tell me a story', timestamp: '10:00 AM' },
+        { id: 'm2', role: 'assistant', content: '**Once upon a time** in a galaxy', timestamp: '10:01 AM' }
+      ]
+    };
+
+    const { container } = render(
+      <ChatArea
+        {...defaultProps}
+        chat={streamingChat}
+        isGenerating={true}
+      />
+    );
+
+    const typingContainer = container.querySelector('.typing-cursor');
+    expect(typingContainer).not.toBeNull();
+    expect(screen.getByText('Once upon a time')).toBeDefined();
+  });
+
+  it('renders Thinking... TextLoader when streaming begins before tokens arrive', () => {
+    const emptyStreamingChat: Chat = {
+      ...mockChat,
+      messages: [
+        { id: 'm1', role: 'user', content: 'What is 2+2?', timestamp: '10:00 AM' },
+        { id: 'm2', role: 'assistant', content: '', timestamp: '10:01 AM' }
+      ]
+    };
+
+    const { container } = render(
+      <ChatArea
+        {...defaultProps}
+        chat={emptyStreamingChat}
+        isGenerating={true}
+      />
+    );
+
+    const loader = container.querySelector('.tl-loader');
+    expect(loader).not.toBeNull();
+    expect(loader?.getAttribute('data-variant')).toBe('cascade');
+    expect(loader?.getAttribute('aria-label')).toBe('Thinking...');
+  });
 });

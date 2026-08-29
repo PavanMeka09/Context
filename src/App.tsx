@@ -8,7 +8,7 @@ import { PRESET_PROMPTS, Storage, reconstructActivePath, upgradeChatToTree, getC
 import type { Chat, Message, MessageNode, Settings, SystemPrompt, Attachment, BrowserSessionData } from './utils/storage';
 import { streamChatCompletion } from './utils/api';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { AlertCircle, X, Loader2, Compass, Calendar, Code } from 'lucide-react';
+import { AlertCircle, X, Loader2, Compass, Calendar, Code, Maximize2 } from 'lucide-react';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
 
 // Code splitting for modal components to optimize initial chunk size
@@ -117,6 +117,8 @@ function App() {
     isResizingWorkspace,
     selectedArtifact,
     handleMouseDownResize,
+    handleTouchStartResize,
+    adjustWorkspaceWidth
   } = useWorkspaceLayout();
   // Preference and accessibility states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => Storage.getSidebarCollapsed());
@@ -293,17 +295,20 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleNewChat, confirmDialog, toggleWorkspace]);
 
+  const handleOpenBrowserModal = useCallback((sid?: string) => {
+    setBrowserModalSessionId(sid || 'interactive');
+    setBrowserModalOpen(true);
+  }, []);
+
   // Listen to global open browser sandbox events
   useEffect(() => {
     const handleOpenSandbox = (e: Event) => {
       const customEvent = e as CustomEvent<{ sessionId?: string }>;
-      const sid = customEvent.detail?.sessionId || 'interactive';
-      setBrowserModalSessionId(sid);
-      setBrowserModalOpen(true);
+      handleOpenBrowserModal(customEvent.detail?.sessionId);
     };
     window.addEventListener('open-browser-sandbox-modal', handleOpenSandbox);
     return () => window.removeEventListener('open-browser-sandbox-modal', handleOpenSandbox);
-  }, []);
+  }, [handleOpenBrowserModal]);
 
 
   const showToast = (message: React.ReactNode, type: 'error' | 'success' = 'error') => {
@@ -1419,6 +1424,7 @@ function App() {
         onRenameChat={handleRenameChat}
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenSchedules={() => setSchedulesOpen(true)}
+        onOpenBrowserModal={() => handleOpenBrowserModal('interactive')}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => {
           const next = !isSidebarCollapsed;
@@ -1448,11 +1454,7 @@ function App() {
             Storage.saveSidebarCollapsed(next);
           }}
           onSwitchBranch={handleSwitchBranch}
-          onOpenBrowserModal={(sid) => {
-            setBrowserModalSessionId(sid || 'interactive');
-            changeWorkspaceTab('browser');
-            toggleWorkspace(true);
-          }}
+          onOpenBrowserModal={handleOpenBrowserModal}
           settings={settings}
           isWorkspaceOpen={isWorkspaceOpen}
           onToggleWorkspace={() => toggleWorkspace()}
@@ -1487,11 +1489,26 @@ function App() {
       {isWorkspaceOpen && (
         <>
           <div
+            role="separator"
+            tabIndex={0}
+            aria-orientation="vertical"
+            aria-valuenow={workspaceWidth}
+            aria-label="Resize workspace panel"
             onMouseDown={handleMouseDownResize}
-            className={`w-1.5 hover:w-2 bg-border hover:bg-primary/50 transition-all cursor-col-resize shrink-0 select-none z-10 flex items-center justify-center ${
+            onTouchStart={handleTouchStartResize}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                adjustWorkspaceWidth(25);
+              } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                adjustWorkspaceWidth(-25);
+              }
+            }}
+            className={`w-1.5 hover:w-2 bg-border hover:bg-primary/50 transition-all cursor-col-resize shrink-0 select-none z-10 flex items-center justify-center focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
               isResizingWorkspace ? 'bg-primary w-2' : ''
             }`}
-            title="Drag to resize workspace panel"
+            title="Drag or use Left/Right arrows to resize workspace panel"
           >
             <div className="h-8 w-0.5 rounded-full bg-muted-foreground/40" />
           </div>
@@ -1531,14 +1548,26 @@ function App() {
                   <span>Artifacts</span>
                 </button>
               </div>
-              <button
-                onClick={() => toggleWorkspace(false)}
-                className="rounded-md p-1 hover:bg-accent text-muted-foreground hover:text-foreground transition cursor-pointer"
-                title="Close workspace panel (Ctrl+\)"
-                aria-label="Close workspace"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                {workspaceTab === 'browser' && (
+                  <button
+                    onClick={() => handleOpenBrowserModal(browserModalSessionId)}
+                    className="rounded-md p-1 hover:bg-accent text-muted-foreground hover:text-foreground transition cursor-pointer"
+                    title="Enlarge browser view to large screen modal"
+                    aria-label="Enlarge browser view"
+                  >
+                    <Maximize2 className="h-4 w-4" />
+                  </button>
+                )}
+                <button
+                  onClick={() => toggleWorkspace(false)}
+                  className="rounded-md p-1 hover:bg-accent text-muted-foreground hover:text-foreground transition cursor-pointer"
+                  title="Close workspace panel (Ctrl+\)"
+                  aria-label="Close workspace"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             {/* Tab Body */}
@@ -1554,6 +1583,8 @@ function App() {
                     screenshotUrl="/api/browser/screenshot"
                     screenshotTimestamp={session?.screenshotTimestamp || 0}
                     sessionId={browserModalSessionId}
+                    onInteract={handleOpenBrowserModal}
+                    className="max-w-full my-0"
                   />
                 );
               })()}
@@ -1650,7 +1681,7 @@ function App() {
             onToggleSettings={() => setSettingsOpen(true)}
             onShowToast={(msg, type) => showToast(msg, type)}
             onOpenSchedules={() => setSchedulesOpen(true)}
-            onOpenBrowserModal={() => setBrowserModalOpen(true)}
+            onOpenBrowserModal={() => handleOpenBrowserModal('interactive')}
           />
         </Suspense>
       )}
@@ -1665,10 +1696,7 @@ function App() {
               onClose={() => setSchedulesOpen(false)}
               chats={chats}
               onShowToast={(msg, type) => showToast(msg, type)}
-              onOpenBrowserModal={(sid) => {
-                setBrowserModalSessionId(sid || 'interactive');
-                setBrowserModalOpen(true);
-              }}
+              onOpenBrowserModal={handleOpenBrowserModal}
             />
           </Suspense>
         </ErrorBoundary>

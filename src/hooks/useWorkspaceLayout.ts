@@ -32,6 +32,20 @@ export function useWorkspaceLayout() {
     setIsResizingWorkspace(true);
   };
 
+  const handleTouchStartResize = () => {
+    setIsResizingWorkspace(true);
+  };
+
+  const adjustWorkspaceWidth = (delta: number) => {
+    setWorkspaceWidth(prev => {
+      const minWidth = Math.max(320, Math.floor(window.innerWidth * 0.25));
+      const maxWidth = Math.floor(window.innerWidth * 0.7);
+      const clamped = Math.min(Math.max(prev + delta, minWidth), maxWidth);
+      Storage.saveWorkspaceWidth(clamped);
+      return clamped;
+    });
+  };
+
   useEffect(() => {
     const handleOpenArtifact = (e: Event) => {
       const customEvent = e as CustomEvent<ArtifactData>;
@@ -50,6 +64,11 @@ export function useWorkspaceLayout() {
   useEffect(() => {
     if (!isResizingWorkspace) return;
 
+    const originalCursor = document.body.style.cursor;
+    const originalUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
     const handleMouseMove = (e: MouseEvent) => {
       const newWidth = window.innerWidth - e.clientX;
       const minWidth = Math.max(320, Math.floor(window.innerWidth * 0.25));
@@ -58,7 +77,17 @@ export function useWorkspaceLayout() {
       setWorkspaceWidth(clamped);
     };
 
-    const handleMouseUp = () => {
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        const newWidth = window.innerWidth - e.touches[0].clientX;
+        const minWidth = Math.max(320, Math.floor(window.innerWidth * 0.25));
+        const maxWidth = Math.floor(window.innerWidth * 0.7);
+        const clamped = Math.min(Math.max(newWidth, minWidth), maxWidth);
+        setWorkspaceWidth(clamped);
+      }
+    };
+
+    const handleEnd = () => {
       setIsResizingWorkspace(false);
       setWorkspaceWidth(w => {
         Storage.saveWorkspaceWidth(w);
@@ -67,10 +96,19 @@ export function useWorkspaceLayout() {
     };
 
     window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('mouseup', handleEnd);
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', handleEnd);
+    window.addEventListener('touchcancel', handleEnd);
+
     return () => {
+      document.body.style.cursor = originalCursor;
+      document.body.style.userSelect = originalUserSelect;
       window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mouseup', handleEnd);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleEnd);
+      window.removeEventListener('touchcancel', handleEnd);
     };
   }, [isResizingWorkspace]);
 
@@ -86,5 +124,7 @@ export function useWorkspaceLayout() {
     selectedArtifact,
     setSelectedArtifact,
     handleMouseDownResize,
+    handleTouchStartResize,
+    adjustWorkspaceWidth
   };
 }

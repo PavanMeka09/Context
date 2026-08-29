@@ -258,10 +258,58 @@ describe('src/utils/storage.ts', () => {
       const switched = Storage.switchProfile(retrieved, 'p-cloud');
       expect(switched.provider).toBe('gemini');
       expect(switched.apiKey).toBe('g-key');
+      expect(switched.localUrl).toBeUndefined();
 
       const switchedBack = Storage.switchProfile(switched, 'p-ollama');
       expect(switchedBack.provider).toBe('ollama');
       expect(switchedBack.localUrl).toBe('http://127.0.0.1:11434');
+      expect(switchedBack.apiKey).toBe('');
+    });
+
+    it('cleans up localUrl when updating an Ollama profile to a cloud provider', () => {
+      const ollamaSettings = {
+        provider: 'ollama' as const,
+        apiKey: '',
+        model: 'llama3.2',
+        localUrl: 'http://localhost:11434',
+        profiles: [
+          { id: 'p1', name: 'Profile 1', provider: 'ollama' as const, apiKey: '', model: 'llama3.2', localUrl: 'http://localhost:11434' }
+        ],
+        activeProfileId: 'p1'
+      };
+      Storage.saveSettings(ollamaSettings);
+
+      const updated = Storage.updateActiveProfile(ollamaSettings, { provider: 'openai', model: 'gpt-4o' });
+      expect(updated.provider).toBe('openai');
+      expect(updated.localUrl).toBeUndefined();
+      expect(updated.profiles![0].localUrl).toBeUndefined();
+
+      Storage.saveSettings(updated);
+      const retrieved = Storage.getSettings();
+      expect(retrieved.provider).toBe('openai');
+      expect(retrieved.localUrl).toBeUndefined();
+    });
+
+    it('allows clearing apiKey to an empty string via updateActiveProfile and saveSettings', () => {
+      const initialSettings = {
+        provider: 'gemini' as const,
+        apiKey: 'initial-key-123',
+        model: 'gemini-3.6-flash',
+        profiles: [
+          { id: 'p1', name: 'Profile 1', provider: 'gemini' as const, apiKey: 'initial-key-123', model: 'gemini-3.6-flash' }
+        ],
+        activeProfileId: 'p1'
+      };
+      Storage.saveSettings(initialSettings);
+
+      const updated = Storage.updateActiveProfile(initialSettings, { apiKey: '' });
+      expect(updated.apiKey).toBe('');
+      expect(updated.profiles![0].apiKey).toBe('');
+
+      Storage.saveSettings(updated);
+      const retrieved = Storage.getSettings();
+      expect(retrieved.apiKey).toBe('');
+      expect(retrieved.profiles![0].apiKey).toBe('');
     });
   });
 

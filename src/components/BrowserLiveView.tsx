@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { RotateCw, Lock, ExternalLink, Terminal, Loader2, ChevronDown, ChevronUp, Play, Pause, SkipForward } from 'lucide-react';
+import { RotateCw, Lock, ExternalLink, Terminal, Loader2, ChevronDown, ChevronUp, Play, Pause, SkipForward, Maximize2 } from 'lucide-react';
 import { BrowserCanvas } from './BrowserCanvas';
 
 export interface BrowserStep {
@@ -23,6 +23,7 @@ interface BrowserLiveViewProps {
   screenshotTimestamp: number;
   sessionId?: string;
   onInteract?: (sessionId: string) => void;
+  className?: string;
 }
 
 export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
@@ -33,7 +34,8 @@ export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
   screenshotUrl,
   screenshotTimestamp,
   sessionId,
-  onInteract
+  onInteract,
+  className
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
@@ -80,6 +82,12 @@ export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
     }
   };
 
+  const handleOpenInteractiveSession = () => {
+    if (onInteract) {
+      onInteract(sessionId || 'interactive');
+    }
+  };
+
   const lastStep = steps && steps.length > 0 ? steps[steps.length - 1] : null;
   const lastStepId = (status === 'completed' || status === 'failed') && lastStep ? lastStep.id : null;
 
@@ -105,14 +113,22 @@ export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
   };
 
   return (
-    <div className="w-full rounded-xl border border-border bg-card backdrop-blur-xl overflow-hidden shadow-2xl flex flex-col font-sans select-none my-4 max-w-2xl mx-auto">
+    <div className={`w-full rounded-xl border border-border bg-card backdrop-blur-xl overflow-hidden shadow-2xl flex flex-col font-sans select-none my-4 ${className || 'max-w-2xl mx-auto'}`}>
       {/* Browser Window Header */}
       <div className="bg-muted/50 px-4 py-2 flex items-center gap-3 border-b border-border">
         {/* Window controls circles */}
-        <div className="flex gap-1.5 shrink-0">
+        <div className="flex gap-1.5 shrink-0 items-center">
           <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
           <div className="w-2.5 h-2.5 rounded-full bg-amber-500/60" />
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/60" />
+          <button
+            type="button"
+            onClick={handleOpenInteractiveSession}
+            className={`w-2.5 h-2.5 rounded-full bg-emerald-500/60 transition ${
+              onInteract ? 'cursor-pointer hover:bg-emerald-500 hover:scale-125' : ''
+            }`}
+            title={onInteract ? "Click to enlarge browser view" : undefined}
+            aria-label={onInteract ? "Maximize window dot" : undefined}
+          />
         </div>
         
         {/* Address Bar Container */}
@@ -137,7 +153,7 @@ export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
       {/* Title bar */}
       <div className="bg-muted/30 px-4 py-1.5 flex items-center justify-between border-b border-border text-[10.5px] text-muted-foreground">
         <span className="truncate font-semibold text-foreground">{title || 'Loading Page...'}</span>
-        <div className="flex items-center gap-3 select-none">
+        <div className="flex items-center gap-2 select-none">
           {sessionId && (status === 'running' || status === 'paused') && (
             <div className="flex items-center gap-1 bg-muted border border-border rounded-lg p-0.5 mr-1">
               {status === 'running' ? (
@@ -167,6 +183,18 @@ export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
                 </>
               )}
             </div>
+          )}
+          {onInteract && (
+            <button
+              type="button"
+              onClick={handleOpenInteractiveSession}
+              className="flex items-center gap-1 text-primary hover:text-primary/80 font-bold text-[9.5px] uppercase tracking-wider transition cursor-pointer border border-primary/20 bg-primary/5 hover:bg-primary/10 px-2 py-0.5 rounded shadow-xs"
+              title="Enlarge and view browser in large screen modal"
+              aria-label="Enlarge browser view"
+            >
+              <Maximize2 className="h-2.5 w-2.5" />
+              <span>Enlarge</span>
+            </button>
           )}
           {url && sessionId && onInteract && (
             <button

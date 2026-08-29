@@ -410,7 +410,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setLoadingModels(false);
       }
     },
-    [updateActiveProfileState, settings.localUrl]
+    [updateActiveProfileState, settings.localUrl, setModelSearchQuery]
   );
 
   useEffect(() => {

@@ -404,7 +404,7 @@ export function sanitizeProfile(
     provider,
     apiKey: p.apiKey ?? '',
     model: p.model || defaultModel,
-    localUrl: p.localUrl ?? (provider === 'ollama' ? 'http://localhost:11434' : undefined)
+    localUrl: provider === 'ollama' ? (p.localUrl || 'http://localhost:11434') : undefined
   };
 }
 
@@ -413,7 +413,9 @@ export function normalizeSettings(raw: Partial<Settings>): Settings {
     raw.provider && PROVIDERS[raw.provider] ? raw.provider : 'gemini';
   const fallbackModel = raw.model || PROVIDERS[fallbackProvider].defaultModel;
   const fallbackApiKey = raw.apiKey ?? '';
-  const fallbackLocalUrl = raw.localUrl ?? (fallbackProvider === 'ollama' ? 'http://localhost:11434' : undefined);
+  const fallbackLocalUrl = fallbackProvider === 'ollama'
+    ? (raw.localUrl || 'http://localhost:11434')
+    : undefined;
 
   let profiles: ProviderProfile[] = Array.isArray(raw.profiles)
     ? raw.profiles.map(p => sanitizeProfile(p, fallbackProvider))
@@ -439,24 +441,14 @@ export function normalizeSettings(raw: Partial<Settings>): Settings {
     activeProfileId = profiles[0].id;
   }
   const activeIdx = profiles.findIndex(p => p.id === activeProfileId);
-  if (activeIdx !== -1) {
-    const currentActive = profiles[activeIdx];
-    profiles[activeIdx] = sanitizeProfile(
-      {
-        ...currentActive,
-        provider: currentActive.provider || fallbackProvider,
-        apiKey: currentActive.apiKey || fallbackApiKey,
-        model: currentActive.model || fallbackModel,
-        localUrl: currentActive.localUrl || fallbackLocalUrl
-      },
-      fallbackProvider
-    );
-  }
-
-  const activeProfile = profiles[activeIdx] || profiles[0];
+  const activeProfile = (activeIdx !== -1 ? profiles[activeIdx] : profiles[0]) || profiles[0];
   const activeProvider = activeProfile.provider && PROVIDERS[activeProfile.provider]
     ? activeProfile.provider
     : 'gemini';
+
+  const activeLocalUrl = activeProvider === 'ollama'
+    ? (activeProfile.localUrl || 'http://localhost:11434')
+    : undefined;
 
   return {
     provider: activeProvider,
@@ -464,7 +456,7 @@ export function normalizeSettings(raw: Partial<Settings>): Settings {
     model: activeProfile.model || PROVIDERS[activeProvider]?.defaultModel || 'gemini-3.6-flash',
     profiles,
     activeProfileId: activeProfile.id,
-    localUrl: activeProfile.localUrl || raw.localUrl || (activeProvider === 'ollama' ? 'http://localhost:11434' : undefined),
+    localUrl: activeLocalUrl,
     isWebSearchEnabled: raw.isWebSearchEnabled ?? false,
     searxngUrl: raw.searxngUrl ?? '',
     thinkingLevel: raw.thinkingLevel ?? 'off',
@@ -530,7 +522,7 @@ export const Storage = {
       provider: target.provider,
       apiKey: target.apiKey,
       model: target.model,
-      localUrl: target.localUrl
+      localUrl: target.provider === 'ollama' ? (target.localUrl || 'http://localhost:11434') : undefined
     });
   },
 
@@ -920,21 +912,38 @@ export const Storage = {
             }
           }
           mergedProfiles = Array.from(profileMap.values());
+          const activeProfileId =
+            importedSettings.activeProfileId ||
+            currentSettings.activeProfileId ||
+            mergedProfiles[0]?.id;
+
+          Storage.saveSettings({
+            ...currentSettings,
+            ...importedSettings,
+            profiles: mergedProfiles,
+            activeProfileId
+          });
+        } else {
+          const active = Storage.getActiveProfile(currentSettings);
+          const updatedActive = sanitizeProfile({
+            ...active,
+            ...importedSettings,
+            apiKey: importedSettings.apiKey !== undefined ? importedSettings.apiKey : active.apiKey
+          });
+          const activeId = currentSettings.activeProfileId || updatedActive.id;
+          const profiles = (currentSettings.profiles || []).map(p =>
+            p.id === activeId ? updatedActive : p
+          );
+          if (!profiles.some(p => p.id === activeId)) {
+            profiles.push(updatedActive);
+          }
+          Storage.saveSettings({
+            ...currentSettings,
+            ...importedSettings,
+            profiles,
+            activeProfileId: activeId
+          });
         }
-
-        const activeProfileId =
-          importedSettings.activeProfileId ||
-          currentSettings.activeProfileId ||
-          mergedProfiles[0]?.id;
-
-        const mergedSettings: Settings = {
-          ...currentSettings,
-          ...importedSettings,
-          profiles: mergedProfiles,
-          activeProfileId
-        };
-
-        Storage.saveSettings(mergedSettings);
       }
 
       if (Array.isArray(parsed.customPrompts)) {

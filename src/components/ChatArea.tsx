@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import type { Chat, Message, Settings } from '../utils/storage';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { BrowserLiveView } from './BrowserLiveView';
+import { TextLoader } from 'generative-loaders';
 import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Compass, Volume2, VolumeX, Download, Layout, Calendar, Code, Settings as SettingsIcon, Sparkles, Search } from 'lucide-react';
 import { cleanSnippetText, getFaviconUrl, type SearxngResult } from '../utils/searxng';
 
@@ -1251,7 +1252,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                               const { hasCrawl, url: crawlUrl, title: crawlTitle, status: crawlStatus, error: crawlError, content: crawlContent, cleanContent: crawlCleanContent } = parseCrawlStatus(searchCleanContent);
                               const { thinking, content: thinkingCleanContent } = parseThinkingAndContent(crawlCleanContent);
                               const { hasQuestion, question, options, allowCustom, allowSkip, cleanContent } = parseQuestion(thinkingCleanContent);
-                              const isStreamingThinking = index === chat.messages.length - 1 && isGenerating && !msg.content.includes('</thinking>') && msg.content.includes('<thinking>');
+                              const isStreamingActive = index === chat.messages.length - 1 && isGenerating;
+                              const isStreamingThinking = isStreamingActive && !msg.content.includes('</thinking>') && msg.content.includes('<thinking>');
                               
                               const finalHasSearch = hasMetaSearch || hasLegacySearch;
                               const finalSearchQuery = hasMetaSearch ? searchMeta!.query : legacyQuery;
@@ -1260,10 +1262,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                               const finalSearchResults = hasMetaSearch
                                 ? searchMeta!.results.map(r => ({ title: r.title, url: r.url, content: r.snippet }))
                                 : legacyResults;
+                              const isAwaitingFirstToken = isStreamingActive && !thinking && !finalHasSearch && !hasCrawl && !msg.browserSession;
                               
                               return (
                                 <>
-
                                   {finalHasSearch && (
                                     <SearchStatusBadge
                                       query={finalSearchQuery}
@@ -1316,9 +1318,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                                       </details>
                                     </div>
                                   )}
-                                  
-                                  {cleanContent && (
-                                    <div className={`select-text ${index === chat.messages.length - 1 && isGenerating ? 'typing-cursor' : ''}`}>
+
+                                  {cleanContent ? (
+                                    <div className={`select-text ${isStreamingActive ? 'typing-cursor' : ''}`}>
                                       <MarkdownRenderer 
                                         content={cleanContent} 
                                         onSendMessage={onSendMessage} 
@@ -1326,6 +1328,17 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                                         sessionId={chat?.id}
                                       />
                                     </div>
+                                  ) : (
+                                    isAwaitingFirstToken && (
+                                      <div className="py-1 select-none">
+                                        <TextLoader 
+                                          text="Thinking..." 
+                                          variant="cascade" 
+                                          color="currentColor"
+                                          className="text-muted-foreground text-sm italic" 
+                                        />
+                                      </div>
+                                    )
                                   )}
 
                                   {hasQuestion && (
