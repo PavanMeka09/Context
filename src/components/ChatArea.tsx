@@ -712,6 +712,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   chat,
   onSendMessage,
   isGenerating,
+  queuedMessageIds,
   onEditMessage,
   onDeleteMessage,
   onRegenerateResponse,
@@ -734,6 +735,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+
+  const displayMessages = useMemo(() => {
+    if (!chat || !chat.messages) return [];
+    if (!queuedMessageIds || queuedMessageIds.size === 0) return chat.messages;
+    return chat.messages.filter(m => !queuedMessageIds.has(m.id));
+  }, [chat?.messages, queuedMessageIds]);
 
   const handleToggleSpeech = (msgId: string, text: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
@@ -761,22 +768,22 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   };
 
   const exportConversation = (format: 'md' | 'json' | 'txt') => {
-    if (!chat || !chat.messages.length) return;
+    if (!chat || !displayMessages.length) return;
     const safeTitle = (chat.title || 'conversation').toLowerCase().replace(/[^a-z0-9]+/g, '-');
     const filename = `${safeTitle}.${format}`;
     let mimeType = 'text/plain';
     let content: string;
 
     if (format === 'json') {
-      content = JSON.stringify(chat, null, 2);
+      content = JSON.stringify({ ...chat, messages: displayMessages }, null, 2);
       mimeType = 'application/json';
     } else if (format === 'md') {
       content = `# ${chat.title}\n\n*Exported on ${new Date().toLocaleString()}*\n\n` +
-        chat.messages.map(m => `### ${m.role === 'user' ? 'User' : 'Assistant'}\n\n${m.content}`).join('\n\n---\n\n');
+        displayMessages.map(m => `### ${m.role === 'user' ? 'User' : 'Assistant'}\n\n${m.content}`).join('\n\n---\n\n');
       mimeType = 'text/markdown';
     } else {
       content = `${chat.title}\n${'='.repeat(chat.title.length)}\n\n` +
-        chat.messages.map(m => `[${m.role.toUpperCase()}]\n${m.content}`).join('\n\n');
+        displayMessages.map(m => `[${m.role.toUpperCase()}]\n${m.content}`).join('\n\n');
     }
 
     const blob = new Blob([content], { type: mimeType });
@@ -822,7 +829,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         });
       }
     }
-  }, [chat?.messages, isGenerating]);
+  }, [displayMessages, isGenerating]);
 
   const handleCopyMessage = async (id: string, text: string) => {
     try {
@@ -904,7 +911,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         {/* Right Header Toolbar */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Export Dropdown */}
-          {chat && chat.messages.length > 0 && (
+          {chat && displayMessages.length > 0 && (
             <div className="relative select-none">
               <button
                 onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
@@ -1016,13 +1023,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto px-6 py-6 space-y-6 scrollbar-thin select-text"
       >
-        {!chat || chat.messages.length === 0 ? (
+        {!chat || displayMessages.length === 0 ? (
           <EmptyChatFeed />
         ) : (
           
           /* Borderless Message Feed */
           <div className="mx-auto max-w-2xl space-y-8 pb-12">
-            {chat.messages.map((msg, index) => {
+            {displayMessages.map((msg, index) => {
               const isUser = msg.role === 'user';
               const isEditing = editingMessageId === msg.id;
 
@@ -1252,7 +1259,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                               const { hasCrawl, url: crawlUrl, title: crawlTitle, status: crawlStatus, error: crawlError, content: crawlContent, cleanContent: crawlCleanContent } = parseCrawlStatus(searchCleanContent);
                               const { thinking, content: thinkingCleanContent } = parseThinkingAndContent(crawlCleanContent);
                               const { hasQuestion, question, options, allowCustom, allowSkip, cleanContent } = parseQuestion(thinkingCleanContent);
-                              const isStreamingActive = index === chat.messages.length - 1 && isGenerating;
+                              const isStreamingActive = index === displayMessages.length - 1 && isGenerating;
                               const isStreamingThinking = isStreamingActive && !msg.content.includes('</thinking>') && msg.content.includes('<thinking>');
                               
                               const finalHasSearch = hasMetaSearch || hasLegacySearch;
@@ -1300,7 +1307,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                                   
                                   {thinking && (
                                     <div className="mb-3 rounded-lg border border-border bg-muted/30 p-3 text-xs w-full">
-                                      <details className="group" open={index === chat.messages.length - 1}>
+                                      <details className="group" open={index === displayMessages.length - 1}>
                                         <summary className="flex items-center justify-between font-semibold text-muted-foreground hover:text-foreground cursor-pointer select-none">
                                           <span className="flex items-center gap-1.5 font-sans text-[11px] tracking-wide uppercase">
                                             {isStreamingThinking ? (
@@ -1347,8 +1354,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                                       options={options}
                                       allowCustom={allowCustom}
                                       allowSkip={allowSkip}
-                                      isAnswered={index < chat.messages.length - 1}
-                                      selectedAnswer={index < chat.messages.length - 1 ? chat.messages[index + 1].content : null}
+                                      isAnswered={index < displayMessages.length - 1}
+                                      selectedAnswer={index < displayMessages.length - 1 ? displayMessages[index + 1].content : null}
                                       onAnswer={onSendMessage}
                                       isGenerating={isGenerating}
                                     />
@@ -1432,7 +1439,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
 
-                            {index === chat.messages.length - 1 && (
+                            {index === displayMessages.length - 1 && (
                               <RegenerateButton
                                 onClick={() => onRegenerateResponse(msg.id)}
                                 disabled={isGenerating}

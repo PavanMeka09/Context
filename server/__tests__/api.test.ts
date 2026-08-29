@@ -73,6 +73,28 @@ describe('Server API Endpoints & Security', () => {
       });
     });
 
+    app.get('/api/ollama/ps', (req, res) => {
+      res.json({
+        success: true,
+        models: [
+          {
+            name: 'llama3.2:latest',
+            model: 'llama3.2:latest',
+            size: 2019393189,
+            size_vram: 2019393189,
+            expires_at: '2026-08-30T05:00:00.000Z',
+            details: { parameter_size: '3.2B' }
+          }
+        ]
+      });
+    });
+
+    app.post('/api/ollama/unload', (req, res) => {
+      const { model } = req.body;
+      if (!model) return res.status(400).json({ success: false, error: 'Model name is required' });
+      res.json({ success: true, message: `Model ${model} unloaded from memory` });
+    });
+
     return app;
   };
 
@@ -136,6 +158,22 @@ describe('Server API Endpoints & Security', () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.models)).toBe(true);
     expect(res.body.models[0].name).toBe('llama3.2:latest');
+  });
+
+  it('GET /api/ollama/ps returns running models with shutdown expiration timestamp', async () => {
+    const res = await request(app).get('/api/ollama/ps?localUrl=http://localhost:11434');
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.models).toHaveLength(1);
+    expect(res.body.models[0].name).toBe('llama3.2:latest');
+    expect(res.body.models[0].expires_at).toBe('2026-08-30T05:00:00.000Z');
+  });
+
+  it('POST /api/ollama/unload unloads running model from memory', async () => {
+    const res = await request(app).post('/api/ollama/unload').send({ model: 'llama3.2:latest', localUrl: 'http://localhost:11434' });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.message).toContain('unloaded');
   });
 });
 

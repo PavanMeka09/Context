@@ -3,6 +3,7 @@ import { Square, ArrowUp, Paperclip, Mic, MicOff, X, FileText, Search, ChevronDo
 import type { Attachment, Settings, SystemPrompt } from '../utils/storage';
 import { Storage, PRESET_PROMPTS } from '../utils/storage';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
+import type { QueuedMessage } from '../App';
 
 interface ComposerProps {
   input: string;
@@ -20,7 +21,8 @@ interface ComposerProps {
   onSelectPromptId: (id: string) => void;
   customPrompts: SystemPrompt[];
   queueCount?: number;
-  messageQueue?: { id: string; userGoal: string }[];
+  messageQueue?: QueuedMessage[];
+  onRemoveQueuedMessage?: (id: string) => void;
 }
 
 export const Composer: React.FC<ComposerProps> = ({
@@ -38,7 +40,8 @@ export const Composer: React.FC<ComposerProps> = ({
   onSelectPromptId,
   customPrompts,
   queueCount = 0,
-  messageQueue
+  messageQueue,
+  onRemoveQueuedMessage
 }) => {
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [tempInput, setTempInput] = useState('');
@@ -263,9 +266,20 @@ export const Composer: React.FC<ComposerProps> = ({
           </div>
           <div className="flex flex-col gap-1.5 max-h-28 overflow-y-auto pr-1">
             {messageQueue.map((item, idx) => (
-              <div key={item.id} className="flex items-center gap-2 rounded-lg bg-background/80 border border-amber-500/20 px-2.5 py-1.5 text-foreground shadow-2xs">
+              <div key={item.id} className="group/queue-item flex items-center gap-2 rounded-lg bg-background/80 border border-amber-500/20 px-2.5 py-1.5 text-foreground shadow-2xs">
                 <span className="font-mono text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/15 px-1.5 py-0.5 rounded shrink-0">#{idx + 1}</span>
                 <span className="truncate flex-1 font-medium text-xs text-foreground/90">{item.userGoal}</span>
+                {onRemoveQueuedMessage && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveQueuedMessage(item.id)}
+                    className="opacity-0 group-hover/queue-item:opacity-100 flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition cursor-pointer"
+                    title="Remove from queue"
+                    aria-label="Remove queued message"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
               </div>
             ))}
           </div>

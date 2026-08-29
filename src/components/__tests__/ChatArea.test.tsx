@@ -87,7 +87,7 @@ describe('ChatArea Component', () => {
     expect(onSelectWorkspaceTab).toHaveBeenCalledWith('artifacts');
   });
 
-  it('does not render Queued status badge inside chat message list', () => {
+  it('does not render queued messages inside chat message list', () => {
     const queuedChat: Chat = {
       ...mockChat,
       messages: [
@@ -106,6 +106,9 @@ describe('ChatArea Component', () => {
     );
 
     expect(screen.queryByText('Queued')).toBeNull();
+    expect(screen.queryByText('Queued user message')).toBeNull();
+    expect(screen.getByText('Hello AI')).toBeDefined();
+    expect(screen.getByText('Processing...')).toBeDefined();
   });
 
   it('does not spin previous message reload icons but spins active response when isGenerating is true', () => {

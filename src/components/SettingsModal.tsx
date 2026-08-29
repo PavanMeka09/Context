@@ -2,8 +2,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PRESET_PROMPTS, Storage, PROVIDERS } from '../utils/storage';
 import type { Settings, SystemPrompt, Chat, MemoryItem, ProviderProfile, ProviderType } from '../utils/storage';
-import { fetchModels, testOllamaConnection, type ModelOption } from '../utils/api';
-import { X, Eye, EyeOff, Save, Plus, Trash2, Edit2, AlertCircle, Loader2, Download, CheckSquare, ChevronDown, Check, Globe, Search, Cpu, Database, FileText, Terminal, Brain } from 'lucide-react';
+import { fetchModels, testOllamaConnection, fetchOllamaRunningModels, unloadOllamaModel, formatShutdownCountdown, type ModelOption, type OllamaRunningModel } from '../utils/api';
+import { X, Eye, EyeOff, Save, Plus, Trash2, Edit2, AlertCircle, Loader2, Download, CheckSquare, ChevronDown, Check, Globe, Search, Cpu, Database, FileText, Terminal, Brain, Activity, Clock, PowerOff, RotateCw } from 'lucide-react';
 import { testSearxngConnection } from '../utils/searxng';
 
 interface SettingsModalProps {
@@ -14,6 +14,99 @@ interface SettingsModalProps {
   onPromptsChanged: () => void;
   onBackupImported: () => void;
 }
+
+interface OllamaModelItemProps {
+  running: OllamaRunningModel;
+  isUnloading: boolean;
+  onUnload: (modelName: string) => void;
+}
+
+const OllamaModelItem: React.FC<OllamaModelItemProps> = ({
+  running,
+  isUnloading,
+  onUnload
+}) => {
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const modelName = running.name || running.model;
+  const shutdownInfo = formatShutdownCountdown(running.expires_at, currentTime);
+  const vramFormatted = running.size_vram
+    ? `${(running.size_vram / (1024 * 1024 * 1024)).toFixed(2)} GB VRAM`
+    : running.size
+    ? `${(running.size / (1024 * 1024 * 1024)).toFixed(2)} GB`
+    : null;
+
+  return (
+    <div
+      key={modelName}
+      className="rounded-md border border-primary/20 bg-primary/5 p-2.5 flex flex-col gap-1.5"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+          <span className="text-xs font-mono font-medium text-foreground truncate">
+            {modelName}
+          </span>
+          {running.details?.parameter_size && (
+            <span className="text-[10px] text-muted-foreground shrink-0 bg-muted/60 px-1.5 py-0.5 rounded">
+              {running.details.parameter_size}
+            </span>
+          )}
+          {vramFormatted && (
+            <span className="text-[10px] text-muted-foreground shrink-0 bg-muted/60 px-1.5 py-0.5 rounded">
+              {vramFormatted}
+            </span>
+          )}
+        </div>
+
+        <button
+          type="button"
+          disabled={isUnloading}
+          onClick={() => onUnload(modelName)}
+          className="flex items-center gap-1 rounded border border-border bg-background hover:bg-destructive/10 hover:border-destructive/30 hover:text-destructive px-2 py-1 text-[10px] font-medium text-muted-foreground transition active:scale-95 cursor-pointer shrink-0 disabled:opacity-50"
+          title="Immediately shut down and unload model from memory"
+        >
+          {isUnloading ? (
+            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+          ) : (
+            <PowerOff className="h-2.5 w-2.5" />
+          )}
+          <span>Unload Now</span>
+        </button>
+      </div>
+
+      {/* Countdown and Expiration Info */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] pt-1 border-t border-primary/10">
+        <div className="flex items-center gap-1.5">
+          <Clock className="h-3 w-3 text-primary shrink-0" />
+          <span className="text-muted-foreground">Model Shutdown:</span>
+          <span className={`font-semibold ${shutdownInfo.isExpired ? 'text-destructive' : shutdownInfo.isIndefinite ? 'text-primary' : 'text-foreground'}`}>
+            {shutdownInfo.isIndefinite
+              ? 'Never (Kept in memory)'
+              : shutdownInfo.isExpired
+              ? 'Expired / Unloading'
+              : `In ${shutdownInfo.countdownText}`}
+          </span>
+        </div>
+        {!shutdownInfo.isIndefinite && !shutdownInfo.isExpired && (
+          <span className="text-[10px] text-muted-foreground font-mono">
+            (at {shutdownInfo.formattedTime})
+          </span>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -251,6 +344,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const [testingOllamaConnection, setTestingOllamaConnection] = useState(false);
   const [ollamaTestResult, setOllamaTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [ollamaRunningModels, setOllamaRunningModels] = useState<OllamaRunningModel[]>([]);
+  const [loadingRunningModels, setLoadingRunningModels] = useState(false);
+  const [unloadingModelName, setUnloadingModelName] = useState<string | null>(null);
 
   const handleTestConnection = async () => {
     setTestingConnection(true);
@@ -279,6 +375,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  const loadRunningOllamaModels = useCallback(async (customUrl?: string) => {
+    const targetUrl = customUrl || settings.localUrl || 'http://localhost:11434';
+    setLoadingRunningModels(true);
+    try {
+      const res = await fetchOllamaRunningModels(targetUrl);
+      if (res.success) {
+        setOllamaRunningModels(res.models || []);
+      } else {
+        setOllamaRunningModels([]);
+      }
+    } catch {
+      setOllamaRunningModels([]);
+    } finally {
+      setLoadingRunningModels(false);
+    }
+  }, [settings.localUrl]);
+
+  const handleUnloadOllamaModel = async (modelName: string) => {
+    setUnloadingModelName(modelName);
+    try {
+      const targetUrl = settings.localUrl || 'http://localhost:11434';
+      await unloadOllamaModel(modelName, targetUrl);
+      await loadRunningOllamaModels(targetUrl);
+    } catch (err) {
+      console.error('Failed to unload model:', err);
+    } finally {
+      setUnloadingModelName(null);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'provider' || settings.provider !== 'ollama') return;
+    loadRunningOllamaModels();
+  }, [isOpen, activeTab, settings.provider, settings.localUrl, loadRunningOllamaModels]);
+
   const handleTestOllamaConnection = async () => {
     setTestingOllamaConnection(true);
     setOllamaTestResult(null);
@@ -297,6 +428,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           localUrl: targetUrl,
           model: settings.model
         });
+        loadRunningOllamaModels(targetUrl);
       } else {
         setOllamaTestResult({
           success: false,
@@ -453,6 +585,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const localUrl = newProvider === 'ollama' ? (settings.localUrl || 'http://localhost:11434') : settings.localUrl;
     updateActiveProfileState(() => ({ provider: newProvider, model: defaultModel, localUrl }));
     loadModelsForProvider({ provider: newProvider, apiKey: settings.apiKey, model: defaultModel, localUrl });
+    if (newProvider === 'ollama') {
+      loadRunningOllamaModels(localUrl);
+    }
   };
 
   const handleAddProfile = () => {
@@ -803,6 +938,56 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       <span>{ollamaTestResult.message}</span>
                     </div>
                   )}
+
+                  {/* Ollama Loaded Models & Shutdown Timer Section */}
+                  <div className="mt-3 rounded-lg border border-border/80 bg-muted/20 p-3 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Activity className="h-3.5 w-3.5 text-primary" />
+                        <span className="text-xs font-semibold text-foreground">
+                          Ollama Model Runtime & Shutdown Status
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={loadingRunningModels}
+                        onClick={() => loadRunningOllamaModels()}
+                        className="flex items-center gap-1 rounded p-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent transition cursor-pointer disabled:opacity-50"
+                        title="Refresh loaded models status"
+                      >
+                        <RotateCw className={`h-3 w-3 ${loadingRunningModels ? 'animate-spin' : ''}`} />
+                        <span>Refresh</span>
+                      </button>
+                    </div>
+
+                    {loadingRunningModels && ollamaRunningModels.length === 0 ? (
+                      <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                        <span>Checking running models in Ollama...</span>
+                      </div>
+                    ) : ollamaRunningModels.length > 0 ? (
+                      <div className="space-y-2">
+                        {ollamaRunningModels.map((running) => (
+                          <OllamaModelItem
+                            key={running.name || running.model}
+                            running={running}
+                            isUnloading={unloadingModelName === (running.name || running.model)}
+                            onUnload={handleUnloadOllamaModel}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 rounded-md border border-border/50 bg-background/50 p-2.5 text-xs text-muted-foreground">
+                        <span className="h-2 w-2 rounded-full bg-muted-foreground/40 shrink-0"></span>
+                        <div className="flex-1">
+                          <p className="text-[11px] text-foreground font-medium">No model currently loaded in memory</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            Ollama loads models on first request and automatically shuts them down after 5 minutes of inactivity.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 

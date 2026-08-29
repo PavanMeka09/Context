@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fetchModels, testOllamaConnection, extractWebSearchQuery, webSearchToolParametersSchema, streamChatCompletion } from '../api';
+import { fetchModels, testOllamaConnection, fetchOllamaRunningModels, unloadOllamaModel, formatShutdownCountdown, extractWebSearchQuery, webSearchToolParametersSchema, streamChatCompletion } from '../api';
 import type { Settings, Message } from '../storage';
 import * as aiModule from 'ai';
 type AiModule = typeof aiModule;
@@ -151,6 +151,123 @@ describe('src/utils/api.ts', () => {
       const result = await testOllamaConnection('http://localhost:11434');
       expect(result.success).toBe(true);
       expect(result.models).toEqual(['llama3.2:latest']);
+    });
+  });
+
+  describe('fetchOllamaRunningModels', () => {
+    it('fetches running models via direct fetch', async () => {
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          models: [
+            {
+              name: 'llama3.2:latest',
+              model: 'llama3.2:latest',
+              size_vram: 2048000000,
+              expires_at: '2026-08-30T05:00:00.000Z'
+            }
+          ]
+        })
+      } as Response);
+
+      const result = await fetchOllamaRunningModels('http://localhost:11434');
+      expect(result.success).toBe(true);
+      expect(result.models).toHaveLength(1);
+      expect(result.models[0].name).toBe('llama3.2:latest');
+      expect(result.models[0].expires_at).toBe('2026-08-30T05:00:00.000Z');
+    });
+
+    it('falls back to proxy when direct fetch fails', async () => {
+      global.fetch = vi.fn()
+        .mockRejectedValueOnce(new Error('Direct fetch failed'))
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            success: true,
+            models: [{ name: 'mistral:latest', expires_at: '2026-08-30T05:10:00.000Z' }]
+          })
+        } as Response);
+
+      const result = await fetchOllamaRunningModels('http://localhost:11434');
+      expect(result.success).toBe(true);
+      expect(result.models).toHaveLength(1);
+      expect(result.models[0].name).toBe('mistral:latest');
+    });
+
+    it('returns empty models array on error', async () => {
+      global.fetch = vi.fn().mockRejectedValue(new Error('Network error'));
+      const result = await fetchOllamaRunningModels('http://localhost:11434');
+      expect(result.success).toBe(false);
+      expect(result.models).toEqual([]);
+    });
+  });
+
+  describe('unloadOllamaModel', () => {
+    it('unloads model via direct fetch', async () => {
+      global.fetch = vi.fn().mockResolvedValue({ ok: true } as Response);
+      const result = await unloadOllamaModel('llama3.2:latest', 'http://localhost:11434');
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('unloaded');
+    });
+
+    it('falls back to proxy when direct fetch fails', async () => {
+      global.fetch = vi.fn()
+        .mockRejectedValueOnce(new Error('Direct fail'))
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ success: true, message: 'Unloaded via proxy' })
+        } as Response);
+
+      const result = await unloadOllamaModel('llama3.2:latest', 'http://localhost:11434');
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe('formatShutdownCountdown', () => {
+    const fixedNow = new Date('2026-08-30T04:30:00.000Z').getTime();
+
+    it('formats remaining minutes and seconds accurately', () => {
+      // 4 minutes 30 seconds ahead
+      const targetTime = new Date('2026-08-30T04:34:30.000Z').toISOString();
+      const result = formatShutdownCountdown(targetTime, fixedNow);
+      expect(result.isExpired).toBe(false);
+      expect(result.isIndefinite).toBe(false);
+      expect(result.countdownText).toBe('4m 30s');
+      expect(result.remainingSeconds).toBe(270);
+    });
+
+    it('formats remaining seconds when less than a minute', () => {
+      const targetTime = new Date('2026-08-30T04:30:45.000Z').toISOString();
+      const result = formatShutdownCountdown(targetTime, fixedNow);
+      expect(result.isExpired).toBe(false);
+      expect(result.countdownText).toBe('45s');
+      expect(result.remainingSeconds).toBe(45);
+    });
+
+    it('formats hours and minutes when more than an hour', () => {
+      const targetTime = new Date('2026-08-30T05:45:00.000Z').toISOString();
+      const result = formatShutdownCountdown(targetTime, fixedNow);
+      expect(result.isExpired).toBe(false);
+      expect(result.countdownText).toBe('1h 15m');
+      expect(result.remainingSeconds).toBe(4500);
+    });
+
+    it('identifies expired shutdown times', () => {
+      const pastTime = new Date('2026-08-30T04:29:00.000Z').toISOString();
+      const result = formatShutdownCountdown(pastTime, fixedNow);
+      expect(result.isExpired).toBe(true);
+      expect(result.countdownText).toBe('Expired / Unloading now');
+      expect(result.remainingSeconds).toBe(0);
+    });
+
+    it('handles indefinite keep_alive (year < 1970 or missing)', () => {
+      const zeroTime = '0001-01-01T00:00:00Z';
+      const result = formatShutdownCountdown(zeroTime, fixedNow);
+      expect(result.isIndefinite).toBe(true);
+      expect(result.countdownText).toContain('Indefinite');
+
+      const undefinedResult = formatShutdownCountdown(undefined, fixedNow);
+      expect(undefinedResult.isIndefinite).toBe(true);
     });
   });
 

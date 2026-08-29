@@ -288,6 +288,187 @@ export async function testOllamaConnection(localUrl?: string): Promise<{
   }
 }
 
+export interface OllamaRunningModel {
+  name: string;
+  model: string;
+  size?: number;
+  size_vram?: number;
+  digest?: string;
+  expires_at?: string;
+  details?: {
+    parent_model?: string;
+    format?: string;
+    family?: string;
+    families?: string[];
+    parameter_size?: string;
+    quantization_level?: string;
+  };
+}
+
+export interface OllamaRunningModelsResponse {
+  success: boolean;
+  models: OllamaRunningModel[];
+  error?: string;
+}
+
+export async function fetchOllamaRunningModels(localUrl?: string): Promise<OllamaRunningModelsResponse> {
+  const rawUrl = localUrl || 'http://localhost:11434';
+  const targetUrl = rawUrl.replace(/\/+$/, '');
+
+  // 1. Try direct client fetch first
+  try {
+    const res = await fetch(`${targetUrl}/api/ps`);
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        success: true,
+        models: Array.isArray(data?.models) ? data.models : [],
+      };
+    }
+  } catch {
+    // Direct fetch failed (e.g. CORS or network), try backend proxy
+  }
+
+  // 2. Try backend proxy
+  try {
+    const res = await fetch(`/api/ollama/ps?localUrl=${encodeURIComponent(targetUrl)}`);
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        success: true,
+        models: Array.isArray(data?.models) ? data.models : [],
+      };
+    }
+    const errData = await res.json().catch(() => ({}));
+    return {
+      success: false,
+      models: [],
+      error: errData.error || `Server responded with ${res.status}`,
+    };
+  } catch (e) {
+    return {
+      success: false,
+      models: [],
+      error: e instanceof Error ? e.message : 'Could not reach Ollama server.',
+    };
+  }
+}
+
+export async function unloadOllamaModel(
+  modelName: string,
+  localUrl?: string
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  const rawUrl = localUrl || 'http://localhost:11434';
+  const targetUrl = rawUrl.replace(/\/+$/, '');
+
+  // Try direct client fetch first
+  try {
+    const res = await fetch(`${targetUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: modelName, keep_alive: 0 }),
+    });
+    if (res.ok) {
+      return { success: true, message: `Model ${modelName} unloaded successfully` };
+    }
+  } catch {
+    // Try backend proxy
+  }
+
+  try {
+    const res = await fetch('/api/ollama/unload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: modelName, localUrl: targetUrl }),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+    const errData = await res.json().catch(() => ({}));
+    return {
+      success: false,
+      error: errData.error || `Server responded with ${res.status}`,
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : 'Could not unload Ollama model.',
+    };
+  }
+}
+
+export interface FormattedShutdownCountdown {
+  formattedTime: string;
+  countdownText: string;
+  isExpired: boolean;
+  isIndefinite: boolean;
+  remainingSeconds: number;
+}
+
+export const INDEFINITE_SHUTDOWN_RESULT: FormattedShutdownCountdown = {
+  formattedTime: 'Indefinite',
+  countdownText: 'Never (Indefinite keep-alive)',
+  isExpired: false,
+  isIndefinite: true,
+  remainingSeconds: Infinity,
+};
+
+export function formatShutdownCountdown(expiresAt?: string, now = Date.now()): FormattedShutdownCountdown {
+  if (!expiresAt) {
+    return INDEFINITE_SHUTDOWN_RESULT;
+  }
+
+  const expDate = new Date(expiresAt);
+  if (isNaN(expDate.getTime())) {
+    return INDEFINITE_SHUTDOWN_RESULT;
+  }
+
+  const year = expDate.getFullYear();
+  if (year < 1970 || year > 3000) {
+    return INDEFINITE_SHUTDOWN_RESULT;
+  }
+
+  const diffMs = expDate.getTime() - now;
+  const diffSec = Math.floor(diffMs / 1000);
+
+  const formattedTime = expDate.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+
+  if (diffSec <= 0) {
+    return {
+      formattedTime,
+      countdownText: 'Expired / Unloading now',
+      isExpired: true,
+      isIndefinite: false,
+      remainingSeconds: 0,
+    };
+  }
+
+  let countdownText = '';
+  if (diffSec < 60) {
+    countdownText = `${diffSec}s`;
+  } else if (diffSec < 3600) {
+    const mins = Math.floor(diffSec / 60);
+    const secs = diffSec % 60;
+    countdownText = secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+  } else {
+    const hours = Math.floor(diffSec / 3600);
+    const mins = Math.floor((diffSec % 3600) / 60);
+    countdownText = mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  }
+
+  return {
+    formattedTime,
+    countdownText,
+    isExpired: false,
+    isIndefinite: false,
+    remainingSeconds: diffSec,
+  };
+}
+
 export interface StreamCallbacks {
   onChunk: (text: string) => void;
   onDone: (fullText: string) => void;

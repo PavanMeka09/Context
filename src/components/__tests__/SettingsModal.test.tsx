@@ -10,6 +10,29 @@ vi.mock('../../utils/api', () => ({
     success: true,
     message: 'Successfully connected to Ollama! (2 models found)',
     models: ['llama3.2', 'deepseek-r1']
+  }),
+  fetchOllamaRunningModels: vi.fn().mockResolvedValue({
+    success: true,
+    models: [
+      {
+        name: 'llama3.2:latest',
+        model: 'llama3.2:latest',
+        size_vram: 2147483648,
+        expires_at: '2026-08-30T05:00:00.000Z',
+        details: { parameter_size: '3.2B' }
+      }
+    ]
+  }),
+  unloadOllamaModel: vi.fn().mockResolvedValue({
+    success: true,
+    message: 'Model llama3.2:latest unloaded'
+  }),
+  formatShutdownCountdown: vi.fn().mockReturnValue({
+    formattedTime: '05:00:00 AM',
+    countdownText: '4m 0s',
+    isExpired: false,
+    isIndefinite: false,
+    remainingSeconds: 240
   })
 }));
 
@@ -209,5 +232,29 @@ describe('SettingsModal Component', () => {
 
     expect(screen.getByText('Enable Live Web Search')).toBeDefined();
     expect(screen.getByText('Enable Autonomous Web Context (Crawler)')).toBeDefined();
+  });
+
+  it('renders Ollama model shutdown countdown and allows unloading model', async () => {
+    await act(async () => {
+      render(<SettingsModal {...defaultProps} />);
+    });
+
+    const providerSelect = screen.getByLabelText('API Provider');
+    await act(async () => {
+      fireEvent.change(providerSelect, { target: { value: 'ollama' } });
+    });
+
+    expect(screen.getByText('Ollama Model Runtime & Shutdown Status')).toBeDefined();
+    expect(screen.getByText('llama3.2:latest')).toBeDefined();
+    expect(screen.getByText(/In 4m 0s/i)).toBeDefined();
+    expect(screen.getByText(/(at 05:00:00 AM)/i)).toBeDefined();
+    expect(screen.getByText('2.00 GB VRAM')).toBeDefined();
+
+    const unloadBtn = screen.getByText('Unload Now');
+    await act(async () => {
+      fireEvent.click(unloadBtn);
+    });
+
+    expect(screen.getByText('Unload Now')).toBeDefined();
   });
 });

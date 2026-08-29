@@ -170,11 +170,15 @@ app.post('/api/ollama/test', async (req, res) => {
   }
 });
 
+// Helper: Clean and normalize local service URLs
+function normalizeLocalUrl(url, defaultUrl = 'http://localhost:11434') {
+  return String(url || defaultUrl).trim().replace(/\/+$/, '');
+}
+
 // Endpoint: Ollama Models List Proxy
 app.get('/api/ollama/models', async (req, res) => {
   try {
-    const localUrl = req.query.localUrl || 'http://localhost:11434';
-    const targetUrl = String(localUrl).replace(/\/+$/, '');
+    const targetUrl = normalizeLocalUrl(req.query.localUrl);
     const response = await fetch(`${targetUrl}/api/tags`, {
       method: 'GET',
       headers: { 'Accept': 'application/json' }
@@ -186,6 +190,49 @@ app.get('/api/ollama/models', async (req, res) => {
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message || 'Failed to fetch Ollama models' });
+  }
+});
+
+// Endpoint: Ollama Running Models (ps) Proxy
+app.get('/api/ollama/ps', async (req, res) => {
+  try {
+    const targetUrl = normalizeLocalUrl(req.query.localUrl);
+    const response = await fetch(`${targetUrl}/api/ps`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!response.ok) {
+      return res.status(response.status).json({ success: false, error: `Ollama returned HTTP ${response.status}` });
+    }
+    const data = await response.json();
+    res.json({
+      success: true,
+      models: Array.isArray(data?.models) ? data.models : []
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch running Ollama models' });
+  }
+});
+
+// Endpoint: Ollama Unload Model Proxy
+app.post('/api/ollama/unload', async (req, res) => {
+  try {
+    const { model, localUrl } = req.body;
+    if (!model) {
+      return res.status(400).json({ success: false, error: 'Model name is required' });
+    }
+    const targetUrl = normalizeLocalUrl(localUrl);
+    const response = await fetch(`${targetUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, keep_alive: 0 })
+    });
+    if (!response.ok) {
+      return res.status(response.status).json({ success: false, error: `Ollama returned HTTP ${response.status}` });
+    }
+    res.json({ success: true, message: `Model ${model} unloaded from memory` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to unload Ollama model' });
   }
 });
 

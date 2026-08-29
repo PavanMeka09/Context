@@ -36,7 +36,7 @@ interface SyncEvent {
   timestamp: string;
 }
 
-interface QueuedMessage {
+export interface QueuedMessage {
   id: string;
   chatId: string;
   userMessageId: string;
@@ -613,9 +613,15 @@ function App() {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
+    const cancelledQueuedGoals = messageQueueRef.current.map(q => q.userGoal);
     messageQueueRef.current = [];
     setMessageQueue([]);
     setIsGenerating(false);
+
+    if (cancelledQueuedGoals.length > 0) {
+      setComposerInput(prev => prev ? `${prev}\n${cancelledQueuedGoals[0]}` : cancelledQueuedGoals[0]);
+      showToast(`Stopped generation and restored ${cancelledQueuedGoals.length} queued prompt(s) to input.`, 'success');
+    }
 
     const activeChat = chats.find(c => c.id === activeChatId);
     if (isChatBrowserSessionActive(activeChat)) {
@@ -816,10 +822,17 @@ function App() {
           }
         },
         onError: (errorMsg: string) => {
+          const droppedGoals = messageQueueRef.current.map(q => q.userGoal);
           messageQueueRef.current = [];
           setMessageQueue([]);
           setIsGenerating(false);
-          showToast(errorMsg, 'error');
+
+          if (droppedGoals.length > 0) {
+            setComposerInput(prev => prev ? `${prev}\n${droppedGoals[0]}` : droppedGoals[0]);
+            showToast(`${errorMsg} (Halted ${droppedGoals.length} queued message(s), restored to input)`, 'error');
+          } else {
+            showToast(errorMsg, 'error');
+          }
           
           let updatedChat: Chat | undefined;
           setChats(prevChats => {
@@ -912,8 +925,17 @@ function App() {
     } catch (e) {
       const error = e as Error;
       console.error('Failed to start browser agent on backend:', error);
+      const droppedGoals = messageQueueRef.current.map(q => q.userGoal);
+      messageQueueRef.current = [];
+      setMessageQueue([]);
       setIsGenerating(false);
-      showToast(error.message || 'Browser companion server failed to start the agent loop.', 'error');
+
+      if (droppedGoals.length > 0) {
+        setComposerInput(prev => prev ? `${prev}\n${droppedGoals[0]}` : droppedGoals[0]);
+        showToast(`${error.message || 'Browser companion server failed to start the agent loop.'} (Halted ${droppedGoals.length} queued message(s), restored to input)`, 'error');
+      } else {
+        showToast(error.message || 'Browser companion server failed to start the agent loop.', 'error');
+      }
       
       let updatedChat: Chat | undefined;
       // Rollback chat session (remove placeholder message)
@@ -952,6 +974,11 @@ function App() {
     }
   };
 
+  const handleRemoveQueuedMessage = (id: string) => {
+    messageQueueRef.current = messageQueueRef.current.filter(item => item.id !== id);
+    setMessageQueue([...messageQueueRef.current]);
+  };
+
   const processNextInQueue = (latestChats: Chat[]) => {
     if (messageQueueRef.current.length > 0) {
       const nextItem = messageQueueRef.current.shift()!;
@@ -960,14 +987,28 @@ function App() {
       let currentChats = latestChats && latestChats.length > 0 ? latestChats : chatsRef.current;
       const targetChatIndex = currentChats.findIndex(c => c.id === nextItem.chatId);
       if (targetChatIndex !== -1) {
-        const upgraded = upgradeChatToTree(currentChats[targetChatIndex]);
-        if (upgraded.messageTree && upgraded.messageTree[nextItem.userMessageId]) {
-          upgraded.activeLeafId = nextItem.userMessageId;
-          upgraded.messages = reconstructActivePath(upgraded.messageTree, nextItem.userMessageId);
-          currentChats = currentChats.map(c => c.id === nextItem.chatId ? upgraded : c);
-          chatsRef.current = currentChats;
-          setChats(currentChats);
+        const activeChat = currentChats[targetChatIndex];
+        const upgraded = upgradeChatToTree(activeChat);
+
+        const userMessage: Message = {
+          id: nextItem.userMessageId || `msg-${Date.now()}`,
+          role: 'user',
+          content: nextItem.userGoal,
+          timestamp: new Date().toISOString(),
+          attachments: nextItem.attachments
+        };
+
+        if (upgraded.messages.length === 0 && upgraded.title.startsWith('New Conversation')) {
+          const firstFewWords = nextItem.userGoal ? nextItem.userGoal.split(' ').slice(0, 4).join(' ') : 'New Conversation';
+          upgraded.title = firstFewWords || 'New Conversation';
         }
+
+        const parentId = upgraded.activeLeafId || null;
+        const updatedChat = addMessageToTree(upgraded, userMessage, parentId);
+        currentChats = currentChats.map(c => c.id === nextItem.chatId ? updatedChat : c);
+        chatsRef.current = currentChats;
+        setChats(currentChats);
+        Storage.saveChat(updatedChat);
       }
 
       if (settings.isBrowserAgentEnabled) {
@@ -1009,6 +1050,20 @@ function App() {
       Storage.saveActiveChatId(newChat.id);
     }
 
+    if (isGenerating) {
+      const queuedItem: QueuedMessage = {
+        id: `queue-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        chatId: currentChatId,
+        userMessageId: `msg-${Date.now()}`,
+        userGoal: text,
+        attachments: attachmentsToSend
+      };
+      messageQueueRef.current.push(queuedItem);
+      setMessageQueue([...messageQueueRef.current]);
+      setComposerInput('');
+      return;
+    }
+
     // Append User message
     const userMessage: Message = {
       id: `msg-${Date.now()}`,
@@ -1042,22 +1097,10 @@ function App() {
 
     // Trigger completion stream
     if (currentChatId) {
-      if (isGenerating) {
-        const queuedItem: QueuedMessage = {
-          id: `queue-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          chatId: currentChatId,
-          userMessageId: userMessage.id,
-          userGoal: text,
-          attachments: attachmentsToSend
-        };
-        messageQueueRef.current.push(queuedItem);
-        setMessageQueue([...messageQueueRef.current]);
+      if (settings.isBrowserAgentEnabled) {
+        await triggerBrowserAgentLoop(currentChats, currentChatId, text);
       } else {
-        if (settings.isBrowserAgentEnabled) {
-          await triggerBrowserAgentLoop(currentChats, currentChatId, text);
-        } else {
-          await triggerStreamingResponse(currentChats, currentChatId);
-        }
+        await triggerStreamingResponse(currentChats, currentChatId);
       }
     }
   };
@@ -1481,6 +1524,7 @@ function App() {
             customPrompts={customPrompts}
             queueCount={messageQueue.length}
             messageQueue={messageQueue}
+            onRemoveQueuedMessage={handleRemoveQueuedMessage}
           />
         </ChatArea>
       </ErrorBoundary>

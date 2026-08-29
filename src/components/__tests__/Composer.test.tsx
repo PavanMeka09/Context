@@ -132,7 +132,8 @@ describe('Composer Component', () => {
     expect(handleSend).toHaveBeenCalledTimes(1);
   });
 
-  it('displays Queue box at top of input when messageQueue has items', () => {
+  it('displays Queue box at top of input when messageQueue has items and calls onRemoveQueuedMessage when cancelled', () => {
+    const handleRemove = vi.fn();
     render(
       <Composer
         input=""
@@ -147,15 +148,21 @@ describe('Composer Component', () => {
         customPrompts={[]}
         queueCount={2}
         messageQueue={[
-          { id: 'q1', userGoal: 'First queued prompt' },
-          { id: 'q2', userGoal: 'Second queued prompt' }
+          { id: 'q1', chatId: 'chat-1', userMessageId: 'm-1', userGoal: 'First queued prompt' },
+          { id: 'q2', chatId: 'chat-1', userMessageId: 'm-2', userGoal: 'Second queued prompt' }
         ]}
+        onRemoveQueuedMessage={handleRemove}
       />
     );
 
     expect(screen.getByText('Queued Messages (2)')).toBeDefined();
     expect(screen.getByText('First queued prompt')).toBeDefined();
     expect(screen.getByText('Second queued prompt')).toBeDefined();
+
+    const removeButtons = screen.getAllByTitle('Remove from queue');
+    expect(removeButtons.length).toBe(2);
+    fireEvent.click(removeButtons[0]);
+    expect(handleRemove).toHaveBeenCalledWith('q1');
   });
   it('renders voice typing mic button', () => {
     render(
