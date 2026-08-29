@@ -95,6 +95,9 @@ async function executeCrawl(url, options = {}) {
     if (options.bypassCache !== false) {
       args.push('--bypass-cache');
     }
+    if (options.wordLimit && Number.isInteger(Number(options.wordLimit))) {
+      args.push('--word-limit', String(options.wordLimit));
+    }
 
     execFile(pyCmd, args, { maxBuffer: 10 * 1024 * 1024, timeout: 30000 }, (error, stdout, stderr) => {
       if (error && !stdout) {
