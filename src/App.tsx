@@ -83,6 +83,35 @@ function addMessageToTree(chat: Chat, message: Message, parentId: string | null)
   };
 }
 
+function initMessageBrowserSession(
+  chats: Chat[],
+  chatId: string,
+  messageId: string,
+  initialUrl: string = ''
+): Chat[] {
+  return chats.map(c => {
+    if (c.id === chatId) {
+      const upgraded = upgradeChatToTree(c);
+      const tree = { ...upgraded.messageTree };
+      if (tree[messageId]) {
+        tree[messageId] = {
+          ...tree[messageId],
+          browserSession: tree[messageId].browserSession || {
+            url: initialUrl,
+            title: 'Starting browser sandbox...',
+            status: 'running',
+            steps: [],
+            screenshotTimestamp: 0
+          }
+        };
+      }
+      const messages = reconstructActivePath(tree, upgraded.activeLeafId);
+      return { ...upgraded, messageTree: tree, messages };
+    }
+    return c;
+  });
+}
+
 function App() {
   const [chats, setChats] = useState<Chat[]>([]);
   const chatsRef = useRef<Chat[]>(chats);
@@ -476,7 +505,6 @@ function App() {
                 if (tree[update.messageId]) {
                   tree[update.messageId] = {
                     ...tree[update.messageId],
-                    content: update.text || '',
                     browserSession: {
                       url: update.url,
                       title: update.title,
@@ -501,14 +529,6 @@ function App() {
           });
           if (updatedChat) {
             Storage.saveChat(updatedChat);
-          }
-
-          if (update.status === 'completed' || update.status === 'failed') {
-            if (messageQueueRef.current.length > 0) {
-              processNextInQueueRef.current(chatsRef.current);
-            } else {
-              setIsGenerating(false);
-            }
           }
         }
 
@@ -637,7 +657,7 @@ function App() {
     const all = [...PRESET_PROMPTS, ...customPrompts];
     const basePrompt = all.find(p => p.id === activePromptId)?.content || '';
     
-    const workspaceCapabilities = `\n\n[WORKSPACE CAPABILITIES]\nYou are running inside Context, a premium local-first AI workspace. The user has access to the following integrated tools directly in the interface:\n1. **Interactive Code Execution (JS/TS/Python)**: Every JavaScript, TypeScript, or Python code block you generate has a "Run" button next to it. The user can execute the script locally in a sandbox. When writing scripts, use console.log (JS/TS) or print (Python) to output results so they display in their console drawer.\n2. **Auto-Fix Self-Healing Loop**: If their script throws an execution error, the user can click "Fix with AI" to automatically send the code and terminal stack trace back to you. When you receive an execution error report, focus on providing a revised, corrected, and clean script.\n3. **Web Search (SearXNG)**: A toggle to search the web in real-time. If search is enabled, relevant web results are injected into your system context automatically.\n4. **Local Document Context (RAG)**: A toggle to index local documents. Excerpts of matching text files are injected into your context.\nIf the user asks you to run a code block, search the web, or read their documents, remind them that they can toggle/use these features in the bottom toolbar of their composer input box.`;
+    const workspaceCapabilities = `\n\n[WORKSPACE CAPABILITIES]\nYou are running inside Context, a premium local-first AI workspace. The user has access to the following integrated tools directly in the interface:\n1. **Interactive Code Execution (JS/TS/Python)**: Every JavaScript, TypeScript, or Python code block you generate has a "Run" button next to it. The user can execute the script locally in a sandbox. When writing scripts, use console.log (JS/TS) or print (Python) to output results so they display in their console drawer.\n2. **Auto-Fix Self-Healing Loop**: If their script throws an execution error, the user can click "Fix with AI" to automatically send the code and terminal stack trace back to you. When you receive an execution error report, focus on providing a revised, corrected, and clean script.\n3. **Web Search (SearXNG)**: A toggle to search the web in real-time. If search is enabled, relevant web results are injected into your system context automatically.\n4. **Local Document Context (RAG)**: A toggle to index local documents. Excerpts of matching text files are injected into your context.\n5. **Browser Sandbox Automation**: When browser capability is enabled, you have access to the \`browser_agent\` tool to interactively navigate websites, click elements, fill forms, and inspect dynamic web pages. Call this tool only when dynamic browser interaction is required.\nIf the user asks you to run a code block, search the web, read documents, or automate a browser, remind them that they can toggle/use these features in the bottom toolbar of their composer input box.`;
 
     const questionInstructions = `\n\n[INTERACTIVE QUESTIONS CAPABILITY]\nIf you need to ask the user a clarifying question, gather preferences, choose a topic/option, or conduct an interactive quiz/test, you can render a beautiful interactive multiple-choice Question Card by outputting a custom XML-style tag in this format at the END of your message:\n\n<ask_question question="What topic should I test you on?">\n  <option>DSA / Algorithms</option>\n  <option>JavaScript / TypeScript</option>\n  <option>System Design</option>\n</ask_question>\n\nGuidelines:\n1. Keep the "question" attribute short and clear.\n2. Write between 2 to 5 standard choices, each wrapped in a <option> tag.\n3. The interactive card automatically supports custom write-in answers ("Something else") and "Skip" features by default. Use it when you want the user to pick an option rather than typing it. DO NOT output the XML tag in the middle of code blocks.`;
 
@@ -740,6 +760,10 @@ function App() {
       systemInstruction,
       {
         onToolCall: ({ toolName, query, url }: { toolName: string; query: string; url?: string }) => {
+          if (toolName === 'browser_agent') {
+            setChats(prevChats => initMessageBrowserSession(prevChats, targetChatId, streamMessageId, url));
+            return;
+          }
           const key = `${toolName}:${url || query}`;
           if (toolName === 'crawl_web_page') {
             const targetUrl = url || query;
@@ -750,6 +774,9 @@ function App() {
           updateStreamedContent(getFullPrefix() + accumulatedContent);
         },
         onToolResult: ({ toolName, query, url, results, error }: { toolName: string; query: string; url?: string; results: unknown[]; source: string; error?: string }) => {
+          if (toolName === 'browser_agent') {
+            return;
+          }
           const key = `${toolName}:${url || query}`;
           if (toolName === 'crawl_web_page') {
             const targetUrl = url || query;
@@ -866,112 +893,12 @@ function App() {
           abortControllerRef.current = null;
         }
       },
-      controller.signal
+      controller.signal,
+      {
+        sessionId: targetChatId,
+        messageId: streamMessageId
+      }
     );
-  };
-
-  const triggerBrowserAgentLoop = async (chatList: Chat[], targetChatId: string, userGoal: string) => {
-    const activeChatIndex = chatList.findIndex(c => c.id === targetChatId);
-    if (activeChatIndex === -1) return;
-
-    const activeChat = upgradeChatToTree(chatList[activeChatIndex]);
-    setIsGenerating(true);
-
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
-    const streamMessageId = `msg-browser-${Date.now()}`;
-    const initialSession: BrowserSessionData = {
-      url: '',
-      title: 'Launching local sandbox browser...',
-      status: 'running',
-      steps: [],
-      screenshotTimestamp: 0
-    };
-
-    const placeholderMessage: Message = {
-      id: streamMessageId,
-      role: 'assistant',
-      content: '',
-      timestamp: new Date().toISOString(),
-      browserSession: initialSession
-    };
-
-    // Add placeholder to tree
-    const parentId = activeChat.activeLeafId || null;
-    const currentChat = addMessageToTree(activeChat, placeholderMessage, parentId);
-    
-    setChats(prevChats =>
-      prevChats.map(c => (c.id === targetChatId ? currentChat : c))
-    );
-
-    try {
-      const response = await fetch('/api/browser/agent/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: targetChatId,
-          messageId: streamMessageId,
-          userGoal,
-          settings
-        }),
-        signal: controller.signal
-      });
-
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Failed to start browser agent on backend');
-      }
-    } catch (e) {
-      const error = e as Error;
-      console.error('Failed to start browser agent on backend:', error);
-      const droppedGoals = messageQueueRef.current.map(q => q.userGoal);
-      messageQueueRef.current = [];
-      setMessageQueue([]);
-      setIsGenerating(false);
-
-      if (droppedGoals.length > 0) {
-        setComposerInput(prev => prev ? `${prev}\n${droppedGoals[0]}` : droppedGoals[0]);
-        showToast(`${error.message || 'Browser companion server failed to start the agent loop.'} (Halted ${droppedGoals.length} queued message(s), restored to input)`, 'error');
-      } else {
-        showToast(error.message || 'Browser companion server failed to start the agent loop.', 'error');
-      }
-      
-      let updatedChat: Chat | undefined;
-      // Rollback chat session (remove placeholder message)
-      setChats(prevChats => {
-        const rolledBackChats = prevChats.map(c => {
-          if (c.id === targetChatId) {
-            const upgraded = upgradeChatToTree(c);
-            const tree = { ...upgraded.messageTree };
-            
-            const nodeToDelete = tree[streamMessageId];
-            if (nodeToDelete && nodeToDelete.parentId && tree[nodeToDelete.parentId]) {
-              const parentNode = { ...tree[nodeToDelete.parentId] };
-              parentNode.children = parentNode.children.filter(id => id !== streamMessageId);
-              tree[nodeToDelete.parentId] = parentNode;
-            }
-            
-            delete tree[streamMessageId];
-            const activeLeaf = parentId;
-            const messages = reconstructActivePath(tree, activeLeaf);
-            
-            updatedChat = {
-              ...upgraded,
-              messageTree: tree,
-              activeLeafId: activeLeaf,
-              messages
-            };
-            return updatedChat;
-          }
-          return c;
-        });
-        return rolledBackChats;
-      });
-      if (updatedChat) {
-        Storage.saveChat(updatedChat);
-      }
-    }
   };
 
   const handleRemoveQueuedMessage = (id: string) => {
@@ -1011,11 +938,7 @@ function App() {
         Storage.saveChat(updatedChat);
       }
 
-      if (settings.isBrowserAgentEnabled) {
-        triggerBrowserAgentLoop(currentChats, nextItem.chatId, nextItem.userGoal);
-      } else {
-        triggerStreamingResponse(currentChats, nextItem.chatId);
-      }
+      triggerStreamingResponse(currentChats, nextItem.chatId);
     } else {
       setIsGenerating(false);
     }
@@ -1097,11 +1020,7 @@ function App() {
 
     // Trigger completion stream
     if (currentChatId) {
-      if (settings.isBrowserAgentEnabled) {
-        await triggerBrowserAgentLoop(currentChats, currentChatId, text);
-      } else {
-        await triggerStreamingResponse(currentChats, currentChatId);
-      }
+      await triggerStreamingResponse(currentChats, currentChatId);
     }
   };
 

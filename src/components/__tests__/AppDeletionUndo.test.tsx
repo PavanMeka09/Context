@@ -104,7 +104,7 @@ describe('Chat Deletion and Undo Flow in App', () => {
     fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
 
     expect(await screen.findByText('First query')).toBeDefined();
-    expect(await screen.findByText('Stop generating')).toBeDefined();
+    expect(await screen.findByLabelText('Stop generating')).toBeDefined();
 
     // While generating, send 2nd message (gets queued)
     fireEvent.change(input, { target: { value: 'Second query (queued)' } });
@@ -161,7 +161,7 @@ describe('Chat Deletion and Undo Flow in App', () => {
     fireEvent.change(input, { target: { value: 'In flight prompt' } });
     fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
 
-    expect(await screen.findByText('Stop generating')).toBeDefined();
+    expect(await screen.findByLabelText('Stop generating')).toBeDefined();
 
     // Queue 2nd message
     fireEvent.change(input, { target: { value: 'Pending prompt to recover' } });
@@ -171,7 +171,7 @@ describe('Chat Deletion and Undo Flow in App', () => {
     expect(screen.getByText('Pending prompt to recover')).toBeDefined();
 
     // Stop generating
-    const stopBtn = screen.getByText('Stop generating');
+    const stopBtn = screen.getByLabelText('Stop generating');
     fireEvent.click(stopBtn);
 
     // Assert: Stop generating cancelled, yellow box is cleared, and prompt is restored to composer textarea

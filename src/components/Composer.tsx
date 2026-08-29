@@ -240,19 +240,6 @@ export const Composer: React.FC<ComposerProps> = ({
 
   return (
     <div className="relative w-full max-w-2xl px-4 pb-6">
-      
-      {/* Floating Stop Generating Overlay */}
-      {isGenerating && (
-        <div className="absolute -top-11 left-1/2 -translate-x-1/2 animate-fade-in">
-          <button
-            onClick={onStop}
-            className="flex items-center gap-1.5 rounded-full border border-border bg-background hover:bg-accent px-3.5 py-1 text-[10px] font-medium text-foreground shadow-sm transition-all active:scale-95 cursor-pointer"
-          >
-            <Square className="h-2.5 w-2.5 fill-current text-destructive" />
-            <span>Stop generating</span>
-          </button>
-        </div>
-      )}
 
       {/* Queue Box at top of message box */}
       {messageQueue && messageQueue.length > 0 && (
@@ -728,19 +715,33 @@ export const Composer: React.FC<ComposerProps> = ({
                 ~{Math.ceil(input.trim().length / 4)} tokens
               </span>
             )}
-            {/* Send Button */}
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() && attachments.length === 0}
-              aria-label="Send message"
-              className={`flex h-7 w-7 items-center justify-center rounded-md transition-all ${
-                input.trim() || attachments.length > 0
-                  ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm cursor-pointer'
-                  : 'bg-muted text-muted-foreground'
-              }`}
-            >
-              <ArrowUp className="h-3.5 w-3.5 stroke-[2.5]" />
-            </button>
+            {/* Send or Stop Button */}
+            {isGenerating ? (
+              <button
+                type="button"
+                onClick={onStop}
+                title="Stop generating"
+                aria-label="Stop generating"
+                className="flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-background hover:bg-foreground/90 transition-all cursor-pointer shadow-sm active:scale-95 animate-fade-in"
+              >
+                <Square className="h-3 w-3 fill-current" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={!input.trim() && attachments.length === 0}
+                title="Send message"
+                aria-label="Send message"
+                className={`flex h-7 w-7 items-center justify-center rounded-md transition-all ${
+                  input.trim() || attachments.length > 0
+                    ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm cursor-pointer'
+                    : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                <ArrowUp className="h-3.5 w-3.5 stroke-[2.5]" />
+              </button>
+            )}
           </div>
         </div>
       </div>

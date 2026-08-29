@@ -30,6 +30,12 @@ export const crawlWebPageToolParametersSchema = z.object({
 });
 export type CrawlWebPageArgs = z.infer<typeof crawlWebPageToolParametersSchema>;
 
+export const browserAgentToolParametersSchema = z.object({
+  goal: z.string().describe('The user goal or task to execute in the browser (e.g., navigate to a site, click buttons, fill forms, extract dynamic content)'),
+  url: z.string().optional().describe('Optional initial URL to navigate to'),
+});
+export type BrowserAgentArgs = z.infer<typeof browserAgentToolParametersSchema>;
+
 export interface CrawlResult {
   success: boolean;
   engine: string;
@@ -640,17 +646,24 @@ function prepareModelAndMessages(
   };
 }
 
+export interface StreamChatCompletionOptions {
+  sessionId?: string;
+  messageId?: string;
+}
+
 // Main streaming entrypoint using Vercel AI SDK
 export async function streamChatCompletion(
   settings: Settings,
   messages: Message[],
   systemInstruction: string,
   callbacks: StreamCallbacks,
-  signal: AbortSignal
+  signal: AbortSignal,
+  options?: StreamChatCompletionOptions
 ): Promise<void> {
   const isWebSearch = Boolean(settings.isWebSearchEnabled);
   const isWebContext = Boolean(settings.isWebContextEnabled);
-  const hasTools = isWebSearch || isWebContext;
+  const isBrowserAgent = Boolean(settings.isBrowserAgentEnabled);
+  const hasTools = isWebSearch || isWebContext || isBrowserAgent;
   let prep;
   try {
     prep = prepareModelAndMessages(settings, messages, systemInstruction, hasTools);
@@ -721,6 +734,75 @@ export async function streamChatCompletion(
             stats: crawlRes.stats,
             error: crawlRes.error,
           };
+        },
+      });
+    }
+
+    if (isBrowserAgent) {
+      tools.browser_agent = tool({
+        description:
+          'Automate an interactive browser sandbox to navigate dynamic websites, interact with web applications, click elements, fill forms, inspect live DOM, or extract visual information when static web search or web crawling is insufficient. Use this tool ONLY when the user asks for interactive browser actions, dynamic site navigation, or web task automation.',
+        inputSchema: browserAgentToolParametersSchema,
+        execute: async (args: BrowserAgentArgs) => {
+          const userGoal = (args?.goal || '').trim();
+          const targetUrl = args?.url ? args.url.trim() : '';
+          callbacks.onToolCall?.({
+            toolName: 'browser_agent',
+            query: userGoal,
+            url: targetUrl,
+          });
+
+          try {
+            const res = await fetch('/api/browser/agent/run', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                sessionId: options?.sessionId || 'default',
+                messageId: options?.messageId || `msg-browser-${Date.now()}`,
+                userGoal: targetUrl && !userGoal.includes(targetUrl) ? `Navigate to ${targetUrl} and ${userGoal}` : userGoal,
+                settings,
+              }),
+              signal,
+            });
+
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}));
+              throw new Error(errData.error || `Browser agent execution failed with status ${res.status}`);
+            }
+
+            const data = await res.json();
+            const results = data.steps || [];
+            callbacks.onToolResult?.({
+              toolName: 'browser_agent',
+              query: userGoal,
+              url: data.url || targetUrl,
+              results,
+              source: 'browser_agent',
+              error: data.success === false ? (data.text || 'Browser agent failed') : undefined,
+            });
+
+            return {
+              success: data.success,
+              summary: data.text || 'Browser task completed.',
+              url: data.url || targetUrl,
+              title: data.title || '',
+              stepsCount: results.length,
+            };
+          } catch (err: unknown) {
+            const errorMsg = err instanceof Error ? err.message : 'Browser agent execution failed';
+            callbacks.onToolResult?.({
+              toolName: 'browser_agent',
+              query: userGoal,
+              url: targetUrl,
+              results: [],
+              source: 'browser_agent',
+              error: errorMsg,
+            });
+            return {
+              success: false,
+              error: errorMsg,
+            };
+          }
         },
       });
     }

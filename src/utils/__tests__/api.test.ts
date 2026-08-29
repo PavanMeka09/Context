@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fetchModels, testOllamaConnection, fetchOllamaRunningModels, unloadOllamaModel, formatShutdownCountdown, extractWebSearchQuery, webSearchToolParametersSchema, streamChatCompletion } from '../api';
+import { fetchModels, testOllamaConnection, fetchOllamaRunningModels, unloadOllamaModel, formatShutdownCountdown, extractWebSearchQuery, webSearchToolParametersSchema, browserAgentToolParametersSchema, streamChatCompletion } from '../api';
 import type { Settings, Message } from '../storage';
 import * as aiModule from 'ai';
 type AiModule = typeof aiModule;
@@ -380,6 +380,64 @@ describe('src/utils/api.ts', () => {
       expect(callbacks.onError).not.toHaveBeenCalled();
       expect(callbacks.onChunk).toHaveBeenCalledWith('Local Ollama Response');
       expect(callbacks.onDone).toHaveBeenCalledWith('Local Ollama Response');
+    });
+
+    it('passes browser_agent tool to streamText when browser agent is enabled', async () => {
+      const mockStreamText = vi.mocked(aiModule.streamText);
+      mockStreamText.mockReturnValue({
+        fullStream: (async function* () {
+          yield { type: 'text-delta', textDelta: 'Response with browser automation' };
+        })()
+      } as unknown as ReturnType<typeof aiModule.streamText>);
+
+      const settings: Settings = {
+        apiKey: 'test-api-key',
+        provider: 'gemini',
+        model: 'gemini-3.6-flash',
+        isBrowserAgentEnabled: true
+      };
+
+      const messages: Message[] = [{ id: '1', role: 'user', content: 'click sign in button on https://example.com', timestamp: new Date().toISOString() }];
+      const callbacks = {
+        onChunk: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn()
+      };
+      const controller = new AbortController();
+
+      await streamChatCompletion(
+        settings,
+        messages,
+        'system prompt',
+        callbacks,
+        controller.signal,
+        { sessionId: 'test-session', messageId: 'test-msg' }
+      );
+
+      expect(mockStreamText).toHaveBeenCalled();
+      const options = mockStreamText.mock.calls[0][0];
+      expect(options.tools).toBeDefined();
+      expect(options.tools?.browser_agent).toBeDefined();
+      expect(options.stopWhen).toBeDefined();
+      expect(callbacks.onChunk).toHaveBeenCalledWith('Response with browser automation');
+      expect(callbacks.onDone).toHaveBeenCalledWith('Response with browser automation');
+    });
+  });
+
+  describe('browser_agent parameter handling', () => {
+    it('validates schema with goal and url parameters', () => {
+      const valid = { goal: 'Navigate to news.ycombinator.com and extract stories', url: 'https://news.ycombinator.com' };
+      expect(browserAgentToolParametersSchema.safeParse(valid).success).toBe(true);
+    });
+
+    it('validates schema with only goal parameter', () => {
+      const valid = { goal: 'Click submit button' };
+      expect(browserAgentToolParametersSchema.safeParse(valid).success).toBe(true);
+    });
+
+    it('rejects schema when goal is missing', () => {
+      const invalid = { url: 'https://example.com' };
+      expect(browserAgentToolParametersSchema.safeParse(invalid).success).toBe(false);
     });
   });
 });

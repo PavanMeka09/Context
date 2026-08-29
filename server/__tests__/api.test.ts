@@ -52,6 +52,20 @@ describe('Server API Endpoints & Security', () => {
       res.json({ success: true, message: 'Session storage and cookies cleared' });
     });
 
+    app.post('/api/browser/agent/run', (req, res) => {
+      const { sessionId, userGoal, settings } = req.body;
+      if (!sessionId || !userGoal || !settings) {
+        return res.status(400).json({ error: 'Missing required parameters' });
+      }
+      res.json({
+        success: true,
+        text: 'Completed browsing task',
+        steps: [{ id: '1', action: 'navigate', status: 'success' }],
+        url: 'https://example.com',
+        title: 'Example Domain'
+      });
+    });
+
     app.post('/api/ollama/test', (req, res) => {
       const { localUrl } = req.body;
       if (localUrl === 'http://invalid-host:11434') {
@@ -144,6 +158,21 @@ describe('Server API Endpoints & Security', () => {
     const res = await request(app).post('/api/browser/storage/clear').send({ sessionId: 'default' });
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+  });
+
+  it('POST /api/browser/agent/run executes tool loop and returns result', async () => {
+    const resFail = await request(app).post('/api/browser/agent/run').send({});
+    expect(resFail.status).toBe(400);
+
+    const resSuccess = await request(app).post('/api/browser/agent/run').send({
+      sessionId: 'session-123',
+      userGoal: 'Visit example.com',
+      settings: { isBrowserAgentEnabled: true }
+    });
+    expect(resSuccess.status).toBe(200);
+    expect(resSuccess.body.success).toBe(true);
+    expect(resSuccess.body.text).toBe('Completed browsing task');
+    expect(resSuccess.body.url).toBe('https://example.com');
   });
 
   it('POST /api/ollama/test tests connection and returns model list', async () => {

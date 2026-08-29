@@ -102,7 +102,7 @@ describe('Composer Component', () => {
       />
     );
 
-    const stopBtn = screen.getByText('Stop generating');
+    const stopBtn = screen.getByLabelText('Stop generating');
     fireEvent.click(stopBtn);
 
     expect(handleStop).toHaveBeenCalledTimes(1);

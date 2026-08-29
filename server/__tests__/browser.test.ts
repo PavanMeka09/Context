@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   sessions,
   browserAgentStates,
+  activeBrowserAgents,
   pauseBrowserAgent,
   resumeBrowserAgent,
   stepBrowserAgent,
@@ -9,7 +10,8 @@ import {
   getBrowser,
   setBrowser,
   navigateToUrl,
-  clearSessionStorage
+  clearSessionStorage,
+  executeBrowserAgent
 } from '../browser.cjs';
 
 describe('server/browser.cjs', () => {
@@ -91,6 +93,42 @@ describe('server/browser.cjs', () => {
       expect(result).toBe(true);
       expect(clearCookiesMock).toHaveBeenCalledTimes(1);
       expect(evaluateMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('executeBrowserAgent abort handling', () => {
+    it('handles immediately aborted signal', async () => {
+      const abortController = new AbortController();
+      abortController.abort();
+
+      const runLog: string[] = [];
+      const sid = 'test-aborted-session';
+
+      // Mock session in sessions map
+      const mockPage = {
+        url: () => 'https://example.com',
+        title: vi.fn().mockResolvedValue('Example Domain'),
+        isClosed: () => false,
+        screenshot: vi.fn().mockResolvedValue(Buffer.from('fake-screenshot'))
+      };
+      sessions.set(sid, {
+        context: { pages: vi.fn().mockResolvedValue([mockPage]) },
+        page: mockPage,
+        latestScreenshotBuffer: null,
+        logs: [],
+        lastAccessed: Date.now()
+      } as unknown as Parameters<typeof sessions.set>[1]);
+
+      const result = await executeBrowserAgent(
+        { isBrowserAgentEnabled: true },
+        'Test goal',
+        runLog,
+        sid,
+        abortController.signal
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.text).toContain('cancelled');
     });
   });
 });

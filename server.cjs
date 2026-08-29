@@ -538,24 +538,31 @@ app.post('/api/browser/action', async (req, res) => {
   }
 });
 
-// Endpoint: Start backend browser agent loop
+// Helper: Abort and cleanup active browser agent session
+function abortActiveBrowserSession(sessionId) {
+  if (activeBrowserAgents.has(sessionId)) {
+    try {
+      const active = activeBrowserAgents.get(sessionId);
+      active.controller.abort();
+      console.log(`[Browser Server] Aborted active agent for session ${sessionId}`);
+    } catch (e) {
+      console.error(`[Browser Server] Error aborting session ${sessionId}:`, e);
+    }
+    activeBrowserAgents.delete(sessionId);
+    resumeBrowserAgent(sessionId);
+    return true;
+  }
+  return false;
+}
+
+// Endpoint: Start backend browser agent loop (async background)
 app.post('/api/browser/agent/start', async (req, res) => {
   const { sessionId, messageId, userGoal, settings } = req.body;
   if (!sessionId || !messageId || !userGoal || !settings) {
     return res.status(400).json({ error: 'Missing required parameters' });
   }
 
-  // Cancel any running agent for this session
-  if (activeBrowserAgents.has(sessionId)) {
-    try {
-      const active = activeBrowserAgents.get(sessionId);
-      active.controller.abort();
-      console.log(`[Browser Server] Pre-emptively aborted existing agent for session ${sessionId}`);
-    } catch (e) {
-      console.error(e);
-    }
-    activeBrowserAgents.delete(sessionId);
-  }
+  abortActiveBrowserSession(sessionId);
 
   const controller = new AbortController();
   activeBrowserAgents.set(sessionId, { controller });
@@ -575,6 +582,40 @@ app.post('/api/browser/agent/start', async (req, res) => {
   })();
 });
 
+// Endpoint: Run backend browser agent loop (tool execution for LLM)
+app.post('/api/browser/agent/run', async (req, res) => {
+  const { sessionId, messageId, userGoal, settings } = req.body;
+  if (!sessionId || !userGoal || !settings) {
+    return res.status(400).json({ error: 'Missing required parameters' });
+  }
+
+  abortActiveBrowserSession(sessionId);
+
+  const controller = new AbortController();
+  activeBrowserAgents.set(sessionId, { controller });
+
+  req.on('close', () => {
+    if (!res.writableEnded) {
+      controller.abort();
+      activeBrowserAgents.delete(sessionId);
+    }
+  });
+
+  const runLog = [];
+  try {
+    const result = await executeBrowserAgent(settings, userGoal, runLog, sessionId, controller.signal, messageId);
+    return res.json(result || { success: true, text: 'Browser action completed.' });
+  } catch (err) {
+    if (controller.signal.aborted) {
+      return res.status(499).json({ error: 'Browser agent run cancelled' });
+    }
+    console.error(`[Browser Server] Backend agent run failed:`, err.message);
+    return res.status(500).json({ error: err.message || 'Browser agent execution failed' });
+  } finally {
+    activeBrowserAgents.delete(sessionId);
+  }
+});
+
 // Endpoint: Abort running backend browser agent loop
 app.post('/api/browser/agent/abort', async (req, res) => {
   const { sessionId } = req.body;
@@ -582,13 +623,8 @@ app.post('/api/browser/agent/abort', async (req, res) => {
     return res.status(400).json({ error: 'Missing sessionId' });
   }
 
-  if (activeBrowserAgents.has(sessionId)) {
-    const active = activeBrowserAgents.get(sessionId);
-    active.controller.abort();
-    activeBrowserAgents.delete(sessionId);
-    // Also wake up any paused promise wait
-    resumeBrowserAgent(sessionId);
-    console.log(`[Browser Server] Explicitly aborted agent for session ${sessionId}`);
+  const aborted = abortActiveBrowserSession(sessionId);
+  if (aborted) {
     return res.json({ success: true, message: 'Browser agent aborted' });
   }
 
