@@ -177,6 +177,7 @@ export interface Settings {
   isMemoryEnabled?: boolean;
   isBrowserAgentEnabled?: boolean;
   isWebContextEnabled?: boolean;
+  speechInputMode?: 'auto' | 'ai' | 'browser';
 }
 
 export interface SystemPrompt {
@@ -462,7 +463,8 @@ export function normalizeSettings(raw: Partial<Settings>): Settings {
     thinkingLevel: raw.thinkingLevel ?? 'off',
     isMemoryEnabled: raw.isMemoryEnabled ?? true,
     isBrowserAgentEnabled: raw.isBrowserAgentEnabled ?? false,
-    isWebContextEnabled: raw.isWebContextEnabled ?? false
+    isWebContextEnabled: raw.isWebContextEnabled ?? false,
+    speechInputMode: raw.speechInputMode ?? 'auto'
   };
 }
 

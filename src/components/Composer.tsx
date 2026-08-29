@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Square, ArrowUp, Paperclip, Mic, MicOff, X, FileText, Search, ChevronDown, Check, Globe, Sparkles, Brain, Compass, Clock } from 'lucide-react';
+import { Square, ArrowUp, Paperclip, Mic, MicOff, X, FileText, Search, ChevronDown, Check, Globe, Sparkles, Brain, Compass, Clock, Loader2 } from 'lucide-react';
 import type { Attachment, Settings, SystemPrompt } from '../utils/storage';
 import { Storage, PRESET_PROMPTS } from '../utils/storage';
+import { useVoiceRecording } from '../hooks/useVoiceRecording';
 
 interface ComposerProps {
   input: string;
@@ -20,34 +21,6 @@ interface ComposerProps {
   customPrompts: SystemPrompt[];
   queueCount?: number;
   messageQueue?: { id: string; userGoal: string }[];
-}
-
-interface SpeechRecognitionErrorEvent extends Event {
-  error: string;
-}
-
-interface SpeechRecognitionEvent extends Event {
-  resultIndex: number;
-  results: {
-    length: number;
-    [index: number]: {
-      isFinal: boolean;
-      [index: number]: {
-        transcript: string;
-      };
-    };
-  };
-}
-
-interface ISpeechRecognition {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onresult: (event: SpeechRecognitionEvent) => void;
-  onerror: (event: SpeechRecognitionErrorEvent) => void;
-  onend: () => void;
-  start: () => void;
-  stop: () => void;
 }
 
 export const Composer: React.FC<ComposerProps> = ({
@@ -69,12 +42,25 @@ export const Composer: React.FC<ComposerProps> = ({
 }) => {
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [tempInput, setTempInput] = useState('');
-
-  // Speech-to-Text and File Upload States
-  const [isRecording, setIsRecording] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const recognitionRef = useRef<ISpeechRecognition | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Hook handles audio recording, Web Speech, and automatic AI fallback
+  const {
+    isRecording,
+    isTranscribing,
+    recordingMode,
+    recordingSeconds,
+    isSpeechSupported,
+    toggleRecording,
+    cancelRecording
+  } = useVoiceRecording({
+    settings,
+    onTranscript: (transcript) => {
+      onChangeInput(input ? `${input.trim()} ${transcript.trim()}` : transcript);
+    },
+    onError
+  });
 
   const [promptDropdownOpen, setPromptDropdownOpen] = useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
@@ -85,7 +71,6 @@ export const Composer: React.FC<ComposerProps> = ({
     const prompt = all.find(p => p.id === activePromptId);
     return prompt ? prompt.name : 'General Assistant';
   };
-
 
   const toggleWebSearch = () => {
     const nextWebSearch = !settings.isWebSearchEnabled;
@@ -116,73 +101,6 @@ export const Composer: React.FC<ComposerProps> = ({
       textarea.style.height = `${Math.min(textarea.scrollHeight, 180)}px`;
     }
   }, [input, inputRef]);
-
-  // Speech recognition API initial setup
-  useEffect(() => {
-    const SpeechRecognition = (window as unknown as { SpeechRecognition?: new () => ISpeechRecognition; webkitSpeechRecognition?: new () => ISpeechRecognition }).SpeechRecognition || 
-                              (window as unknown as { SpeechRecognition?: new () => ISpeechRecognition; webkitSpeechRecognition?: new () => ISpeechRecognition }).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const rec = new SpeechRecognition();
-      rec.continuous = true;
-      rec.interimResults = true;
-      rec.lang = 'en-US';
-
-      rec.onresult = (event: SpeechRecognitionEvent) => {
-        let finalTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          }
-        }
-        
-        if (finalTranscript) {
-          onChangeInput(input ? `${input.trim()} ${finalTranscript.trim()}` : finalTranscript);
-        }
-      };
-
-      rec.onerror = (event: SpeechRecognitionErrorEvent) => {
-        console.error('Speech recognition error', event);
-        setIsRecording(false);
-        
-        let errorDetail: React.ReactNode = 'Speech recognition failed.';
-        if (event.error === 'not-allowed') {
-          errorDetail = 'Microphone access is blocked. Please enable microphone permissions in your browser.';
-        } else if (event.error === 'no-speech') {
-          errorDetail = 'No speech was detected. Please check your mic and try again.';
-        } else if (event.error === 'network') {
-          errorDetail = 'A network error occurred. Native speech recognition requires an internet connection.';
-        } else if (event.error === 'aborted') {
-          return; // Ignore manual abort
-        }
-        
-        onError?.(errorDetail);
-      };
-
-      rec.onend = () => {
-        setIsRecording(false);
-      };
-
-      recognitionRef.current = rec;
-    }
-  }, [input, onChangeInput, onError, onSettingsChanged]);
-
-  const isSpeechSupported = typeof window !== 'undefined' && 
-                            ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
-
-  const toggleRecording = async () => {
-    if (!recognitionRef.current) {
-      onError?.('Speech Recognition is not supported or permitted in this browser.');
-      return;
-    }
-
-    if (isRecording) {
-      recognitionRef.current.stop();
-      setIsRecording(false);
-    } else {
-      setIsRecording(true);
-      recognitionRef.current.start();
-    }
-  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -272,8 +190,7 @@ export const Composer: React.FC<ComposerProps> = ({
       setAttachments([]);
       setHistoryIndex(null);
       if (isRecording) {
-        recognitionRef.current?.stop();
-        setIsRecording(false);
+        cancelRecording();
       }
     }
   };
@@ -396,23 +313,49 @@ export const Composer: React.FC<ComposerProps> = ({
       )}
 
       {/* Active Voice Recording Status Banner */}
-      {isRecording && (
-        <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-500 animate-pulse select-none">
+      {(isRecording || isTranscribing) && (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-500 animate-fade-in select-none">
           <div className="flex items-center gap-2">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-            </span>
-            <Mic className="h-4 w-4 text-red-500" />
-            <span>Listening... Speak clearly into your mic</span>
+            {isTranscribing ? (
+              <>
+                <Loader2 className="h-4 w-4 text-red-500 animate-spin" />
+                <span>Transcribing voice with AI...</span>
+              </>
+            ) : (
+              <>
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                </span>
+                <Mic className="h-4 w-4 text-red-500" />
+                <span>
+                  {recordingMode === 'ai'
+                    ? `Recording voice (${Math.floor(recordingSeconds / 60)}:${(recordingSeconds % 60).toString().padStart(2, '0')})... Speak now`
+                    : 'Listening... Speak clearly into your mic'}
+                </span>
+              </>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={toggleRecording}
-            className="rounded px-2 py-0.5 text-[10px] uppercase font-bold bg-red-500 text-white hover:bg-red-600 transition cursor-pointer"
-          >
-            Done
-          </button>
+          {!isTranscribing && (
+            <div className="flex items-center gap-1.5">
+              {recordingMode === 'ai' && (
+                <button
+                  type="button"
+                  onClick={cancelRecording}
+                  className="rounded px-2 py-0.5 text-[10px] uppercase font-bold bg-muted hover:bg-muted/80 text-foreground transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={toggleRecording}
+                className="rounded px-2 py-0.5 text-[10px] uppercase font-bold bg-red-500 text-white hover:bg-red-600 transition cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -430,9 +373,11 @@ export const Composer: React.FC<ComposerProps> = ({
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           placeholder={
-            isRecording 
-              ? "Listening... Speak clearly now." 
-              : "Ask anything..."
+            isTranscribing
+              ? "Transcribing voice..."
+              : isRecording 
+                ? "Listening... Speak clearly now." 
+                : "Ask anything..."
           }
           rows={1}
           style={{ resize: 'none' }}
@@ -725,25 +670,31 @@ export const Composer: React.FC<ComposerProps> = ({
             <button
               type="button"
               onClick={toggleRecording}
-              disabled={!isSpeechSupported}
+              disabled={!isSpeechSupported || isTranscribing}
               aria-label={isRecording ? "Stop voice typing" : "Voice typing"}
               aria-pressed={isRecording}
               title={
                 !isSpeechSupported 
                   ? "Speech recognition is not supported in this browser" 
-                  : isRecording 
-                    ? "Stop voice typing" 
-                    : "Voice typing"
+                  : isTranscribing
+                    ? "Transcribing audio..."
+                    : isRecording 
+                      ? "Stop voice typing" 
+                      : "Voice typing"
               }
               className={`flex h-7 w-7 items-center justify-center rounded-md transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                 !isSpeechSupported
                   ? 'opacity-35 cursor-not-allowed border border-input text-muted-foreground bg-transparent'
-                  : isRecording
-                    ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90 animate-pulse cursor-pointer'
-                    : 'border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground cursor-pointer'
+                  : isTranscribing
+                    ? 'border border-primary text-primary bg-primary/10 animate-spin cursor-wait'
+                    : isRecording
+                      ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90 animate-pulse cursor-pointer'
+                      : 'border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground cursor-pointer'
               }`}
             >
-              {isRecording ? (
+              {isTranscribing ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : isRecording ? (
                 <MicOff className="h-3.5 w-3.5" />
               ) : (
                 <Mic className="h-3.5 w-3.5" />
@@ -785,7 +736,15 @@ export const Composer: React.FC<ComposerProps> = ({
         <div className="mt-1.5 flex items-center px-2 text-[9px] font-bold tracking-wide select-none animate-fade-in min-h-[14px]">
           <span className="flex items-center gap-1 text-destructive">
             <span className="h-1.5 w-1.5 rounded-full bg-destructive animate-ping" />
-            <span>listening...</span>
+            <span>{recordingMode === 'ai' ? `recording audio (${recordingSeconds}s)...` : 'listening...'}</span>
+          </span>
+        </div>
+      )}
+      {isTranscribing && (
+        <div className="mt-1.5 flex items-center px-2 text-[9px] font-bold tracking-wide select-none animate-fade-in min-h-[14px]">
+          <span className="flex items-center gap-1 text-primary">
+            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+            <span>transcribing audio with AI...</span>
           </span>
         </div>
       )}

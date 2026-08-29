@@ -940,6 +940,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
               </div>
 
+              {/* Voice Input Mode Setting */}
+              <div className="space-y-1.5 pt-3 border-t border-border">
+                <label className="block text-xs font-semibold text-foreground">
+                  Voice Typing & Speech Recognition Mode
+                </label>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Choose how speech-to-text is handled. If native browser speech fails with a network error (e.g. Brave browser blocking Google speech services), AI Voice mode transcribes audio directly with Gemini Flash or OpenAI Whisper.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                  {[
+                    {
+                      id: 'auto',
+                      title: 'Auto (Recommended)',
+                      desc: 'Fast browser speech with automatic AI Voice fallback'
+                    },
+                    {
+                      id: 'ai',
+                      title: 'AI Voice (Gemini / Whisper)',
+                      desc: 'Universal, works in Brave, Firefox, and firewalled networks'
+                    },
+                    {
+                      id: 'browser',
+                      title: 'Browser Native',
+                      desc: 'Real-time Web Speech streaming engine'
+                    }
+                  ].map(option => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => setSettings(prev => ({ ...prev, speechInputMode: option.id as 'auto' | 'ai' | 'browser' }))}
+                      className={`flex flex-col items-start p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                        (settings.speechInputMode || 'auto') === option.id
+                          ? 'border-primary bg-primary/10 text-foreground ring-1 ring-primary'
+                          : 'border-border bg-card/50 hover:bg-accent text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <span className="text-xs font-semibold text-foreground">{option.title}</span>
+                        {(settings.speechInputMode || 'auto') === option.id && (
+                          <Check className="h-3.5 w-3.5 text-primary" />
+                        )}
+                      </div>
+                      <span className="text-[10px] text-muted-foreground mt-1 leading-tight">{option.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
             </div>
           ) : activeTab === 'prompts' ? (
             <div className="space-y-5">

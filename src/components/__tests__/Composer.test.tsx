@@ -177,6 +177,52 @@ describe('Composer Component', () => {
     expect(micBtn).toBeDefined();
   });
 
+  it('triggers error callback when speech recognition is not supported in browser mode', () => {
+    const handleError = vi.fn();
+    
+    // Mock MediaRecorder support so the button is enabled, but WebSpeech is absent
+    const origMediaRecorder = window.MediaRecorder;
+    const origMediaDevices = navigator.mediaDevices;
+    (window as any).MediaRecorder = vi.fn();
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: { getUserMedia: vi.fn() },
+      configurable: true,
+      writable: true
+    });
+
+    try {
+      render(
+        <Composer
+          input=""
+          onChangeInput={vi.fn()}
+          onSend={vi.fn()}
+          isGenerating={false}
+          onStop={vi.fn()}
+          inputRef={createRef()}
+          onError={handleError}
+          settings={{ ...mockSettings, speechInputMode: 'browser' }}
+          activePromptId="preset-general"
+          onSelectPromptId={vi.fn()}
+          customPrompts={[]}
+        />
+      );
+
+      const micBtn = screen.getByLabelText('Voice typing');
+      fireEvent.click(micBtn);
+
+      expect(handleError).toHaveBeenCalledWith(
+        expect.stringContaining('Browser speech recognition is not supported')
+      );
+    } finally {
+      (window as any).MediaRecorder = origMediaRecorder;
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: origMediaDevices,
+        configurable: true,
+        writable: true
+      });
+    }
+  });
+
   it('renders Web Context toggle button and triggers onSettingsChanged when clicked', () => {
     const handleSettingsChanged = vi.fn();
 
