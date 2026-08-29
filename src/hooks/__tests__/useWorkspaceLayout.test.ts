@@ -16,10 +16,9 @@ describe('useWorkspaceLayout Hook', () => {
     const { result } = renderHook(() => useWorkspaceLayout());
 
     expect(typeof result.current.isWorkspaceOpen).toBe('boolean');
-    expect(['browser', 'schedules', 'artifacts']).toContain(result.current.workspaceTab);
+    expect(['browser', 'schedules']).toContain(result.current.workspaceTab);
     expect(result.current.workspaceWidth).toBeGreaterThan(0);
     expect(result.current.isResizingWorkspace).toBe(false);
-    expect(result.current.selectedArtifact).toBeNull();
   });
 
   it('toggles workspace open state', () => {
@@ -48,9 +47,10 @@ describe('useWorkspaceLayout Hook', () => {
     expect(Storage.getWorkspaceTab()).toBe('schedules');
 
     act(() => {
-      result.current.changeWorkspaceTab('artifacts');
+      result.current.changeWorkspaceTab('browser');
     });
-    expect(result.current.workspaceTab).toBe('artifacts');
+    expect(result.current.workspaceTab).toBe('browser');
+    expect(Storage.getWorkspaceTab()).toBe('browser');
   });
 
   it('adjusts workspace width via keyboard helper adjustWorkspaceWidth', () => {
@@ -84,25 +84,5 @@ describe('useWorkspaceLayout Hook', () => {
       window.dispatchEvent(new MouseEvent('mouseup'));
     });
     expect(result.current.isResizingWorkspace).toBe(false);
-  });
-
-  it('opens artifact inspector when open-artifact-inspector event is dispatched', () => {
-    const { result } = renderHook(() => useWorkspaceLayout());
-
-    act(() => {
-      window.dispatchEvent(
-        new CustomEvent('open-artifact-inspector', {
-          detail: { language: 'python', code: 'print("hello world")', title: 'Script' }
-        })
-      );
-    });
-
-    expect(result.current.isWorkspaceOpen).toBe(true);
-    expect(result.current.workspaceTab).toBe('artifacts');
-    expect(result.current.selectedArtifact).toEqual({
-      language: 'python',
-      code: 'print("hello world")',
-      title: 'Script'
-    });
   });
 });

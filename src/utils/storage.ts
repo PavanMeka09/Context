@@ -829,13 +829,13 @@ export const Storage = {
     localStorage.setItem(KEYS.WORKSPACE_OPEN, String(open));
   },
 
-  getWorkspaceTab(): 'browser' | 'schedules' | 'artifacts' {
+  getWorkspaceTab(): 'browser' | 'schedules' {
     const tab = localStorage.getItem(KEYS.WORKSPACE_TAB);
-    if (tab === 'browser' || tab === 'schedules' || tab === 'artifacts') return tab;
+    if (tab === 'browser' || tab === 'schedules') return tab;
     return 'browser';
   },
 
-  saveWorkspaceTab(tab: 'browser' | 'schedules' | 'artifacts'): void {
+  saveWorkspaceTab(tab: 'browser' | 'schedules'): void {
     localStorage.setItem(KEYS.WORKSPACE_TAB, tab);
   },
 

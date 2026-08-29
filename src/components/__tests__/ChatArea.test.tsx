@@ -54,22 +54,27 @@ describe('ChatArea Component', () => {
     fireEvent.click(resendButtons[0]);
     expect(onRegenerateResponse).toHaveBeenCalledWith('m1');
   });
-  it('renders workspace panel toggle button and settings button in header', () => {
-    const onToggleWorkspace = vi.fn();
+  it('renders browser and scheduler workspace buttons and settings button in header', () => {
+    const onToggleWorkspaceTab = vi.fn();
     const onOpenSettings = vi.fn();
     
     render(
       <ChatArea
         {...defaultProps}
         isWorkspaceOpen={false}
-        onToggleWorkspace={onToggleWorkspace}
+        workspaceTab="browser"
+        onToggleWorkspaceTab={onToggleWorkspaceTab}
         onOpenSettings={onOpenSettings}
       />
     );
 
-    const workspaceBtn = screen.getByTitle('Toggle Workspace Panel (Ctrl+\\)');
-    fireEvent.click(workspaceBtn);
-    expect(onToggleWorkspace).toHaveBeenCalledTimes(1);
+    const browserBtn = screen.getByTitle('Toggle Browser Panel');
+    fireEvent.click(browserBtn);
+    expect(onToggleWorkspaceTab).toHaveBeenCalledWith('browser');
+
+    const schedulerBtn = screen.getByTitle('Toggle Scheduler Panel');
+    fireEvent.click(schedulerBtn);
+    expect(onToggleWorkspaceTab).toHaveBeenCalledWith('schedules');
 
     const settingsBtn = screen.getByTitle('Open Settings');
     fireEvent.click(settingsBtn);

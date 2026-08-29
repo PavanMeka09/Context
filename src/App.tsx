@@ -3,12 +3,11 @@ import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { Composer } from './components/Composer';
 import { BrowserLiveView } from './components/BrowserLiveView';
-import { ArtifactVisualizer } from './components/ArtifactVisualizer';
 import { PRESET_PROMPTS, Storage, reconstructActivePath, upgradeChatToTree, getChatBrowserSession, isChatBrowserSessionActive } from './utils/storage';
 import type { Chat, Message, MessageNode, Settings, SystemPrompt, Attachment, BrowserSessionData } from './utils/storage';
 import { streamChatCompletion } from './utils/api';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { AlertCircle, X, Loader2, Compass, Calendar, Code, Maximize2 } from 'lucide-react';
+import { AlertCircle, X, Loader2, Compass, Calendar, Maximize2 } from 'lucide-react';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
 
 // Code splitting for modal components to optimize initial chunk size
@@ -83,6 +82,39 @@ function addMessageToTree(chat: Chat, message: Message, parentId: string | null)
   };
 }
 
+function applySyncEventToChats(chats: Chat[], event: SyncEvent): { updatedChats: Chat[]; updatedChat: Chat } {
+  const chatIndex = chats.findIndex(c => c.id === event.chatId);
+  let updatedChat: Chat;
+  let updatedChats = [...chats];
+
+  if (chatIndex !== -1) {
+    const existingChat = updatedChats[chatIndex];
+    let chat = upgradeChatToTree(existingChat);
+    const parentId = chat.activeLeafId || null;
+    chat = addMessageToTree(chat, event.userMsg, parentId);
+    chat = addMessageToTree(chat, event.assistantMsg, event.userMsg.id);
+    updatedChats[chatIndex] = chat;
+    updatedChat = chat;
+  } else {
+    const emptyChat: Chat = {
+      id: event.chatId,
+      title: event.chatTitle || 'Scheduled Task',
+      createdAt: event.timestamp || new Date().toISOString(),
+      updatedAt: event.timestamp || new Date().toISOString(),
+      messages: [],
+      messageTree: {},
+      activeLeafId: null
+    };
+    let chat = upgradeChatToTree(emptyChat);
+    chat = addMessageToTree(chat, event.userMsg, null);
+    chat = addMessageToTree(chat, event.assistantMsg, event.userMsg.id);
+    updatedChats = [chat, ...updatedChats];
+    updatedChat = chat;
+  }
+
+  return { updatedChats, updatedChat };
+}
+
 function initMessageBrowserSession(
   chats: Chat[],
   chatId: string,
@@ -144,11 +176,19 @@ function App() {
     changeWorkspaceTab,
     workspaceWidth,
     isResizingWorkspace,
-    selectedArtifact,
     handleMouseDownResize,
     handleTouchStartResize,
     adjustWorkspaceWidth
   } = useWorkspaceLayout();
+
+  const handleToggleWorkspaceTab = (tab: 'browser' | 'schedules') => {
+    if (isWorkspaceOpen && workspaceTab === tab) {
+      toggleWorkspace(false);
+    } else {
+      changeWorkspaceTab(tab);
+      toggleWorkspace(true);
+    }
+  };
   // Preference and accessibility states
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => Storage.getSidebarCollapsed());
   const [theme, setTheme] = useState<'dark' | 'light'>(() => Storage.getTheme());
@@ -387,34 +427,10 @@ function App() {
         let finalChats: Chat[] = [];
         setChats(prevChats => {
           let updatedChats = [...prevChats];
-
           events.forEach((event: SyncEvent) => {
-            const chatIndex = updatedChats.findIndex(c => c.id === event.chatId);
-            
-            if (chatIndex !== -1) {
-              const existingChat = updatedChats[chatIndex];
-              let chat = upgradeChatToTree(existingChat);
-              const parentId = chat.activeLeafId || null;
-              chat = addMessageToTree(chat, event.userMsg, parentId);
-              chat = addMessageToTree(chat, event.assistantMsg, event.userMsg.id);
-              updatedChats[chatIndex] = chat;
-            } else {
-              const emptyChat: Chat = {
-                id: event.chatId,
-                title: event.chatTitle || 'Scheduled Task',
-                createdAt: event.timestamp || new Date().toISOString(),
-                updatedAt: event.timestamp || new Date().toISOString(),
-                messages: [],
-                messageTree: {},
-                activeLeafId: null
-              };
-              let chat = upgradeChatToTree(emptyChat);
-              chat = addMessageToTree(chat, event.userMsg, null);
-              chat = addMessageToTree(chat, event.assistantMsg, event.userMsg.id);
-              updatedChats = [chat, ...updatedChats];
-            }
+            const res = applySyncEventToChats(updatedChats, event);
+            updatedChats = res.updatedChats;
           });
-
           finalChats = updatedChats;
           return updatedChats;
         });
@@ -449,35 +465,9 @@ function App() {
           const syncEvent = data as SyncEvent;
           let updatedChat: Chat | undefined;
           setChats(prevChats => {
-            let updatedChats = [...prevChats];
-            const chatIndex = updatedChats.findIndex(c => c.id === syncEvent.chatId);
-            
-            if (chatIndex !== -1) {
-              const existingChat = updatedChats[chatIndex];
-              let chat = upgradeChatToTree(existingChat);
-              const parentId = chat.activeLeafId || null;
-              chat = addMessageToTree(chat, syncEvent.userMsg, parentId);
-              chat = addMessageToTree(chat, syncEvent.assistantMsg, syncEvent.userMsg.id);
-              updatedChats[chatIndex] = chat;
-              updatedChat = chat;
-            } else {
-              const emptyChat: Chat = {
-                id: syncEvent.chatId,
-                title: syncEvent.chatTitle || 'Scheduled Task',
-                createdAt: syncEvent.timestamp || new Date().toISOString(),
-                updatedAt: syncEvent.timestamp || new Date().toISOString(),
-                messages: [],
-                messageTree: {},
-                activeLeafId: null
-              };
-              let chat = upgradeChatToTree(emptyChat);
-              chat = addMessageToTree(chat, syncEvent.userMsg, null);
-              chat = addMessageToTree(chat, syncEvent.assistantMsg, syncEvent.userMsg.id);
-              updatedChats = [chat, ...updatedChats];
-              updatedChat = chat;
-            }
-
-            return updatedChats;
+            const res = applySyncEventToChats(prevChats, syncEvent);
+            updatedChat = res.updatedChat;
+            return res.updatedChats;
           });
           if (updatedChat) {
             Storage.saveChat(updatedChat);
@@ -1416,7 +1406,8 @@ function App() {
           onSwitchBranch={handleSwitchBranch}
           onOpenBrowserModal={handleOpenBrowserModal}
           isWorkspaceOpen={isWorkspaceOpen}
-          onToggleWorkspace={() => toggleWorkspace()}
+          workspaceTab={workspaceTab}
+          onToggleWorkspaceTab={handleToggleWorkspaceTab}
           onOpenSettings={() => setSettingsOpen(true)}
         >
           <Composer
@@ -1496,15 +1487,6 @@ function App() {
                   <Calendar className="h-3.5 w-3.5 text-primary" />
                   <span>Schedules</span>
                 </button>
-                <button
-                  onClick={() => changeWorkspaceTab('artifacts')}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
-                    workspaceTab === 'artifacts' ? 'bg-background text-foreground shadow-xs' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Code className="h-3.5 w-3.5 text-primary" />
-                  <span>Artifacts</span>
-                </button>
               </div>
               <div className="flex items-center gap-1">
                 {workspaceTab === 'browser' && (
@@ -1556,25 +1538,6 @@ function App() {
                   chats={chats}
                   onShowToast={(msg, type) => showToast(msg, type)}
                 />
-              )}
-
-              {workspaceTab === 'artifacts' && (
-                <div className="flex flex-col h-full space-y-4 font-sans select-text">
-                  {selectedArtifact ? (
-                    <ArtifactVisualizer
-                      artifact={selectedArtifact}
-                      onCopy={() => showToast('Code copied to clipboard!', 'success')}
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center h-64 text-center text-muted-foreground p-6">
-                      <Code className="h-10 w-10 text-muted-foreground/40 mb-3" />
-                      <h3 className="text-sm font-semibold text-foreground mb-1">No Artifact Selected</h3>
-                      <p className="text-xs leading-relaxed max-w-xs">
-                        Click "Open in Workspace Panel" on any code block in the chat stream to inspect code snippets and scraped artifacts here.
-                      </p>
-                    </div>
-                  )}
-                </div>
               )}
             </div>
           </aside>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Check, Code, Eye, Play, Terminal as TerminalIcon, Trash2, X, Sparkles, RotateCw, ExternalLink, Download, Layout } from 'lucide-react';
+import { Copy, Check, Code, Eye, Play, Terminal as TerminalIcon, Trash2, X, Sparkles, RotateCw, ExternalLink, Download } from 'lucide-react';
 import { wrapHtmlPreview, IFRAME_SANDBOX_PERMISSIONS, IFRAME_ALLOW_FEATURES } from '../utils/preview';
 
 interface MarkdownRendererProps {
@@ -648,17 +648,11 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
     const a = document.createElement('a');
     a.href = url;
     const ext = getLanguageExtension(language);
-    a.download = `artifact-${Date.now()}.${ext}`;
+    a.download = `code-${Date.now()}.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  };
-
-  const handleOpenArtifact = () => {
-    window.dispatchEvent(new CustomEvent('open-artifact-inspector', {
-      detail: { language, code, title: `${language.toUpperCase()} Snippet` }
-    }));
   };
 
   const displayName = language.toUpperCase();
@@ -743,16 +737,6 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onSendMessage, is
               </select>
             </div>
           )}
-
-          <button
-            onClick={handleOpenArtifact}
-            aria-label="Open in Workspace Panel"
-            title="Inspect in side workspace panel"
-            className="flex items-center gap-1.5 rounded-md border border-border bg-muted/50 px-2 py-1 text-xs transition hover:bg-accent hover:text-foreground"
-          >
-            <Layout className="h-3.5 w-3.5 text-primary" />
-            <span className="hidden sm:inline">Open in Panel</span>
-          </button>
 
           <button
             onClick={handleDownload}

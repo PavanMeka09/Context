@@ -3,7 +3,7 @@ import type { Chat, Message } from '../utils/storage';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { BrowserLiveView } from './BrowserLiveView';
 import { TextLoader } from 'generative-loaders';
-import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Volume2, VolumeX, Download, Layout, Settings as SettingsIcon } from 'lucide-react';
+import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Volume2, VolumeX, Download, Compass, Calendar, Settings as SettingsIcon } from 'lucide-react';
 import { cleanSnippetText, getFaviconUrl, type SearxngResult } from '../utils/searxng';
 
 function parseThinkingAndContent(content: string): { thinking: string | null; content: string } {
@@ -672,7 +672,6 @@ const RegenerateButton: React.FC<RegenerateButtonProps> = ({ onClick, disabled, 
     <RotateCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
   </button>
 );
-const EmptyChatFeed: React.FC = () => null;
 
 interface ChatAreaProps {
   chat?: Chat | null;
@@ -687,7 +686,8 @@ interface ChatAreaProps {
   onSwitchBranch?: (messageId: string) => void;
   onOpenBrowserModal?: (sessionId?: string) => void;
   isWorkspaceOpen?: boolean;
-  onToggleWorkspace?: () => void;
+  workspaceTab?: 'browser' | 'schedules';
+  onToggleWorkspaceTab?: (tab: 'browser' | 'schedules') => void;
   onOpenSettings?: () => void;
   children?: React.ReactNode;
 }
@@ -705,7 +705,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onSwitchBranch,
   onOpenBrowserModal,
   isWorkspaceOpen,
-  onToggleWorkspace,
+  workspaceTab,
+  onToggleWorkspaceTab,
   onOpenSettings,
   children
 }) => {
@@ -910,22 +911,39 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </div>
           )}
 
-          {/* Toggle Workspace Button */}
-          {onToggleWorkspace && (
-            <button
-              onClick={onToggleWorkspace}
-              className={`flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                isWorkspaceOpen 
-                  ? 'bg-primary/10 border-primary/30 text-primary font-semibold' 
-                  : 'border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground'
-              }`}
-              title="Toggle Workspace Panel (Ctrl+\)"
-              aria-label="Toggle Workspace Panel"
-              aria-pressed={isWorkspaceOpen}
-            >
-              <Layout className="h-3.5 w-3.5" />
-              <span className="hidden md:inline">{isWorkspaceOpen ? 'Hide Workspace' : 'Workspace'}</span>
-            </button>
+          {/* Browser & Scheduler Workspace Buttons */}
+          {onToggleWorkspaceTab && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => onToggleWorkspaceTab('browser')}
+                className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                  isWorkspaceOpen && workspaceTab === 'browser'
+                    ? 'bg-primary/10 border-primary/30 text-primary font-semibold'
+                    : 'border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground'
+                }`}
+                title="Toggle Browser Panel"
+                aria-label="Toggle Browser Panel"
+                aria-pressed={isWorkspaceOpen && workspaceTab === 'browser'}
+              >
+                <Compass className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Browser</span>
+              </button>
+
+              <button
+                onClick={() => onToggleWorkspaceTab('schedules')}
+                className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                  isWorkspaceOpen && workspaceTab === 'schedules'
+                    ? 'bg-primary/10 border-primary/30 text-primary font-semibold'
+                    : 'border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground'
+                }`}
+                title="Toggle Scheduler Panel"
+                aria-label="Toggle Scheduler Panel"
+                aria-pressed={isWorkspaceOpen && workspaceTab === 'schedules'}
+              >
+                <Calendar className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">Scheduler</span>
+              </button>
+            </div>
           )}
 
           {/* Settings Quick Access Button */}
@@ -948,9 +966,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto px-6 py-6 space-y-6 scrollbar-thin select-text"
       >
-        {!chat || displayMessages.length === 0 ? (
-          <EmptyChatFeed />
-        ) : (
+        {!chat || displayMessages.length === 0 ? null : (
           
           /* Borderless Message Feed */
           <div className="mx-auto max-w-2xl space-y-8 pb-12">
@@ -1192,7 +1208,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                               const finalSearchStatus = hasMetaSearch ? 'done' : legacyStatus;
                               const finalSearchError = hasMetaSearch ? (searchMeta!.error || null) : legacyError;
                               const finalSearchResults = hasMetaSearch
-                                ? searchMeta!.results.map(r => ({ title: r.title, url: r.url, content: r.snippet }))
+                                ? searchMeta!.results.map(r => ({ title: r.title, url: r.url, content: r.snippet, snippet: r.snippet }))
                                 : legacyResults;
                               const isAwaitingFirstToken = isStreamingActive && !thinking && !finalHasSearch && !hasCrawl && !msg.browserSession;
                               
