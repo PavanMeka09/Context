@@ -1385,8 +1385,6 @@ function App() {
         onDeleteChat={handleDeleteChat}
         onRenameChat={handleRenameChat}
         onOpenSettings={() => setSettingsOpen(true)}
-        onOpenSchedules={() => setSchedulesOpen(true)}
-        onOpenBrowserModal={() => handleOpenBrowserModal('interactive')}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => {
           const next = !isSidebarCollapsed;
@@ -1417,11 +1415,8 @@ function App() {
           }}
           onSwitchBranch={handleSwitchBranch}
           onOpenBrowserModal={handleOpenBrowserModal}
-          settings={settings}
           isWorkspaceOpen={isWorkspaceOpen}
           onToggleWorkspace={() => toggleWorkspace()}
-          workspaceTab={workspaceTab}
-          onSelectWorkspaceTab={(tab) => changeWorkspaceTab(tab)}
           onOpenSettings={() => setSettingsOpen(true)}
         >
           <Composer

@@ -220,6 +220,64 @@ describe('SettingsModal Component', () => {
     expect(screen.getByText('Default Profile')).toBeDefined();
   });
 
+  it('switches between squircle profiles by clicking inactive profile squircle', async () => {
+    await act(async () => {
+      render(<SettingsModal {...defaultProps} />);
+    });
+
+    const newProfileBtn = screen.getByText('New Profile');
+    await act(async () => {
+      fireEvent.click(newProfileBtn);
+    });
+
+    const saveNameBtn = screen.getByTitle('Save name');
+    await act(async () => {
+      fireEvent.click(saveNameBtn);
+    });
+
+    // Both profiles should now be visible as squircles
+    const defaultProfileSquircle = screen.getByText('Default Profile');
+    await act(async () => {
+      fireEvent.click(defaultProfileSquircle);
+    });
+
+    // Default Profile is now active and shows its rename button
+    expect(screen.getByText('Default Profile')).toBeDefined();
+    expect(screen.getByTitle('Rename profile')).toBeDefined();
+  });
+
+  it('cancels profile rename with cancel button and escape key', async () => {
+    await act(async () => {
+      render(<SettingsModal {...defaultProps} />);
+    });
+
+    const renameBtn = screen.getByTitle('Rename profile');
+    await act(async () => {
+      fireEvent.click(renameBtn);
+    });
+
+    const cancelBtn = screen.getByTitle('Cancel');
+    await act(async () => {
+      fireEvent.click(cancelBtn);
+    });
+
+    expect(screen.queryByTitle('Cancel')).toBeNull();
+    expect(screen.getByText('Default Profile')).toBeDefined();
+
+    // Start rename again with button and cancel with Escape
+    const renameBtn2 = screen.getByTitle('Rename profile');
+    await act(async () => {
+      fireEvent.click(renameBtn2);
+    });
+
+    const input = screen.getByDisplayValue('Default Profile');
+    await act(async () => {
+      fireEvent.keyDown(input, { key: 'Escape' });
+    });
+
+    expect(screen.queryByDisplayValue('Default Profile')).toBeNull();
+  });
+
   it('renders Web Search and Web Context toggles in Web Search tab', async () => {
     await act(async () => {
       render(<SettingsModal {...defaultProps} />);

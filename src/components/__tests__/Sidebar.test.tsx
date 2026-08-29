@@ -41,7 +41,6 @@ describe('Sidebar Component', () => {
         onNewChat={vi.fn()}
         onDeleteChat={vi.fn()}
         onOpenSettings={vi.fn()}
-        onOpenSchedules={vi.fn()}
         isCollapsed={false}
         onToggleCollapse={vi.fn()}
         theme="dark"
@@ -64,7 +63,6 @@ describe('Sidebar Component', () => {
         onNewChat={vi.fn()}
         onDeleteChat={vi.fn()}
         onOpenSettings={vi.fn()}
-        onOpenSchedules={vi.fn()}
         isCollapsed={false}
         onToggleCollapse={vi.fn()}
         theme="dark"
@@ -90,7 +88,6 @@ describe('Sidebar Component', () => {
         onNewChat={handleNewChat}
         onDeleteChat={vi.fn()}
         onOpenSettings={vi.fn()}
-        onOpenSchedules={vi.fn()}
         isCollapsed={false}
         onToggleCollapse={vi.fn()}
         theme="dark"
@@ -115,7 +112,6 @@ describe('Sidebar Component', () => {
         onNewChat={vi.fn()}
         onDeleteChat={handleDeleteChat}
         onOpenSettings={vi.fn()}
-        onOpenSchedules={vi.fn()}
         isCollapsed={false}
         onToggleCollapse={vi.fn()}
         theme="dark"
@@ -141,7 +137,6 @@ describe('Sidebar Component', () => {
         onDeleteChat={vi.fn()}
         onRenameChat={handleRenameChat}
         onOpenSettings={vi.fn()}
-        onOpenSchedules={vi.fn()}
         isCollapsed={false}
         onToggleCollapse={vi.fn()}
         theme="dark"
@@ -180,7 +175,6 @@ describe('Sidebar Component', () => {
         onDeleteChat={vi.fn()}
         onRenameChat={handleRenameChat}
         onOpenSettings={vi.fn()}
-        onOpenSchedules={vi.fn()}
         isCollapsed={false}
         onToggleCollapse={vi.fn()}
         theme="dark"
@@ -211,7 +205,6 @@ describe('Sidebar Component', () => {
         onDeleteChat={vi.fn()}
         onRenameChat={handleRenameChat}
         onOpenSettings={vi.fn()}
-        onOpenSchedules={vi.fn()}
         isCollapsed={false}
         onToggleCollapse={vi.fn()}
         theme="dark"
@@ -230,8 +223,33 @@ describe('Sidebar Component', () => {
     expect(screen.queryByLabelText('Edit chat title')).toBeNull();
   });
 
-  it('calls onOpenBrowserModal when Browser Sandbox button is clicked', () => {
-    const handleOpenBrowser = vi.fn();
+  it('calls onOpenSettings when Settings button is clicked', () => {
+    const handleOpenSettings = vi.fn();
+    render(
+      <Sidebar
+        chats={mockChats}
+        activeChatId="chat-1"
+        settings={mockSettings}
+        onSelectChat={vi.fn()}
+        onNewChat={vi.fn()}
+        onDeleteChat={vi.fn()}
+        onOpenSettings={handleOpenSettings}
+        isCollapsed={false}
+        onToggleCollapse={vi.fn()}
+        theme="dark"
+        onThemeChanged={vi.fn()}
+      />
+    );
+
+    const settingsBtn = screen.getByLabelText('Open settings');
+    expect(settingsBtn).toBeDefined();
+    fireEvent.click(settingsBtn);
+
+    expect(handleOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onThemeChanged when Theme button is clicked', () => {
+    const handleThemeChanged = vi.fn();
     render(
       <Sidebar
         chats={mockChats}
@@ -241,20 +259,18 @@ describe('Sidebar Component', () => {
         onNewChat={vi.fn()}
         onDeleteChat={vi.fn()}
         onOpenSettings={vi.fn()}
-        onOpenSchedules={vi.fn()}
-        onOpenBrowserModal={handleOpenBrowser}
         isCollapsed={false}
         onToggleCollapse={vi.fn()}
         theme="dark"
-        onThemeChanged={vi.fn()}
+        onThemeChanged={handleThemeChanged}
       />
     );
 
-    const browserBtn = screen.getByLabelText('Open Browser Sandbox');
-    expect(browserBtn).toBeDefined();
-    fireEvent.click(browserBtn);
+    const themeBtn = screen.getByLabelText('Switch to light theme');
+    expect(themeBtn).toBeDefined();
+    fireEvent.click(themeBtn);
 
-    expect(handleOpenBrowser).toHaveBeenCalledTimes(1);
+    expect(handleThemeChanged).toHaveBeenCalledWith('light');
   });
 });
 

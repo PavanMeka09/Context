@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PRESET_PROMPTS, Storage, PROVIDERS } from '../utils/storage';
 import type { Settings, SystemPrompt, Chat, MemoryItem, ProviderProfile, ProviderType } from '../utils/storage';
 import { fetchModels, testOllamaConnection, fetchOllamaRunningModels, unloadOllamaModel, formatShutdownCountdown, type ModelOption, type OllamaRunningModel } from '../utils/api';
-import { X, Eye, EyeOff, Save, Plus, Trash2, Edit2, AlertCircle, Loader2, Download, CheckSquare, ChevronDown, Check, Globe, Search, Cpu, Database, FileText, Terminal, Brain, Activity, Clock, PowerOff, RotateCw } from 'lucide-react';
+import { X, Eye, EyeOff, Save, Plus, Trash2, Edit2, AlertCircle, Loader2, Download, CheckSquare, ChevronDown, Check, Globe, Search, Cpu, Database, FileText, Terminal, Brain, Activity, Clock, PowerOff, RotateCw, Sparkles, Bot } from 'lucide-react';
 import { testSearxngConnection } from '../utils/searxng';
 
 interface SettingsModalProps {
@@ -106,6 +106,23 @@ const OllamaModelItem: React.FC<OllamaModelItemProps> = ({
       </div>
     </div>
   );
+};
+
+const getProviderIcon = (provider: ProviderType) => {
+  switch (provider) {
+    case 'gemini':
+      return <Sparkles className="h-3.5 w-3.5 text-blue-500 shrink-0" />;
+    case 'anthropic':
+      return <Bot className="h-3.5 w-3.5 text-amber-500 shrink-0" />;
+    case 'openai':
+      return <Terminal className="h-3.5 w-3.5 text-emerald-500 shrink-0" />;
+    case 'openrouter':
+      return <Globe className="h-3.5 w-3.5 text-purple-500 shrink-0" />;
+    case 'ollama':
+      return <Cpu className="h-3.5 w-3.5 text-cyan-500 shrink-0" />;
+    default:
+      return <Cpu className="h-3.5 w-3.5 text-primary shrink-0" />;
+  }
 };
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -603,6 +620,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleSelectProfile = (id: string) => {
+    setEditingProfileId(null);
+    setEditingProfileName('');
     const updated = Storage.switchProfile(settings, id);
     const nextActive = Storage.getActiveProfile(updated);
     setSettings(updated);
@@ -629,6 +648,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleDeleteProfile = (id: string) => {
+    setEditingProfileId(null);
+    setEditingProfileName('');
     const nextSettings = Storage.deleteProfile(settings, id);
     const nextActive = Storage.getActiveProfile(nextSettings);
     setSettings(nextSettings);
@@ -789,89 +810,129 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                     Provider Profile
                   </label>
+                  <span className="text-[10px] text-muted-foreground">
+                    {(settings.profiles || []).length} profile{(settings.profiles || []).length === 1 ? '' : 's'}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                  {(settings.profiles || []).map(profile => {
+                    const isActive = profile.id === settings.activeProfileId;
+                    const isEditing = editingProfileId === profile.id;
+                    const iconBadge = (
+                      <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-lg bg-background/80 shadow-2xs border border-border/40">
+                        {getProviderIcon(profile.provider)}
+                      </div>
+                    );
+
+                    if (isEditing) {
+                      return (
+                        <div
+                          key={profile.id}
+                          className="flex items-center gap-1.5 rounded-xl border border-primary bg-primary/10 px-2.5 py-1.5 shadow-xs ring-1 ring-primary/20 animate-fade-in"
+                        >
+                          {iconBadge}
+                          <input
+                            type="text"
+                            value={editingProfileName}
+                            onChange={e => setEditingProfileName(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') handleSaveProfileName(profile.id);
+                              if (e.key === 'Escape') setEditingProfileId(null);
+                            }}
+                            autoFocus
+                            aria-label="Profile name input"
+                            className="w-24 min-w-0 rounded-md border border-input bg-background px-2 py-0.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSaveProfileName(profile.id)}
+                            className="rounded p-1 text-primary hover:bg-accent cursor-pointer transition"
+                            title="Save name"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingProfileId(null)}
+                            className="rounded p-1 text-muted-foreground hover:bg-accent cursor-pointer transition"
+                            title="Cancel"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={profile.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => handleSelectProfile(profile.id)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleSelectProfile(profile.id);
+                          }
+                        }}
+                        className={`group relative flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs transition cursor-pointer select-none ${
+                          isActive
+                            ? 'border-primary bg-primary/10 text-foreground font-semibold shadow-xs ring-1 ring-primary/25'
+                            : 'border-border/80 bg-muted/30 text-muted-foreground hover:bg-accent/80 hover:text-foreground hover:border-border active:scale-[0.98]'
+                        }`}
+                        title={`${profile.name} (${PROVIDERS[profile.provider]?.name || profile.provider})`}
+                      >
+                        {iconBadge}
+
+                        <span className="truncate max-w-[120px]">
+                          {profile.name}
+                        </span>
+
+                        {/* Actions on active squircle */}
+                        {isActive && (
+                          <div className="flex items-center gap-0.5 animate-fade-in">
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                handleStartRenameProfile(profile);
+                              }}
+                              className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-background/80 cursor-pointer transition"
+                              title="Rename profile"
+                            >
+                              <Edit2 className="h-3 w-3" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                handleDeleteProfile(profile.id);
+                              }}
+                              disabled={(settings.profiles || []).length <= 1}
+                              className="rounded p-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-30 disabled:pointer-events-none cursor-pointer transition"
+                              title="Delete profile"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Squircle Plus Button to Add New Profile */}
                   <button
                     type="button"
                     onClick={handleAddProfile}
-                    className="flex items-center gap-1 text-[11px] font-medium text-primary hover:underline cursor-pointer"
+                    className="flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-border/80 bg-muted/20 hover:bg-primary/5 hover:border-primary/80 hover:text-primary px-3 py-1.5 text-xs font-medium text-muted-foreground transition active:scale-95 cursor-pointer shadow-2xs"
+                    title="New Profile"
                   >
-                    <Plus className="h-3.5 w-3.5" />
+                    <Plus className="h-3.5 w-3.5 shrink-0" />
                     <span>New Profile</span>
                   </button>
                 </div>
-
-                {editingProfileId === settings.activeProfileId ? (
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      value={editingProfileName}
-                      onChange={e => setEditingProfileName(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') handleSaveProfileName(settings.activeProfileId!);
-                        if (e.key === 'Escape') setEditingProfileId(null);
-                      }}
-                      autoFocus
-                      className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleSaveProfileName(settings.activeProfileId!)}
-                      className="rounded p-1.5 text-primary hover:bg-accent cursor-pointer"
-                      title="Save name"
-                    >
-                      <Check className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditingProfileId(null)}
-                      className="rounded p-1.5 text-muted-foreground hover:bg-accent cursor-pointer"
-                      title="Cancel"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <div className="relative flex-1">
-                      <select
-                        aria-label="Select Provider Profile"
-                        value={settings.activeProfileId || ''}
-                        onChange={e => handleSelectProfile(e.target.value)}
-                        className="w-full appearance-none rounded-md border border-input bg-background pl-3.5 pr-8 py-2 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer"
-                      >
-                        {(settings.profiles || []).map(p => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const activeProf = (settings.profiles || []).find(p => p.id === settings.activeProfileId);
-                        if (activeProf) handleStartRenameProfile(activeProf);
-                      }}
-                      className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:text-foreground hover:bg-accent cursor-pointer transition shrink-0"
-                      title="Rename profile"
-                    >
-                      <Edit2 className="h-3.5 w-3.5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (settings.activeProfileId) handleDeleteProfile(settings.activeProfileId);
-                      }}
-                      disabled={(settings.profiles || []).length <= 1}
-                      className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition shrink-0"
-                      title="Delete profile"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                )}
               </div>
 
               {/* Provider Selection */}
