@@ -20,22 +20,11 @@ describe('BrowserLiveView Component', () => {
     expect(screen.getByText('Example Page')).toBeDefined();
   });
 
-  it('renders Enlarge button and triggers onInteract when clicked', () => {
+  it('renders Interact & Enlarge button and triggers onInteract when clicked', () => {
     const handleInteract = vi.fn();
     render(<BrowserLiveView {...defaultProps} onInteract={handleInteract} />);
 
-    const enlargeBtn = screen.getByLabelText('Enlarge browser view');
-    expect(enlargeBtn).toBeDefined();
-
-    fireEvent.click(enlargeBtn);
-    expect(handleInteract).toHaveBeenCalledWith('test-session');
-  });
-
-  it('renders Interact & Control button and triggers onInteract when clicked', () => {
-    const handleInteract = vi.fn();
-    render(<BrowserLiveView {...defaultProps} onInteract={handleInteract} />);
-
-    const interactBtn = screen.getByText('Interact & Control');
+    const interactBtn = screen.getByRole('button', { name: /interact and enlarge browser view/i });
     expect(interactBtn).toBeDefined();
 
     fireEvent.click(interactBtn);
@@ -53,13 +42,13 @@ describe('BrowserLiveView Component', () => {
     expect(handleInteract).toHaveBeenCalledWith('test-session');
   });
 
-  it('falls back to interactive session mode when sessionId is missing and Enlarge is clicked', () => {
+  it('falls back to interactive session mode when sessionId is missing and Interact & Enlarge is clicked', () => {
     const handleInteract = vi.fn();
     const propsWithoutSession = { ...defaultProps, sessionId: undefined };
     render(<BrowserLiveView {...propsWithoutSession} onInteract={handleInteract} />);
 
-    const enlargeBtn = screen.getByLabelText('Enlarge browser view');
-    fireEvent.click(enlargeBtn);
+    const interactBtn = screen.getByRole('button', { name: /interact and enlarge browser view/i });
+    fireEvent.click(interactBtn);
     expect(handleInteract).toHaveBeenCalledWith('interactive');
   });
 });

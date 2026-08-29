@@ -189,20 +189,11 @@ export const BrowserLiveView: React.FC<BrowserLiveViewProps> = ({
               type="button"
               onClick={handleOpenInteractiveSession}
               className="flex items-center gap-1 text-primary hover:text-primary/80 font-bold text-[9.5px] uppercase tracking-wider transition cursor-pointer border border-primary/20 bg-primary/5 hover:bg-primary/10 px-2 py-0.5 rounded shadow-xs"
-              title="Enlarge and view browser in large screen modal"
-              aria-label="Enlarge browser view"
+              title="Open browser in interactive sandbox modal"
+              aria-label="Interact and enlarge browser view"
             >
               <Maximize2 className="h-2.5 w-2.5" />
-              <span>Enlarge</span>
-            </button>
-          )}
-          {url && sessionId && onInteract && (
-            <button
-              onClick={() => onInteract(sessionId)}
-              className="flex items-center gap-1 text-primary hover:text-primary/80 font-bold text-[9.5px] uppercase tracking-wider transition cursor-pointer border border-primary/20 bg-primary/5 hover:bg-primary/10 px-2 py-0.5 rounded"
-            >
-              <span>Interact & Control</span>
-              <Terminal className="h-2.5 w-2.5" />
+              <span>Interact & Enlarge</span>
             </button>
           )}
           {url && (
