@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { Chat, Settings } from '../utils/storage';
-import { MessageSquare, Plus, Settings as SettingsIcon, Trash2, PanelLeftClose, Search, Sun, Moon } from 'lucide-react';
+import { MessageSquare, Plus, Settings as SettingsIcon, Trash2, PanelLeftClose, Search, Sun, Moon, Compass, Clock } from 'lucide-react';
 
 interface SidebarProps {
   chats: Chat[];
@@ -11,6 +11,8 @@ interface SidebarProps {
   onDeleteChat: (id: string) => void;
   onRenameChat?: (id: string, newTitle: string) => void;
   onOpenSettings: () => void;
+  onOpenSchedules?: () => void;
+  onOpenBrowserModal?: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   theme: 'dark' | 'light';
@@ -26,6 +28,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteChat,
   onRenameChat,
   onOpenSettings,
+  onOpenSchedules,
+  onOpenBrowserModal,
   isCollapsed,
   onToggleCollapse,
   theme,
@@ -244,6 +248,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Action button panel */}
         <div className="flex items-center gap-1 shrink-0">
+          {onOpenBrowserModal && (
+            <button
+              onClick={onOpenBrowserModal}
+              className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95 transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              title="Open Browser Sandbox"
+              aria-label="Open Browser Sandbox"
+            >
+              <Compass className="h-3.5 w-3.5" />
+            </button>
+          )}
+
+          {onOpenSchedules && (
+            <button
+              onClick={onOpenSchedules}
+              className="rounded-md border border-input bg-background p-2 text-muted-foreground hover:bg-accent hover:text-accent-foreground active:scale-95 transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              title="Open Task Scheduler"
+              aria-label="Open Task Scheduler"
+            >
+              <Clock className="h-3.5 w-3.5" />
+            </button>
+          )}
+
           <button
             onClick={() => {
               onThemeChanged(theme === 'light' ? 'dark' : 'light');

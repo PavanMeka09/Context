@@ -8,7 +8,7 @@ import type { Chat, Message, MessageNode, Settings, SystemPrompt, Attachment, Br
 import { streamChatCompletion } from './utils/api';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AlertCircle, X, Loader2, Compass, Calendar, Maximize2 } from 'lucide-react';
-import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
+import { useWorkspaceLayout, type WorkspaceTab } from './hooks/useWorkspaceLayout';
 
 // Code splitting for modal components to optimize initial chunk size
 const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
@@ -181,7 +181,7 @@ function App() {
     adjustWorkspaceWidth
   } = useWorkspaceLayout();
 
-  const handleToggleWorkspaceTab = (tab: 'browser' | 'schedules') => {
+  const handleToggleWorkspaceTab = (tab: WorkspaceTab) => {
     if (isWorkspaceOpen && workspaceTab === tab) {
       toggleWorkspace(false);
     } else {
@@ -1408,6 +1408,7 @@ function App() {
           isWorkspaceOpen={isWorkspaceOpen}
           workspaceTab={workspaceTab}
           onToggleWorkspaceTab={handleToggleWorkspaceTab}
+          settings={settings}
           onOpenSettings={() => setSettingsOpen(true)}
         >
           <Composer

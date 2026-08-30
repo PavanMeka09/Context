@@ -1,9 +1,10 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
-import type { Chat, Message } from '../utils/storage';
+import type { Chat, Message, Settings } from '../utils/storage';
+import type { WorkspaceTab } from '../hooks/useWorkspaceLayout';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { BrowserLiveView } from './BrowserLiveView';
 import { TextLoader } from 'generative-loaders';
-import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Volume2, VolumeX, Download, Compass, Calendar, Settings as SettingsIcon } from 'lucide-react';
+import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Volume2, VolumeX, Download, Compass, Calendar, Settings as SettingsIcon, Sparkles } from 'lucide-react';
 import { cleanSnippetText, getFaviconUrl, type SearxngResult } from '../utils/searxng';
 
 function parseThinkingAndContent(content: string): { thinking: string | null; content: string } {
@@ -673,6 +674,16 @@ const RegenerateButton: React.FC<RegenerateButtonProps> = ({ onClick, disabled, 
   </button>
 );
 
+const WORKSPACE_PANEL_TABS: Array<{
+  id: WorkspaceTab;
+  label: string;
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { id: 'browser', label: 'Browser', title: 'Toggle Browser Panel', icon: Compass },
+  { id: 'schedules', label: 'Scheduler', title: 'Toggle Scheduler Panel', icon: Calendar },
+];
+
 interface ChatAreaProps {
   chat?: Chat | null;
   onSendMessage: (content: string) => void;
@@ -685,9 +696,10 @@ interface ChatAreaProps {
   onToggleSidebar: () => void;
   onSwitchBranch?: (messageId: string) => void;
   onOpenBrowserModal?: (sessionId?: string) => void;
+  settings?: Settings;
   isWorkspaceOpen?: boolean;
-  workspaceTab?: 'browser' | 'schedules';
-  onToggleWorkspaceTab?: (tab: 'browser' | 'schedules') => void;
+  workspaceTab?: WorkspaceTab;
+  onToggleWorkspaceTab?: (tab: WorkspaceTab) => void;
   onOpenSettings?: () => void;
   children?: React.ReactNode;
 }
@@ -704,6 +716,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onToggleSidebar,
   onSwitchBranch,
   onOpenBrowserModal,
+  settings,
   isWorkspaceOpen,
   workspaceTab,
   onToggleWorkspaceTab,
@@ -856,6 +869,17 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             <h2 className="font-sans text-xs font-semibold text-foreground truncate max-w-[200px] sm:max-w-xs md:max-w-md lg:max-w-xl">
               {chat ? chat.title : 'New Conversation'}
             </h2>
+
+            {/* Active Model Badge */}
+            {settings?.model && (
+              <div
+                className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-mono font-medium shrink-0"
+                title={`Active AI Provider: ${settings.provider} (${settings.model})`}
+              >
+                <Sparkles className="h-2.5 w-2.5" />
+                <span className="truncate max-w-[110px]">{settings.model.split('/').pop()}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -914,35 +938,27 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           {/* Browser & Scheduler Workspace Buttons */}
           {onToggleWorkspaceTab && (
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => onToggleWorkspaceTab('browser')}
-                className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                  isWorkspaceOpen && workspaceTab === 'browser'
-                    ? 'bg-primary/10 border-primary/30 text-primary font-semibold'
-                    : 'border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground'
-                }`}
-                title="Toggle Browser Panel"
-                aria-label="Toggle Browser Panel"
-                aria-pressed={isWorkspaceOpen && workspaceTab === 'browser'}
-              >
-                <Compass className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">Browser</span>
-              </button>
-
-              <button
-                onClick={() => onToggleWorkspaceTab('schedules')}
-                className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                  isWorkspaceOpen && workspaceTab === 'schedules'
-                    ? 'bg-primary/10 border-primary/30 text-primary font-semibold'
-                    : 'border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground'
-                }`}
-                title="Toggle Scheduler Panel"
-                aria-label="Toggle Scheduler Panel"
-                aria-pressed={isWorkspaceOpen && workspaceTab === 'schedules'}
-              >
-                <Calendar className="h-3.5 w-3.5" />
-                <span className="hidden md:inline">Scheduler</span>
-              </button>
+              {WORKSPACE_PANEL_TABS.map(tab => {
+                const Icon = tab.icon;
+                const isActive = isWorkspaceOpen && workspaceTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => onToggleWorkspaceTab(tab.id)}
+                    className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                      isActive
+                        ? 'bg-primary/10 border-primary/30 text-primary font-semibold'
+                        : 'border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground'
+                    }`}
+                    title={tab.title}
+                    aria-label={tab.title}
+                    aria-pressed={isActive}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    <span className="hidden md:inline">{tab.label}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
 

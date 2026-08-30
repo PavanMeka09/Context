@@ -612,6 +612,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const nextSettings = Storage.addProfile(settings, { name });
     const nextActive = Storage.getActiveProfile(nextSettings);
     setSettings(nextSettings);
+    Storage.saveSettings(nextSettings);
     if (nextActive) {
       setEditingProfileId(nextActive.id);
       setEditingProfileName(nextActive.name);
@@ -625,6 +626,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const updated = Storage.switchProfile(settings, id);
     const nextActive = Storage.getActiveProfile(updated);
     setSettings(updated);
+    Storage.saveSettings(updated);
     if (nextActive) {
       loadModelsForProvider(nextActive);
     }
@@ -635,14 +637,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setEditingProfileName(profile.name);
   };
 
+  const handleCancelRenameProfile = () => {
+    setEditingProfileId(null);
+    setEditingProfileName('');
+  };
+
   const handleSaveProfileName = (id: string) => {
     if (!editingProfileName.trim()) return;
-    setSettings(prev => ({
-      ...prev,
-      profiles: (prev.profiles || []).map(p =>
-        p.id === id ? { ...p, name: editingProfileName.trim() } : p
-      )
-    }));
+    const trimmed = editingProfileName.trim();
+    setSettings(prev => {
+      const next = {
+        ...prev,
+        profiles: (prev.profiles || []).map(p =>
+          p.id === id ? { ...p, name: trimmed } : p
+        )
+      };
+      Storage.saveSettings(next);
+      return next;
+    });
     setEditingProfileId(null);
     setEditingProfileName('');
   };
@@ -653,6 +665,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const nextSettings = Storage.deleteProfile(settings, id);
     const nextActive = Storage.getActiveProfile(nextSettings);
     setSettings(nextSettings);
+    Storage.saveSettings(nextSettings);
     if (nextActive) {
       loadModelsForProvider(nextActive);
     }
@@ -838,7 +851,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             onChange={e => setEditingProfileName(e.target.value)}
                             onKeyDown={e => {
                               if (e.key === 'Enter') handleSaveProfileName(profile.id);
-                              if (e.key === 'Escape') setEditingProfileId(null);
+                              if (e.key === 'Escape') handleCancelRenameProfile();
                             }}
                             autoFocus
                             aria-label="Profile name input"
@@ -854,7 +867,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           </button>
                           <button
                             type="button"
-                            onClick={() => setEditingProfileId(null)}
+                            onClick={handleCancelRenameProfile}
                             className="rounded p-1 text-muted-foreground hover:bg-accent cursor-pointer transition"
                             title="Cancel"
                           >
