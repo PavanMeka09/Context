@@ -3,6 +3,7 @@ import type { Chat, Message, Settings } from '../utils/storage';
 import type { WorkspaceTab } from '../hooks/useWorkspaceLayout';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { BrowserLiveView } from './BrowserLiveView';
+import { ImageModal, type ImagePreviewItem } from './ImageModal';
 import { TextLoader } from 'generative-loaders';
 import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Volume2, VolumeX, Download, Compass, Calendar, Settings as SettingsIcon, Sparkles } from 'lucide-react';
 import { cleanSnippetText, getFaviconUrl, type SearxngResult } from '../utils/searxng';
@@ -730,12 +731,24 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+  const [previewImage, setPreviewImage] = useState<ImagePreviewItem | null>(null);
+
+  useEffect(() => {
+    const handleOpenPreview = (e: Event) => {
+      const customEvent = e as CustomEvent<ImagePreviewItem>;
+      if (customEvent.detail && customEvent.detail.src) {
+        setPreviewImage(customEvent.detail);
+      }
+    };
+    window.addEventListener('open-image-preview', handleOpenPreview);
+    return () => window.removeEventListener('open-image-preview', handleOpenPreview);
+  }, []);
 
   const displayMessages = useMemo(() => {
     if (!chat || !chat.messages) return [];
     if (!queuedMessageIds || queuedMessageIds.size === 0) return chat.messages;
     return chat.messages.filter(m => !queuedMessageIds.has(m.id));
-  }, [chat?.messages, queuedMessageIds]);
+  }, [chat, queuedMessageIds]);
 
   const handleToggleSpeech = (msgId: string, text: string) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
@@ -1070,16 +1083,33 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                                   return (
                                     <div
                                       key={att.id}
-                                      className="flex items-center gap-1.5 rounded border border-border bg-background p-1.5 text-[10px]"
+                                      onClick={() => {
+                                        if (isImage) {
+                                          setPreviewImage({ src: att.data, alt: att.name, title: att.name });
+                                        }
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (isImage && (e.key === 'Enter' || e.key === ' ')) {
+                                          e.preventDefault();
+                                          setPreviewImage({ src: att.data, alt: att.name, title: att.name });
+                                        }
+                                      }}
+                                      tabIndex={isImage ? 0 : undefined}
+                                      role={isImage ? 'button' : undefined}
+                                      aria-label={isImage ? `View enlarged image: ${att.name}` : undefined}
+                                      title={isImage ? `Click to enlarge image: ${att.name}` : att.name}
+                                      className={`flex items-center gap-1.5 rounded border border-border bg-background p-1.5 text-[10px] ${
+                                        isImage ? 'cursor-zoom-in hover:border-primary/50 hover:bg-accent/40 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring' : ''
+                                      }`}
                                     >
                                       {isImage ? (
                                         <img
                                           src={att.data}
                                           alt={att.name}
-                                          className="h-7 w-7 rounded object-cover border border-border"
+                                          className="h-7 w-7 rounded object-cover border border-border shrink-0"
                                         />
                                       ) : (
-                                        <div className="flex h-7 w-7 items-center justify-center rounded bg-muted border border-border text-foreground">
+                                        <div className="flex h-7 w-7 items-center justify-center rounded bg-muted border border-border text-foreground shrink-0">
                                           <FileText className="h-4 w-4" />
                                         </div>
                                       )}
@@ -1290,6 +1320,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                                         onSendMessage={onSendMessage} 
                                         isGenerating={isGenerating} 
                                         sessionId={chat?.id}
+                                        onOpenImagePreview={setPreviewImage}
                                       />
                                     </div>
                                   ) : (
@@ -1440,6 +1471,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         )}
         {children}
       </footer>
+
+      {/* Enlarged Image Modal for Chat Message Attachments & Previews */}
+      <ImageModal
+        isOpen={!!previewImage}
+        image={previewImage}
+        onClose={() => setPreviewImage(null)}
+      />
 
     </div>
   );

@@ -50,4 +50,49 @@ print('hello')
 
     expect(writeTextMock).toHaveBeenCalledWith("print('hello')");
   });
+
+  it('opens enlarged ImageModal when clicking on a markdown image', () => {
+    render(
+      <MarkdownRenderer
+        content={`Here is an image: ![Sample Diagram](https://example.com/diagram.png)`}
+      />
+    );
+
+    const img = screen.getByAltText('Sample Diagram');
+    expect(img).toBeDefined();
+
+    // Modal is initially not present
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    // Click on the image
+    fireEvent.click(img);
+
+    // Modal should now be open displaying enlarged view
+    expect(screen.getByRole('dialog')).toBeDefined();
+    expect(screen.getByLabelText('Sample Diagram')).toBeDefined();
+  });
+
+  it('triggers onOpenImagePreview when Enter key is pressed on focused markdown image', () => {
+    const onOpenImagePreview = vi.fn();
+    render(
+      <MarkdownRenderer
+        content={`![Accessible Chart](https://example.com/chart.png)`}
+        onOpenImagePreview={onOpenImagePreview}
+      />
+    );
+
+    const img = screen.getByAltText('Accessible Chart');
+    expect(img.getAttribute('tabindex')).toBe('0');
+    expect(img.getAttribute('role')).toBe('button');
+
+    fireEvent.keyDown(img, { key: 'Enter' });
+
+    expect(onOpenImagePreview).toHaveBeenCalledWith({
+      src: 'https://example.com/chart.png',
+      alt: 'Accessible Chart',
+      title: 'Image'
+    });
+  });
 });
+
+

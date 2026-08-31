@@ -3,12 +3,14 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Copy, Check, Code, Eye, Play, Terminal as TerminalIcon, Trash2, X, Sparkles, RotateCw, ExternalLink, Download } from 'lucide-react';
 import { wrapHtmlPreview, IFRAME_SANDBOX_PERMISSIONS, IFRAME_ALLOW_FEATURES } from '../utils/preview';
+import { ImageModal, type ImagePreviewItem } from './ImageModal';
 
 interface MarkdownRendererProps {
   content: string;
   onSendMessage?: (text: string) => void;
   isGenerating?: boolean;
   sessionId?: string;
+  onOpenImagePreview?: (item: ImagePreviewItem) => void;
 }
 const LANGUAGE_EXTENSIONS: Record<string, string> = {
   python: 'py',
@@ -28,7 +30,7 @@ const getLanguageExtension = (language: string): string => LANGUAGE_EXTENSIONS[l
 const BrowserScreenshotCard: React.FC<{
   src: string;
   alt?: string;
-  onOpenLightbox: (src: string) => void;
+  onOpenLightbox: (data: ImagePreviewItem) => void;
   sessionId?: string;
 }> = ({ src, alt, onOpenLightbox, sessionId }) => {
   const [refreshKey, setRefreshKey] = useState(() => Date.now());
@@ -72,6 +74,12 @@ const BrowserScreenshotCard: React.FC<{
   queryParams.set('t', refreshKey.toString());
   const currentSrc = `${src.split('?')[0]}?${queryParams.toString()}`;
 
+  const triggerEnlarge = (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onOpenLightbox({ src: currentSrc, alt: alt || 'Browser Screenshot', title: 'sandbox-screenshot.jpg' });
+  };
+
   return (
     <div className="w-full max-w-xl mx-auto rounded-xl border border-border bg-card overflow-hidden shadow-lg flex flex-col font-sans my-4 select-none">
       {/* Header bar */}
@@ -109,29 +117,32 @@ const BrowserScreenshotCard: React.FC<{
         <img
           src={currentSrc}
           alt={alt || 'Browser Screenshot'}
-          onClick={() => onOpenLightbox(currentSrc)}
-          className="max-w-full max-h-72 object-contain cursor-zoom-in transition duration-300 hover:opacity-95 hover:scale-[1.002]"
+          tabIndex={0}
+          role="button"
+          aria-label={alt || 'Browser Sandbox Screenshot - Click to enlarge'}
+          onClick={triggerEnlarge}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              triggerEnlarge(e);
+            }
+          }}
+          className="max-w-full max-h-72 object-contain cursor-zoom-in transition duration-300 hover:opacity-95 hover:scale-[1.002] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         />
       </div>
     </div>
   );
 };
 
-export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onSendMessage, isGenerating, sessionId }) => {
-  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onSendMessage, isGenerating, sessionId, onOpenImagePreview }) => {
+  const [localModalImage, setLocalModalImage] = useState<ImagePreviewItem | null>(null);
 
-  // Close lightbox on Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setLightboxSrc(null);
-      }
-    };
-    if (lightboxSrc) {
-      window.addEventListener('keydown', handleKeyDown);
+  const handleOpenPreview = useCallback((item: ImagePreviewItem) => {
+    if (onOpenImagePreview) {
+      onOpenImagePreview(item);
+    } else {
+      setLocalModalImage(item);
     }
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [lightboxSrc]);
+  }, [onOpenImagePreview]);
 
   // Preprocess content to identify <show_screenshot /> tag and map to markdown image
   const processedContent = React.useMemo(() => {
@@ -177,18 +188,33 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onS
                 <BrowserScreenshotCard
                   src={src}
                   alt={alt}
-                  onOpenLightbox={setLightboxSrc}
+                  onOpenLightbox={handleOpenPreview}
                   sessionId={sessionId}
                 />
               );
             }
+
+            const handleImageAction = (e: React.MouseEvent | React.KeyboardEvent) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleOpenPreview({ src, alt: alt || undefined, title: 'Image' });
+            };
+
             return (
               <span className="block my-3 max-w-full text-center select-none">
                 <img
                   src={src}
                   alt={alt || 'Image'}
-                  onClick={() => setLightboxSrc(src)}
-                  className="max-w-full max-h-96 rounded-xl border border-border shadow-lg object-contain bg-card cursor-zoom-in transition duration-300 hover:opacity-95 hover:scale-[1.005] inline-block"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={alt || 'Enlarged image preview'}
+                  onClick={handleImageAction}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      handleImageAction(e);
+                    }
+                  }}
+                  className="max-w-full max-h-96 rounded-xl border border-border shadow-lg object-contain bg-card cursor-zoom-in transition duration-300 hover:opacity-95 hover:scale-[1.005] inline-block focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   {...props}
                 />
                 {alt && (
@@ -212,30 +238,13 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, onS
         {processedContent}
       </ReactMarkdown>
 
-      {/* Lightbox full-screen glassmorphic overlay */}
-      {lightboxSrc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-md animate-fade-in select-none">
-          {/* Backdrop Click Close */}
-          <div className="fixed inset-0 cursor-zoom-out" onClick={() => setLightboxSrc(null)} />
-          
-          <div className="relative max-w-5xl max-h-[85vh] overflow-hidden rounded-xl border border-border bg-card shadow-2xl z-10 flex flex-col p-1 animate-scale-in">
-            <img
-              src={lightboxSrc}
-              alt="Zoomed View"
-              className="max-w-full max-h-[80vh] object-contain rounded-xl"
-            />
-            
-            {/* Close Overlay Icon */}
-            <button
-              onClick={() => setLightboxSrc(null)}
-              className="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-full bg-background/80 text-muted-foreground hover:text-destructive-foreground border border-border hover:bg-destructive transition-all cursor-pointer active:scale-90"
-              title="Close image overlay (Esc)"
-              aria-label="Close lightbox"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
+      {/* Standalone fallback image modal if not embedded inside ChatArea */}
+      {!onOpenImagePreview && (
+        <ImageModal
+          isOpen={!!localModalImage}
+          image={localModalImage}
+          onClose={() => setLocalModalImage(null)}
+        />
       )}
     </div>
   );

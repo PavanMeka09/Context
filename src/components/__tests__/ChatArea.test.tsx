@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { ChatArea } from '../ChatArea';
 import type { Chat } from '../../utils/storage';
 
@@ -210,4 +210,91 @@ describe('ChatArea Component', () => {
     expect(loader?.getAttribute('data-variant')).toBe('cascade');
     expect(loader?.getAttribute('aria-label')).toBe('Thinking...');
   });
+
+  it('opens enlarged ImageModal when clicking on an image attachment in a message', () => {
+    const chatWithImage: Chat = {
+      ...mockChat,
+      messages: [
+        {
+          id: 'm1',
+          role: 'user',
+          content: 'Check out this screenshot',
+          timestamp: '10:00 AM',
+          attachments: [
+            {
+              id: 'att-1',
+              name: 'screenshot-preview.png',
+              type: 'image/png',
+              size: 2048,
+              data: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+            }
+          ]
+        }
+      ]
+    };
+
+    render(
+      <ChatArea
+        {...defaultProps}
+        chat={chatWithImage}
+      />
+    );
+
+    expect(screen.getByText('screenshot-preview.png')).toBeDefined();
+    
+    // Modal is initially not open
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    // Click the attachment button
+    const attachmentBtn = screen.getByRole('button', { name: /View enlarged image: screenshot-preview\.png/i });
+    fireEvent.click(attachmentBtn);
+
+    // Modal is now open
+    const modal = screen.getByRole('dialog');
+    expect(modal).toBeDefined();
+    expect(within(modal).getByText('screenshot-preview.png')).toBeDefined();
+  });
+
+  it('opens enlarged ImageModal when clicking on a markdown image in an assistant message', () => {
+    const chatWithAssistantImage: Chat = {
+      ...mockChat,
+      messages: [
+        {
+          id: 'm1',
+          role: 'user',
+          content: 'Generate a chart',
+          timestamp: '10:00 AM'
+        },
+        {
+          id: 'm2',
+          role: 'assistant',
+          content: 'Here is your chart: ![Quarterly Growth](https://example.com/growth.png)',
+          timestamp: '10:01 AM'
+        }
+      ]
+    };
+
+    render(
+      <ChatArea
+        {...defaultProps}
+        chat={chatWithAssistantImage}
+      />
+    );
+
+    const img = screen.getByAltText('Quarterly Growth');
+    expect(img).toBeDefined();
+
+    // Modal is initially not open
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    // Click the markdown image
+    fireEvent.click(img);
+
+    // Modal is now open displaying the image
+    const modal = screen.getByRole('dialog');
+    expect(modal).toBeDefined();
+    expect(within(modal).getByAltText('Quarterly Growth')).toBeDefined();
+  });
 });
+
+

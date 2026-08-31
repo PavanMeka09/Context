@@ -3,6 +3,7 @@ import { Square, ArrowUp, Paperclip, Mic, MicOff, X, FileText, Search, ChevronDo
 import type { Attachment, Settings, SystemPrompt } from '../utils/storage';
 import { Storage, PRESET_PROMPTS } from '../utils/storage';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
+import type { ImagePreviewItem } from './ImageModal';
 import type { QueuedMessage } from '../App';
 
 interface ComposerProps {
@@ -23,6 +24,7 @@ interface ComposerProps {
   queueCount?: number;
   messageQueue?: QueuedMessage[];
   onRemoveQueuedMessage?: (id: string) => void;
+  onOpenImagePreview?: (item: ImagePreviewItem) => void;
 }
 
 export const Composer: React.FC<ComposerProps> = ({
@@ -41,7 +43,8 @@ export const Composer: React.FC<ComposerProps> = ({
   customPrompts,
   queueCount = 0,
   messageQueue,
-  onRemoveQueuedMessage
+  onRemoveQueuedMessage,
+  onOpenImagePreview
 }) => {
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   const [tempInput, setTempInput] = useState('');
@@ -286,10 +289,19 @@ export const Composer: React.FC<ComposerProps> = ({
                   <img
                     src={att.data}
                     alt={att.name}
-                    className="h-7 w-7 rounded object-cover border border-border"
+                    title="Click to preview image"
+                    onClick={() => {
+                      const item = { src: att.data, alt: att.name, title: att.name };
+                      if (onOpenImagePreview) {
+                        onOpenImagePreview(item);
+                      } else {
+                        window.dispatchEvent(new CustomEvent('open-image-preview', { detail: item }));
+                      }
+                    }}
+                    className="h-7 w-7 rounded object-cover border border-border cursor-zoom-in hover:opacity-90 transition-opacity shrink-0"
                   />
                 ) : (
-                  <div className="flex h-7 w-7 items-center justify-center rounded bg-secondary text-secondary-foreground border border-border">
+                  <div className="flex h-7 w-7 items-center justify-center rounded bg-secondary text-secondary-foreground border border-border shrink-0">
                     <FileText className="h-4 w-4" />
                   </div>
                 )}
