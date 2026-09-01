@@ -242,11 +242,11 @@ export const Composer: React.FC<ComposerProps> = ({
   };
 
   return (
-    <div className="relative w-full max-w-2xl px-4 pb-6">
+    <div className="relative w-full max-w-2xl px-4 pb-6 select-none">
 
       {/* Queue Box at top of message box */}
       {messageQueue && messageQueue.length > 0 && (
-        <div className="mb-2.5 flex flex-col gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300 shadow-sm animate-fade-in backdrop-blur-sm select-none">
+        <div className="mb-2.5 flex flex-col gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300 shadow-xs animate-fade-in backdrop-blur-sm select-none">
           <div className="flex items-center justify-between font-semibold">
             <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-200">
               <Clock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
@@ -254,9 +254,9 @@ export const Composer: React.FC<ComposerProps> = ({
             </div>
             <span className="text-[10px] font-medium text-amber-600/80 dark:text-amber-400/80">Will process automatically</span>
           </div>
-          <div className="flex flex-col gap-1.5 max-h-28 overflow-y-auto pr-1">
+          <div className="flex flex-col gap-1.5 max-h-28 overflow-y-auto pr-1 scrollbar-thin">
             {messageQueue.map((item, idx) => (
-              <div key={item.id} className="group/queue-item flex items-center gap-2 rounded-lg bg-background/80 border border-amber-500/20 px-2.5 py-1.5 text-foreground shadow-2xs">
+              <div key={item.id} className="group/queue-item flex items-center gap-2 rounded-lg bg-card/80 border border-amber-500/25 px-2.5 py-1.5 text-foreground shadow-2xs">
                 <span className="font-mono text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/15 px-1.5 py-0.5 rounded shrink-0">#{idx + 1}</span>
                 <span className="truncate flex-1 font-medium text-xs text-foreground/90">{item.userGoal}</span>
                 {onRemoveQueuedMessage && (
@@ -275,6 +275,7 @@ export const Composer: React.FC<ComposerProps> = ({
           </div>
         </div>
       )}
+
       {/* Attachments Preview Area */}
       {attachments.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-2 animate-fade-in select-none">
@@ -283,7 +284,7 @@ export const Composer: React.FC<ComposerProps> = ({
             return (
               <div
                 key={att.id}
-                className="group relative flex items-center gap-1.5 rounded-md border border-border bg-muted/50 p-1.5 text-[10px] text-foreground"
+                className="group relative flex items-center gap-1.5 rounded-lg border border-border bg-card p-1.5 text-[10px] text-foreground shadow-2xs"
               >
                 {isImage ? (
                   <img
@@ -298,10 +299,10 @@ export const Composer: React.FC<ComposerProps> = ({
                         window.dispatchEvent(new CustomEvent('open-image-preview', { detail: item }));
                       }
                     }}
-                    className="h-7 w-7 rounded object-cover border border-border cursor-zoom-in hover:opacity-90 transition-opacity shrink-0"
+                    className="h-8 w-8 rounded-md object-cover border border-border cursor-zoom-in hover:opacity-90 transition-opacity shrink-0"
                   />
                 ) : (
-                  <div className="flex h-7 w-7 items-center justify-center rounded bg-secondary text-secondary-foreground border border-border shrink-0">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-secondary-foreground border border-border shrink-0">
                     <FileText className="h-4 w-4" />
                   </div>
                 )}
@@ -327,35 +328,36 @@ export const Composer: React.FC<ComposerProps> = ({
 
       {/* Active Voice Recording Status Banner */}
       {(isRecording || isTranscribing) && (
-        <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-500 animate-fade-in select-none">
-          <div className="flex items-center gap-2">
+        <div className="mb-2.5 flex items-center justify-between gap-2 rounded-xl border border-red-500/40 bg-red-500/10 px-3.5 py-2.5 text-xs font-semibold text-red-500 animate-fade-in select-none shadow-xs">
+          <div className="flex items-center gap-2.5 min-w-0">
             {isTranscribing ? (
               <>
-                <Loader2 className="h-4 w-4 text-red-500 animate-spin" />
-                <span>Transcribing voice with AI...</span>
+                <Loader2 className="h-4 w-4 text-red-500 animate-spin shrink-0" />
+                <span className="truncate">Transcribing voice with AI...</span>
               </>
             ) : (
               <>
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                </span>
-                <Mic className="h-4 w-4 text-red-500" />
-                <span>
+                <div className="flex items-center gap-0.5 h-4 px-1">
+                  <span className="audio-bar !bg-red-500" />
+                  <span className="audio-bar !bg-red-500" />
+                  <span className="audio-bar !bg-red-500" />
+                  <span className="audio-bar !bg-red-500" />
+                </div>
+                <span className="truncate">
                   {recordingMode === 'ai'
-                    ? `Recording voice (${Math.floor(recordingSeconds / 60)}:${(recordingSeconds % 60).toString().padStart(2, '0')})... Speak now`
-                    : 'Listening... Speak clearly into your mic'}
+                    ? `Recording audio (${Math.floor(recordingSeconds / 60)}:${(recordingSeconds % 60).toString().padStart(2, '0')})... Speak now`
+                    : 'Listening... Speak clearly into microphone'}
                 </span>
               </>
             )}
           </div>
           {!isTranscribing && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 shrink-0">
               {recordingMode === 'ai' && (
                 <button
                   type="button"
                   onClick={cancelRecording}
-                  className="rounded px-2 py-0.5 text-[10px] uppercase font-bold bg-muted hover:bg-muted/80 text-foreground transition cursor-pointer"
+                  className="rounded-lg px-2.5 py-1 text-[10px] uppercase font-bold bg-muted hover:bg-muted/80 text-foreground transition cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -363,7 +365,7 @@ export const Composer: React.FC<ComposerProps> = ({
               <button
                 type="button"
                 onClick={toggleRecording}
-                className="rounded px-2 py-0.5 text-[10px] uppercase font-bold bg-red-500 text-white hover:bg-red-600 transition cursor-pointer"
+                className="rounded-lg px-2.5 py-1 text-[10px] uppercase font-bold bg-red-500 text-white hover:bg-red-600 transition cursor-pointer shadow-xs active:scale-95"
               >
                 Done
               </button>
@@ -372,8 +374,8 @@ export const Composer: React.FC<ComposerProps> = ({
         </div>
       )}
 
-      {/* Input container */}
-      <div className="relative rounded-lg border border-input bg-card p-1.5 transition-all flex flex-col gap-1.5 focus-within:ring-1 focus-within:ring-ring">
+      {/* Input container: Floating Glassmorphic Dock */}
+      <div className="relative rounded-2xl border border-border/80 bg-card/85 backdrop-blur-xl glass-card p-2 transition-all flex flex-col gap-1.5 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20 shadow-xs">
         <textarea
           ref={inputRef}
           value={input}
@@ -394,12 +396,12 @@ export const Composer: React.FC<ComposerProps> = ({
           }
           rows={1}
           style={{ resize: 'none' }}
-          className="w-full bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none scrollbar-none leading-relaxed"
+          className="w-full bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none scrollbar-none leading-relaxed text-sm select-text"
         />
 
         {/* Composer Bottom Toolbar */}
-        <div className="border-t border-border pt-2 px-1.5 pb-0.5 flex items-center justify-between select-none">
-          <div className="flex items-center gap-1.5">
+        <div className="border-t border-border/60 pt-2 px-1 pb-0.5 flex items-center justify-between select-none gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap min-w-0">
             {/* System Prompt Picker */}
             <div className="relative">
               <button
@@ -409,10 +411,10 @@ export const Composer: React.FC<ComposerProps> = ({
                 aria-label="Select persona"
                 aria-expanded={promptDropdownOpen}
                 aria-haspopup="menu"
-                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-lg text-[10px] font-semibold border transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                   activePromptId !== 'preset-general'
-                    ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/95'
-                    : 'border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
+                    ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/95 shadow-2xs'
+                    : 'border-border bg-transparent hover:bg-accent hover:text-foreground text-muted-foreground'
                 }`}
               >
                 <Sparkles className="h-3.5 w-3.5" />
@@ -425,7 +427,7 @@ export const Composer: React.FC<ComposerProps> = ({
               {promptDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-20" onClick={() => setPromptDropdownOpen(false)} />
-                  <div className="absolute left-0 bottom-8.5 z-30 w-48 rounded-md border border-border bg-popover p-1 shadow-md animate-fade-in max-h-52 overflow-y-auto">
+                  <div className="absolute left-0 bottom-8.5 z-30 w-48 rounded-xl border border-border bg-popover p-1 shadow-lg animate-fade-in max-h-52 overflow-y-auto scrollbar-thin">
                     <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border mb-1">
                       System Presets
                     </div>
@@ -437,7 +439,7 @@ export const Composer: React.FC<ComposerProps> = ({
                           onSelectPromptId(prompt.id);
                           setPromptDropdownOpen(false);
                         }}
-                        className={`flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
+                        className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
                           activePromptId === prompt.id
                             ? 'bg-accent text-accent-foreground font-semibold'
                             : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -460,7 +462,7 @@ export const Composer: React.FC<ComposerProps> = ({
                               onSelectPromptId(prompt.id);
                               setPromptDropdownOpen(false);
                             }}
-                            className={`flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
+                            className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
                               activePromptId === prompt.id
                                 ? 'bg-accent text-accent-foreground font-semibold'
                                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -478,7 +480,7 @@ export const Composer: React.FC<ComposerProps> = ({
             </div>
 
             {/* Separator line */}
-            <div className="w-[1px] h-4 bg-border mx-0.5" />
+            <div className="w-[1px] h-4 bg-border mx-0.5 hidden md:block" />
 
             {/* Tools: collapsed menu on small screens, inline on md+ */}
             <div className="relative md:hidden">
@@ -489,10 +491,10 @@ export const Composer: React.FC<ComposerProps> = ({
                 aria-label="Tools"
                 aria-expanded={toolsDropdownOpen}
                 aria-haspopup="menu"
-                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-lg text-[10px] font-semibold border transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                   settings.isWebSearchEnabled || settings.isBrowserAgentEnabled || settings.isWebContextEnabled
-                    ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/95'
-                    : 'border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
+                    ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/95 shadow-2xs'
+                    : 'border-border bg-transparent hover:bg-accent hover:text-foreground text-muted-foreground'
                 }`}
               >
                 <Search className="h-3.5 w-3.5" />
@@ -502,7 +504,7 @@ export const Composer: React.FC<ComposerProps> = ({
               {toolsDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-20" onClick={() => setToolsDropdownOpen(false)} />
-                  <div role="menu" className="absolute left-0 bottom-8.5 z-30 w-48 rounded-md border border-border bg-popover p-1 shadow-md animate-fade-in">
+                  <div role="menu" className="absolute left-0 bottom-8.5 z-30 w-48 rounded-xl border border-border bg-popover p-1 shadow-lg animate-fade-in">
                     <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border mb-1">
                       Context Tools
                     </div>
@@ -510,7 +512,7 @@ export const Composer: React.FC<ComposerProps> = ({
                       role="menuitem"
                       type="button"
                       onClick={() => { toggleWebSearch(); setToolsDropdownOpen(false); }}
-                      className={`flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
+                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
                         settings.isWebSearchEnabled ? 'bg-accent text-accent-foreground font-semibold' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                       }`}
                     >
@@ -522,19 +524,19 @@ export const Composer: React.FC<ComposerProps> = ({
                       role="menuitem"
                       type="button"
                       onClick={() => { toggleWebContext(); setToolsDropdownOpen(false); }}
-                      className={`flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
+                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
                         settings.isWebContextEnabled ? 'bg-accent text-accent-foreground font-semibold' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                       }`}
                     >
                       <FileText className="h-3.5 w-3.5" />
-                      <span className="flex-1">Web Context</span>
+                      <span className="flex-1">Web Context (Crawl4AI)</span>
                       {settings.isWebContextEnabled && <Check className="h-3.5 w-3.5 text-primary" />}
                     </button>
                     <button
                       role="menuitem"
                       type="button"
                       onClick={() => { toggleBrowserAgent(); setToolsDropdownOpen(false); }}
-                      className={`flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
+                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer ${
                         settings.isBrowserAgentEnabled ? 'bg-accent text-accent-foreground font-semibold' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                       }`}
                     >
@@ -547,7 +549,6 @@ export const Composer: React.FC<ComposerProps> = ({
               )}
             </div>
 
-
             {/* Web Search Toggle — md+ */}
             <button
               type="button"
@@ -555,10 +556,10 @@ export const Composer: React.FC<ComposerProps> = ({
               title={settings.isWebSearchEnabled ? "Disable Web Search (SearXNG)" : "Enable Web Search (SearXNG)"}
               aria-label="Toggle Web Search"
               aria-pressed={settings.isWebSearchEnabled}
-              className={`hidden md:flex h-7 items-center gap-1.5 rounded-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+              className={`hidden md:flex h-7 items-center gap-1.5 rounded-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                 settings.isWebSearchEnabled
-                  ? 'px-2 border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
-                  : 'w-7 justify-center border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
+                  ? 'px-2.5 border border-primary bg-primary text-primary-foreground hover:bg-primary/95 shadow-2xs'
+                  : 'w-7 justify-center border border-border bg-transparent hover:bg-accent hover:text-foreground text-muted-foreground'
               }`}
             >
               <Globe className="h-3.5 w-3.5" />
@@ -569,17 +570,17 @@ export const Composer: React.FC<ComposerProps> = ({
             <button
               type="button"
               onClick={toggleWebContext}
-              title={settings.isWebContextEnabled ? "Disable Web Context (AI auto-crawls links & page content)" : "Enable Web Context (AI auto-crawls links & page content)"}
-              aria-label="Toggle Web Context"
+              title={settings.isWebContextEnabled ? "Disable Web Context (Crawl4AI auto-crawls links & page content)" : "Enable Web Context (Crawl4AI auto-crawls links & page content)"}
+              aria-label="Toggle Web Context (Crawl4AI)"
               aria-pressed={settings.isWebContextEnabled}
-              className={`hidden md:flex h-7 items-center gap-1.5 rounded-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+              className={`hidden md:flex h-7 items-center gap-1.5 rounded-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                 settings.isWebContextEnabled
-                  ? 'px-2 border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
-                  : 'w-7 justify-center border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
+                  ? 'px-2.5 border border-primary bg-primary text-primary-foreground hover:bg-primary/95 shadow-2xs'
+                  : 'w-7 justify-center border border-border bg-transparent hover:bg-accent hover:text-foreground text-muted-foreground'
               }`}
             >
               <FileText className="h-3.5 w-3.5" />
-              {settings.isWebContextEnabled && <span className="text-[10px] font-semibold">Context</span>}
+              {settings.isWebContextEnabled && <span className="text-[10px] font-semibold">Crawl4AI</span>}
             </button>
 
             {/* Browser Agent Toggle — md+ */}
@@ -589,10 +590,10 @@ export const Composer: React.FC<ComposerProps> = ({
               title={settings.isBrowserAgentEnabled ? "Disable Browser Agent" : "Enable Browser Agent (Automate browser tasks)"}
               aria-label="Toggle Browser Agent"
               aria-pressed={settings.isBrowserAgentEnabled}
-              className={`hidden md:flex h-7 items-center gap-1.5 rounded-md transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+              className={`hidden md:flex h-7 items-center gap-1.5 rounded-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                 settings.isBrowserAgentEnabled
-                  ? 'px-2 border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
-                  : 'w-7 justify-center border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
+                  ? 'px-2.5 border border-primary bg-primary text-primary-foreground hover:bg-primary/95 shadow-2xs'
+                  : 'w-7 justify-center border border-border bg-transparent hover:bg-accent hover:text-foreground text-muted-foreground'
               }`}
             >
               <Compass className="h-3.5 w-3.5" />
@@ -611,10 +612,10 @@ export const Composer: React.FC<ComposerProps> = ({
                 aria-label="Thinking level"
                 aria-expanded={thinkingDropdownOpen}
                 aria-haspopup="menu"
-                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-md text-[10px] font-semibold border transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                className={`flex h-7 px-2.5 items-center gap-1.5 rounded-lg text-[10px] font-semibold border transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                   settings.thinkingLevel && settings.thinkingLevel !== 'off'
-                    ? 'border border-primary bg-primary text-primary-foreground hover:bg-primary/95'
-                    : 'border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground'
+                    ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/95 shadow-2xs'
+                    : 'border-border bg-transparent hover:bg-accent hover:text-foreground text-muted-foreground'
                 }`}
               >
                 <Brain className="h-3.5 w-3.5" />
@@ -627,7 +628,7 @@ export const Composer: React.FC<ComposerProps> = ({
               {thinkingDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-20" onClick={() => setThinkingDropdownOpen(false)} />
-                  <div role="menu" className="absolute left-0 bottom-8.5 z-30 w-36 rounded-md border border-border bg-popover p-1 shadow-md animate-fade-in">
+                  <div role="menu" className="absolute left-0 bottom-8.5 z-30 w-36 rounded-xl border border-border bg-popover p-1 shadow-lg animate-fade-in">
                     <div className="px-2 py-1 text-[9px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border mb-1">
                       Thinking Level
                     </div>
@@ -642,7 +643,7 @@ export const Composer: React.FC<ComposerProps> = ({
                           onSettingsChanged?.(updatedSettings);
                           setThinkingDropdownOpen(false);
                         }}
-                        className={`flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer capitalize ${
+                        className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-[10.5px] transition cursor-pointer capitalize ${
                           (settings.thinkingLevel || 'off') === level
                             ? 'bg-accent text-accent-foreground font-semibold'
                             : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -674,7 +675,7 @@ export const Composer: React.FC<ComposerProps> = ({
               onClick={() => fileInputRef.current?.click()}
               title="Attach files (text/images)"
               aria-label="Attach files"
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-transparent hover:bg-accent hover:text-foreground text-muted-foreground transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
               <Paperclip className="h-3.5 w-3.5" />
             </button>
@@ -695,14 +696,14 @@ export const Composer: React.FC<ComposerProps> = ({
                       ? "Stop voice typing" 
                       : "Voice typing"
               }
-              className={`flex h-7 w-7 items-center justify-center rounded-md transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+              className={`flex h-7 w-7 items-center justify-center rounded-lg transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
                 !isSpeechSupported
-                  ? 'opacity-35 cursor-not-allowed border border-input text-muted-foreground bg-transparent'
+                  ? 'opacity-35 cursor-not-allowed border border-border text-muted-foreground bg-transparent'
                   : isTranscribing
                     ? 'border border-primary text-primary bg-primary/10 animate-spin cursor-wait'
                     : isRecording
-                      ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90 animate-pulse cursor-pointer'
-                      : 'border border-input bg-transparent hover:bg-accent hover:text-accent-foreground text-muted-foreground cursor-pointer'
+                      ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90 animate-pulse cursor-pointer shadow-xs'
+                      : 'border border-border bg-transparent hover:bg-accent hover:text-foreground text-muted-foreground cursor-pointer'
               }`}
             >
               {isTranscribing ? (
@@ -715,15 +716,15 @@ export const Composer: React.FC<ComposerProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {queueCount > 0 && (
-              <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded select-none animate-fade-in">
+              <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-md select-none animate-fade-in">
                 <Clock className="h-3 w-3" />
                 <span>Queued ({queueCount})</span>
               </span>
             )}
             {input.trim() && (
-              <span className="text-[10px] font-medium text-muted-foreground bg-muted/40 px-2 py-0.5 rounded border border-border select-none animate-fade-in">
+              <span className="hidden sm:inline text-[10px] font-medium text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-md border border-border/80 select-none animate-fade-in">
                 ~{Math.ceil(input.trim().length / 4)} tokens
               </span>
             )}
@@ -734,7 +735,7 @@ export const Composer: React.FC<ComposerProps> = ({
                 onClick={onStop}
                 title="Stop generating"
                 aria-label="Stop generating"
-                className="flex h-7 w-7 items-center justify-center rounded-md bg-foreground text-background hover:bg-foreground/90 transition-all cursor-pointer shadow-sm active:scale-95 animate-fade-in"
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-all cursor-pointer shadow-xs active:scale-95 animate-fade-in"
               >
                 <Square className="h-3 w-3 fill-current" />
               </button>
@@ -745,10 +746,10 @@ export const Composer: React.FC<ComposerProps> = ({
                 disabled={!input.trim() && attachments.length === 0}
                 title="Send message"
                 aria-label="Send message"
-                className={`flex h-7 w-7 items-center justify-center rounded-md transition-all ${
+                className={`flex h-7 w-7 items-center justify-center rounded-lg transition-all ${
                   input.trim() || attachments.length > 0
-                    ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm cursor-pointer'
-                    : 'bg-muted text-muted-foreground'
+                    ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs cursor-pointer active:scale-95'
+                    : 'bg-muted text-muted-foreground opacity-50 cursor-not-allowed'
                 }`}
               >
                 <ArrowUp className="h-3.5 w-3.5 stroke-[2.5]" />

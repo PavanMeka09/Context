@@ -675,16 +675,6 @@ const RegenerateButton: React.FC<RegenerateButtonProps> = ({ onClick, disabled, 
   </button>
 );
 
-const WORKSPACE_PANEL_TABS: Array<{
-  id: WorkspaceTab;
-  label: string;
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-}> = [
-  { id: 'browser', label: 'Browser', title: 'Toggle Browser Panel', icon: Compass },
-  { id: 'schedules', label: 'Scheduler', title: 'Toggle Scheduler Panel', icon: Calendar },
-];
-
 interface ChatAreaProps {
   chat?: Chat | null;
   onSendMessage: (content: string) => void;
@@ -704,6 +694,203 @@ interface ChatAreaProps {
   onOpenSettings?: () => void;
   children?: React.ReactNode;
 }
+
+const WORKSPACE_PANEL_TABS: Array<{
+  id: WorkspaceTab;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { id: 'browser', label: 'Toggle Browser Panel', icon: Compass },
+  { id: 'schedules', label: 'Toggle Scheduler Panel', icon: Calendar },
+];
+
+const HeroStudio: React.FC<{
+  settings?: Settings;
+  onSendMessage: (text: string) => void;
+  onOpenBrowserModal?: () => void;
+  onOpenSchedules?: () => void;
+}> = ({ settings, onSendMessage, onOpenBrowserModal, onOpenSchedules }) => {
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  }, []);
+
+  const starterCards: Array<{
+    title: string;
+    icon: React.ReactNode;
+    badge: string;
+    prompt: string;
+    action?: () => void;
+  }> = [
+    {
+      title: 'Analyze & Summarize Web',
+      icon: <Globe className="h-4 w-4 text-emerald-500" />,
+      badge: 'SearXNG + Crawl4AI',
+      prompt: 'Search the web for the latest advancements in AI multi-agent orchestration and summarize the key paradigms.'
+    },
+    {
+      title: 'Interactive Code Sandbox',
+      icon: <Terminal className="h-4 w-4 text-blue-500" />,
+      badge: 'JS / TS / Python',
+      prompt: 'Write and run a TypeScript benchmark comparing Array.reduce vs for...of loop performance with 1,000,000 items.'
+    },
+    {
+      title: 'Autonomous Browser Agent',
+      icon: <Compass className="h-4 w-4 text-purple-500" />,
+      badge: 'Playwright Stealth',
+      prompt: 'Navigate to Hacker News (news.ycombinator.com), extract the top 5 trending stories with their points and URLs.',
+      action: onOpenBrowserModal
+    },
+    {
+      title: 'Architecture & System Design',
+      icon: <Database className="h-4 w-4 text-amber-500" />,
+      badge: 'Deep Reasoning',
+      prompt: 'Design a high-concurrency event-driven architecture for a real-time collaborative whiteboard with WebSocket synchronization.'
+    }
+  ];
+
+  const capabilities: Array<{
+    label: string;
+    desc: string;
+    onClick?: () => void;
+  }> = [
+    { label: 'Real-time Web Search', desc: 'SearXNG & Wikipedia' },
+    { label: 'Crawl4AI Engine', desc: 'Markdown extraction' },
+    { label: 'Playwright Agent', desc: 'Browser automation', onClick: onOpenBrowserModal },
+    { label: 'Execution Sandbox', desc: 'JS/TS & Python runner' },
+    { label: 'Task Scheduler', desc: 'Cron & interval automation', onClick: onOpenSchedules },
+    { label: 'Multi-tier Thinking', desc: 'Structured chain-of-thought' }
+  ];
+
+  return (
+    <div className="mx-auto max-w-2xl flex flex-col items-center justify-center py-6 px-4 text-center animate-fade-in select-none">
+      {/* Brand Aura Logo */}
+      <div className="relative mb-3 flex items-center justify-center">
+        <div className="absolute -inset-3 rounded-full bg-primary/20 blur-xl animate-pulse pointer-events-none" />
+        <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-card to-muted border border-border/80 shadow-md">
+          <Sparkles className="h-6 w-6 text-primary" />
+        </div>
+      </div>
+
+      {/* Greeting Headline */}
+      <h1 className="font-sans text-xl sm:text-2xl font-bold tracking-tight text-foreground">
+        {greeting}, Explorer
+      </h1>
+      <p className="mt-1 text-xs text-muted-foreground max-w-sm">
+        Your high-performance AI workstation for deep research, coding sandboxes, and browser automation.
+      </p>
+
+      {/* Model & Command Palette Hint */}
+      <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/60 border border-border text-[10px]">
+          <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+          <span className="font-semibold text-foreground uppercase tracking-wider">{settings?.provider || 'AI'}</span>
+          <span className="text-muted-foreground/60">/</span>
+          <span className="font-mono text-muted-foreground">{settings?.model?.split('/').pop() || 'Default'}</span>
+        </div>
+        <div className="hidden sm:flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/40 px-2 py-1 rounded-md border border-border/60">
+          <span>Press</span>
+          <kbd className="px-1 py-0.2 rounded bg-card border border-border font-mono font-bold text-foreground">Ctrl+K</kbd>
+          <span>for commands</span>
+        </div>
+      </div>
+
+      {/* Prompt Starter Cards Grid */}
+      <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full text-left">
+        {starterCards.map((card, idx) => {
+          const handleCardClick = () => {
+            if (card.action) {
+              card.action();
+            } else {
+              onSendMessage(card.prompt);
+            }
+          };
+
+          return (
+            <div
+              key={idx}
+              onClick={handleCardClick}
+              className="group relative flex flex-col justify-between p-3 rounded-xl border border-border bg-card hover:bg-accent/40 hover:border-primary/40 shadow-2xs hover:shadow-xs transition-all duration-200 cursor-pointer active:scale-[0.99]"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleCardClick();
+                }
+              }}
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="p-1 rounded-lg bg-muted/80 border border-border/60 shrink-0">
+                      {card.icon}
+                    </div>
+                    <span className="text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+                      {card.title}
+                    </span>
+                  </div>
+                  <span className="text-[9px] font-mono font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0 border border-border/60">
+                    {card.badge}
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                  {card.prompt}
+                </p>
+              </div>
+              <div className="mt-2.5 flex items-center justify-end text-[10px] font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                <span>{card.action ? 'Launch tool \u2192' : 'Run prompt \u2192'}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Capabilities Footer Strip */}
+      <div className="mt-6 w-full pt-4 border-t border-border/50">
+        <div className="text-[9px] font-bold text-muted-foreground/80 uppercase tracking-wider mb-2 select-none">
+          Workstation Core Capabilities
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+          {capabilities.map((cap, idx) => {
+            const isClickable = Boolean(cap.onClick);
+            return (
+              <div
+                key={idx}
+                onClick={cap.onClick}
+                role={isClickable ? 'button' : undefined}
+                tabIndex={isClickable ? 0 : undefined}
+                onKeyDown={
+                  isClickable
+                    ? (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          cap.onClick?.();
+                        }
+                      }
+                    : undefined
+                }
+                className={`flex flex-col items-start px-2.5 py-1.5 rounded-lg border text-left transition-colors ${
+                  isClickable
+                    ? 'bg-muted/25 border-border/50 hover:bg-accent/50 hover:border-primary/30 cursor-pointer active:scale-[0.98]'
+                    : 'bg-muted/25 border-border/50'
+                }`}
+              >
+                <span className="text-[10px] font-semibold text-foreground flex items-center gap-1">
+                  {cap.label}
+                  {isClickable && <ExternalLink className="h-2 w-2 opacity-50" />}
+                </span>
+                <span className="text-[8px] text-muted-foreground truncate w-full">{cap.desc}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
   chat,
@@ -804,8 +991,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     setExportDropdownOpen(false);
   };
 
-
-
   const handleScroll = () => {
     const container = scrollContainerRef.current;
     if (container) {
@@ -865,7 +1050,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-background text-foreground relative">
       
       {/* Header Bar */}
-      {/* Modern Workstation Header Bar */}
       <header className="flex h-14 shrink-0 items-center justify-between px-4 md:px-6 bg-card text-card-foreground select-none border-b border-border gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
           {isSidebarCollapsed && (
@@ -889,93 +1073,78 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-mono font-medium shrink-0"
                 title={`Active AI Provider: ${settings.provider} (${settings.model})`}
               >
-                <Sparkles className="h-2.5 w-2.5" />
-                <span className="truncate max-w-[110px]">{settings.model.split('/').pop()}</span>
+                <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                <span className="truncate max-w-[120px]">{settings.model.split('/').pop()}</span>
               </div>
             )}
           </div>
         </div>
 
-        {/* Right Header Toolbar */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        {/* Workstation Actions Panel */}
+        <div className="flex items-center gap-1 shrink-0">
           {/* Export Dropdown */}
-          {chat && displayMessages.length > 0 && (
-            <div className="relative select-none">
-              <button
-                onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
-                className="flex items-center gap-1.5 rounded-md border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground px-2 py-1.5 sm:px-2.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                title="Export conversation"
-                aria-label="Export conversation"
-                aria-expanded={exportDropdownOpen}
-                aria-haspopup="menu"
-              >
-                <Download className="h-3.5 w-3.5 text-primary" />
-                <span className="hidden sm:inline">Export</span>
-                <ChevronDown className="h-3 w-3 opacity-60" />
-              </button>
+          <div className="relative">
+            <button
+              onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
+              disabled={!chat || displayMessages.length === 0}
+              className="rounded-md p-1.5 border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground transition active:scale-95 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              title="Export conversation"
+              aria-label="Export conversation"
+              aria-expanded={exportDropdownOpen}
+            >
+              <Download className="h-3.5 w-3.5" />
+            </button>
 
-              {exportDropdownOpen && (
-                <>
-                  <div className="fixed inset-0 z-20" onClick={() => setExportDropdownOpen(false)} />
-                  <div role="menu" className="absolute right-0 top-full mt-1.5 w-44 rounded-lg border border-border bg-popover p-1 shadow-xl z-30 text-popover-foreground animate-fade-in">
-                    <button
-                      role="menuitem"
-                      onClick={() => { exportConversation('md'); setExportDropdownOpen(false); }}
-                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs hover:bg-accent text-foreground transition"
-                    >
-                      <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span>Markdown (.md)</span>
-                    </button>
-                    <button
-                      role="menuitem"
-                      onClick={() => { exportConversation('txt'); setExportDropdownOpen(false); }}
-                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs hover:bg-accent text-foreground transition"
-                    >
-                      <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span>Plain Text (.txt)</span>
-                    </button>
-                    <button
-                      role="menuitem"
-                      onClick={() => { exportConversation('json'); setExportDropdownOpen(false); }}
-                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs hover:bg-accent text-foreground transition"
-                    >
-                      <Database className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span>JSON Raw (.json)</span>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Browser & Scheduler Workspace Buttons */}
-          {onToggleWorkspaceTab && (
-            <div className="flex items-center gap-1">
-              {WORKSPACE_PANEL_TABS.map(tab => {
-                const Icon = tab.icon;
-                const isActive = isWorkspaceOpen && workspaceTab === tab.id;
-                return (
+            {exportDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setExportDropdownOpen(false)} />
+                <div className="absolute right-0 top-full mt-1 w-36 rounded-md border border-border bg-popover py-1 shadow-lg z-50 animate-fade-in text-popover-foreground">
                   <button
-                    key={tab.id}
-                    onClick={() => onToggleWorkspaceTab(tab.id)}
-                    className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                      isActive
-                        ? 'bg-primary/10 border-primary/30 text-primary font-semibold'
-                        : 'border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground'
-                    }`}
-                    title={tab.title}
-                    aria-label={tab.title}
-                    aria-pressed={isActive}
+                    onClick={() => exportConversation('md')}
+                    className="w-full px-3 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground flex items-center gap-2 cursor-pointer"
                   >
-                    <Icon className="h-3.5 w-3.5" />
-                    <span className="hidden md:inline">{tab.label}</span>
+                    <span>Markdown (.md)</span>
                   </button>
-                );
-              })}
-            </div>
-          )}
+                  <button
+                    onClick={() => exportConversation('json')}
+                    className="w-full px-3 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground flex items-center gap-2 cursor-pointer"
+                  >
+                    <span>JSON (.json)</span>
+                  </button>
+                  <button
+                    onClick={() => exportConversation('txt')}
+                    className="w-full px-3 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground flex items-center gap-2 cursor-pointer"
+                  >
+                    <span>Plain Text (.txt)</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
 
-          {/* Settings Quick Access Button */}
+          {/* Workspace Panel Buttons */}
+          {onToggleWorkspaceTab &&
+            WORKSPACE_PANEL_TABS.map(({ id, label, icon: Icon }) => {
+              const isActive = isWorkspaceOpen && workspaceTab === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => onToggleWorkspaceTab(id)}
+                  className={`rounded-md p-1.5 border transition active:scale-95 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                    isActive
+                      ? 'bg-primary/20 border-primary/40 text-primary'
+                      : 'border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground'
+                  }`}
+                  title={label}
+                  aria-label={label}
+                  aria-pressed={isActive}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </button>
+              );
+            })}
+
+          {/* Settings shortcut button */}
           {onOpenSettings && (
             <button
               onClick={onOpenSettings}
@@ -993,9 +1162,16 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-6 py-6 space-y-6 scrollbar-thin select-text"
+        className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 space-y-6 scrollbar-thin select-text"
       >
-        {!chat || displayMessages.length === 0 ? null : (
+        {!chat || displayMessages.length === 0 ? (
+          <HeroStudio
+            settings={settings}
+            onSendMessage={onSendMessage}
+            onOpenBrowserModal={onOpenBrowserModal}
+            onOpenSchedules={onToggleWorkspaceTab ? () => onToggleWorkspaceTab('schedules') : undefined}
+          />
+        ) : (
           
           /* Borderless Message Feed */
           <div className="mx-auto max-w-2xl space-y-8 pb-12">
@@ -1035,7 +1211,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   {isUser ? (
                     <div className="flex flex-col items-end max-w-[90%]">
                       <div
-                        className="message-card-body relative transition-colors bg-muted text-muted-foreground px-4 py-2.5 rounded-lg shadow-sm border border-border text-sm"
+                        className="message-card-body relative transition-colors bg-card text-foreground px-4 py-3 rounded-2xl shadow-xs border border-border text-sm"
                       >
                         {/* User edit window */}
                         {isEditing ? (
@@ -1098,7 +1274,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                                       role={isImage ? 'button' : undefined}
                                       aria-label={isImage ? `View enlarged image: ${att.name}` : undefined}
                                       title={isImage ? `Click to enlarge image: ${att.name}` : att.name}
-                                      className={`flex items-center gap-1.5 rounded border border-border bg-background p-1.5 text-[10px] ${
+                                      className={`flex items-center gap-1.5 rounded-lg border border-border bg-background p-1.5 text-[10px] ${
                                         isImage ? 'cursor-zoom-in hover:border-primary/50 hover:bg-accent/40 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring' : ''
                                       }`}
                                     >
@@ -1293,20 +1469,20 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                                   )}
                                   
                                   {thinking && (
-                                    <div className="mb-3 rounded-lg border border-border bg-muted/30 p-3 text-xs w-full">
+                                    <div className="mb-3 rounded-xl border border-border bg-muted/40 p-3.5 text-xs w-full shadow-2xs">
                                       <details className="group" open={index === displayMessages.length - 1}>
                                         <summary className="flex items-center justify-between font-semibold text-muted-foreground hover:text-foreground cursor-pointer select-none">
                                           <span className="flex items-center gap-1.5 font-sans text-[11px] tracking-wide uppercase">
                                             {isStreamingThinking ? (
-                                              <Loader2 className="h-3 w-3 animate-spin" />
+                                              <Loader2 className="h-3 w-3 animate-spin text-primary" />
                                             ) : (
-                                              <Terminal className="h-3 w-3" />
+                                              <Terminal className="h-3 w-3 text-primary" />
                                             )}
-                                            <span>{isStreamingThinking ? 'Thinking Process...' : 'Thought Process'}</span>
+                                            <span className="text-foreground">{isStreamingThinking ? 'Thinking Process...' : 'Thought Process'}</span>
                                           </span>
                                           <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
                                         </summary>
-                                        <div className="mt-2.5 pl-3.5 border-l border-primary text-muted-foreground leading-relaxed whitespace-pre-wrap select-text font-mono text-[10.5px] max-h-52 overflow-y-auto">
+                                        <div className="mt-2.5 pl-3 border-l-2 border-primary/70 text-muted-foreground leading-relaxed whitespace-pre-wrap select-text font-mono text-[11px] max-h-56 overflow-y-auto scrollbar-thin">
                                           {thinking}
                                         </div>
                                       </details>

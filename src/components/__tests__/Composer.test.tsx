@@ -249,7 +249,7 @@ describe('Composer Component', () => {
       />
     );
 
-    const contextBtn = screen.getByLabelText('Toggle Web Context');
+    const contextBtn = screen.getByLabelText('Toggle Web Context (Crawl4AI)');
     expect(contextBtn).toBeDefined();
     fireEvent.click(contextBtn);
 

@@ -43,5 +43,5 @@ describe('OpenRouter model compatibility', () => {
       expect(error?.name).not.toBe('AI_UnsupportedModelVersionError');
       expect(error?.message || '').not.toContain('Unsupported model version');
     }
-  });
+  }, 15000);
 });

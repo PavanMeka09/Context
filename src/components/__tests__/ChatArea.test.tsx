@@ -295,6 +295,30 @@ describe('ChatArea Component', () => {
     expect(modal).toBeDefined();
     expect(within(modal).getByAltText('Quarterly Growth')).toBeDefined();
   });
+
+  it('triggers onOpenBrowserModal and onToggleWorkspaceTab when HeroStudio triggers are clicked', () => {
+    const handleOpenBrowser = vi.fn();
+    const handleToggleWorkspace = vi.fn();
+
+    render(
+      <ChatArea
+        {...defaultProps}
+        chat={null}
+        onOpenBrowserModal={handleOpenBrowser}
+        onToggleWorkspaceTab={handleToggleWorkspace}
+      />
+    );
+
+    // Starter card for Autonomous Browser Agent
+    const browserStarterCard = screen.getByText('Autonomous Browser Agent');
+    fireEvent.click(browserStarterCard);
+    expect(handleOpenBrowser).toHaveBeenCalledTimes(1);
+
+    // Capability chip for Task Scheduler
+    const schedulerCapability = screen.getByText('Task Scheduler');
+    fireEvent.click(schedulerCapability);
+    expect(handleToggleWorkspace).toHaveBeenCalledWith('schedules');
+  });
 });
 
 

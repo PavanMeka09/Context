@@ -272,5 +272,81 @@ describe('Sidebar Component', () => {
 
     expect(handleThemeChanged).toHaveBeenCalledWith('light');
   });
+
+  it('correctly buckets chats chronologically into Today, Yesterday, Previous 7 Days, and Older', () => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startOfYesterday = startOfToday - 86400000;
+    const startOf7DaysAgo = startOfToday - 7 * 86400000;
+    const startOf8DaysAgo = startOfToday - 8 * 86400000;
+    const startOf9DaysAgo = startOfToday - 9 * 86400000;
+
+    const dateBucketedChats: Chat[] = [
+      {
+        id: 'chat-today',
+        title: 'Today Chat',
+        createdAt: new Date(startOfToday + 3600000).toISOString(),
+        updatedAt: new Date(startOfToday + 3600000).toISOString(),
+        messages: []
+      },
+      {
+        id: 'chat-yesterday',
+        title: 'Yesterday Chat',
+        createdAt: new Date(startOfYesterday + 3600000).toISOString(),
+        updatedAt: new Date(startOfYesterday + 3600000).toISOString(),
+        messages: []
+      },
+      {
+        id: 'chat-7days',
+        title: '7 Days Ago Chat',
+        createdAt: new Date(startOf7DaysAgo + 3600000).toISOString(),
+        updatedAt: new Date(startOf7DaysAgo + 3600000).toISOString(),
+        messages: []
+      },
+      {
+        id: 'chat-8days',
+        title: '8 Days Ago Chat',
+        createdAt: new Date(startOf8DaysAgo + 3600000).toISOString(),
+        updatedAt: new Date(startOf8DaysAgo + 3600000).toISOString(),
+        messages: []
+      },
+      {
+        id: 'chat-older',
+        title: 'Older Chat',
+        createdAt: new Date(startOf9DaysAgo).toISOString(),
+        updatedAt: new Date(startOf9DaysAgo).toISOString(),
+        messages: []
+      }
+    ];
+
+    render(
+      <Sidebar
+        chats={dateBucketedChats}
+        activeChatId="chat-today"
+        settings={mockSettings}
+        onSelectChat={vi.fn()}
+        onNewChat={vi.fn()}
+        onDeleteChat={vi.fn()}
+        onOpenSettings={vi.fn()}
+        isCollapsed={false}
+        onToggleCollapse={vi.fn()}
+        theme="dark"
+        onThemeChanged={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Today')).toBeDefined();
+    expect(screen.getByText('Today Chat')).toBeDefined();
+
+    expect(screen.getByText('Yesterday')).toBeDefined();
+    expect(screen.getByText('Yesterday Chat')).toBeDefined();
+
+    expect(screen.getByText('Previous 7 Days')).toBeDefined();
+    expect(screen.getByText('7 Days Ago Chat')).toBeDefined();
+    expect(screen.getByText('8 Days Ago Chat')).toBeDefined();
+
+    expect(screen.getByText('Older')).toBeDefined();
+    expect(screen.getByText('Older Chat')).toBeDefined();
+  });
 });
 
