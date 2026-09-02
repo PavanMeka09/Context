@@ -375,7 +375,7 @@ export const Composer: React.FC<ComposerProps> = ({
       )}
 
       {/* Input container: Floating Glassmorphic Dock */}
-      <div className="relative rounded-2xl border border-border/80 bg-card/85 backdrop-blur-xl glass-card p-2 transition-all flex flex-col gap-1.5 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20 shadow-xs">
+      <div className="relative rounded-2xl sm:rounded-3xl border border-border bg-card p-3 transition-all flex flex-col gap-1.5 focus-within:border-ring shadow-xl">
         <textarea
           ref={inputRef}
           value={input}
@@ -392,16 +392,52 @@ export const Composer: React.FC<ComposerProps> = ({
               ? "Transcribing voice..."
               : isRecording 
                 ? "Listening... Speak clearly now." 
-                : "Ask anything..."
+                : "Ask your agent anything..."
           }
           rows={1}
           style={{ resize: 'none' }}
-          className="w-full bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none scrollbar-none leading-relaxed text-sm select-text"
+          className="w-full bg-transparent px-3 py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none scrollbar-none leading-relaxed text-sm select-text"
         />
 
         {/* Composer Bottom Toolbar */}
-        <div className="border-t border-border/60 pt-2 px-1 pb-0.5 flex items-center justify-between select-none gap-2">
+        <div className="pt-1.5 px-1 pb-0.5 flex items-center justify-between select-none gap-2">
           <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+            {/* File Input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              multiple
+              className="hidden"
+              id="composer-file-upload"
+            />
+            {/* Attachment Button */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              title="Attach files (text/images)"
+              aria-label="Attach files"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
+
+            {/* Web Search Toggle */}
+            <button
+              type="button"
+              onClick={toggleWebSearch}
+              title={settings.isWebSearchEnabled ? "Disable Web Search (SearXNG)" : "Enable Web Search (SearXNG)"}
+              aria-label="Toggle Web Search"
+              aria-pressed={settings.isWebSearchEnabled}
+              className={`flex h-7 w-7 items-center justify-center rounded-lg transition cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                settings.isWebSearchEnabled
+                  ? 'text-primary bg-primary/15'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+              }`}
+            >
+              <Globe className="h-4 w-4" />
+            </button>
+
             {/* System Prompt Picker */}
             <div className="relative">
               <button
@@ -549,22 +585,7 @@ export const Composer: React.FC<ComposerProps> = ({
               )}
             </div>
 
-            {/* Web Search Toggle — md+ */}
-            <button
-              type="button"
-              onClick={toggleWebSearch}
-              title={settings.isWebSearchEnabled ? "Disable Web Search (SearXNG)" : "Enable Web Search (SearXNG)"}
-              aria-label="Toggle Web Search"
-              aria-pressed={settings.isWebSearchEnabled}
-              className={`hidden md:flex h-7 items-center gap-1.5 rounded-lg transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
-                settings.isWebSearchEnabled
-                  ? 'px-2.5 border border-primary bg-primary text-primary-foreground hover:bg-primary/95 shadow-2xs'
-                  : 'w-7 justify-center border border-border bg-transparent hover:bg-accent hover:text-foreground text-muted-foreground'
-              }`}
-            >
-              <Globe className="h-3.5 w-3.5" />
-              {settings.isWebSearchEnabled && <span className="text-[10px] font-semibold">Web</span>}
-            </button>
+
 
             {/* Web Context Toggle — md+ */}
             <button
@@ -658,28 +679,6 @@ export const Composer: React.FC<ComposerProps> = ({
               )}
             </div>
 
-            {/* Separator line */}
-            <div className="w-[1px] h-4 bg-border mx-0.5" />
-
-            {/* File Input */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              multiple
-              className="hidden"
-              id="composer-file-upload"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              title="Attach files (text/images)"
-              aria-label="Attach files"
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-transparent hover:bg-accent hover:text-foreground text-muted-foreground transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <Paperclip className="h-3.5 w-3.5" />
-            </button>
-
             {/* Voice Typing Mic */}
             <button
               type="button"
@@ -735,7 +734,7 @@ export const Composer: React.FC<ComposerProps> = ({
                 onClick={onStop}
                 title="Stop generating"
                 aria-label="Stop generating"
-                className="flex h-7 w-7 items-center justify-center rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-all cursor-pointer shadow-xs active:scale-95 animate-fade-in"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background hover:bg-foreground/90 transition-all cursor-pointer shadow active:scale-95 animate-fade-in"
               >
                 <Square className="h-3 w-3 fill-current" />
               </button>
@@ -746,13 +745,13 @@ export const Composer: React.FC<ComposerProps> = ({
                 disabled={!input.trim() && attachments.length === 0}
                 title="Send message"
                 aria-label="Send message"
-                className={`flex h-7 w-7 items-center justify-center rounded-lg transition-all ${
+                className={`flex h-8 w-8 items-center justify-center rounded-full transition-all ${
                   input.trim() || attachments.length > 0
-                    ? 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs cursor-pointer active:scale-95'
-                    : 'bg-muted text-muted-foreground opacity-50 cursor-not-allowed'
+                    ? 'bg-foreground text-background hover:bg-foreground/90 shadow cursor-pointer active:scale-95'
+                    : 'bg-muted text-muted-foreground cursor-not-allowed'
                 }`}
               >
-                <ArrowUp className="h-3.5 w-3.5 stroke-[2.5]" />
+                <ArrowUp className="h-4 w-4 stroke-[2.5]" />
               </button>
             )}
           </div>

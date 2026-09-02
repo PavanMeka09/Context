@@ -5,7 +5,7 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { BrowserLiveView } from './BrowserLiveView';
 import { ImageModal, type ImagePreviewItem } from './ImageModal';
 import { TextLoader } from 'generative-loaders';
-import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, Database, ChevronDown, ChevronLeft, ChevronRight, PanelLeftOpen, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Volume2, VolumeX, Download, Compass, Calendar, Settings as SettingsIcon, Sparkles } from 'lucide-react';
+import { Copy, Check, RotateCw, Pencil, Trash2, Terminal, HelpCircle, FileText, ChevronDown, ChevronLeft, ChevronRight, Menu, Loader2, Globe, AlertTriangle, ExternalLink, ArrowUp, CornerDownLeft, EyeOff, X, Volume2, VolumeX, Download, Compass, Calendar, Settings as SettingsIcon } from 'lucide-react';
 import { cleanSnippetText, getFaviconUrl, type SearxngResult } from '../utils/searxng';
 
 function parseThinkingAndContent(content: string): { thinking: string | null; content: string } {
@@ -677,6 +677,9 @@ const RegenerateButton: React.FC<RegenerateButtonProps> = ({ onClick, disabled, 
 
 interface ChatAreaProps {
   chat?: Chat | null;
+  chats?: Chat[];
+  onSelectChat?: (id: string) => void;
+  onNewChat?: () => void;
   onSendMessage: (content: string) => void;
   isGenerating: boolean;
   queuedMessageIds?: Set<string>;
@@ -704,196 +707,53 @@ const WORKSPACE_PANEL_TABS: Array<{
   { id: 'schedules', label: 'Toggle Scheduler Panel', icon: Calendar },
 ];
 
-const HeroStudio: React.FC<{
-  settings?: Settings;
-  onSendMessage: (text: string) => void;
-  onOpenBrowserModal?: () => void;
-  onOpenSchedules?: () => void;
-}> = ({ settings, onSendMessage, onOpenBrowserModal, onOpenSchedules }) => {
-  const greeting = useMemo(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 18) return 'Good afternoon';
-    return 'Good evening';
-  }, []);
+const ChatSparkleHeroIcon: React.FC<{ className?: string }> = ({ className = "w-12 h-12" }) => (
+  <svg
+    viewBox="0 0 48 48"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    {/* Speech bubble outline with curved bottom-right tail */}
+    <path
+      d="M25 12C32.18 12 38 17.373 38 24C38 27.279 36.577 30.245 34.238 32.427L35.8 38.5L29.589 35.845C28.143 36.142 26.608 36.3 25 36.3C17.82 36.3 12 30.927 12 24C12 17.373 17.82 12 25 12Z"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    {/* 4-point Sparkle at top right */}
+    <path
+      d="M40.5 5.5L41.6 9.4L45.5 10.5L41.6 11.6L40.5 15.5L39.4 11.6L35.5 10.5L39.4 9.4L40.5 5.5Z"
+      fill="currentColor"
+    />
+  </svg>
+);
 
-  const starterCards: Array<{
-    title: string;
-    icon: React.ReactNode;
-    badge: string;
-    prompt: string;
-    action?: () => void;
-  }> = [
-    {
-      title: 'Analyze & Summarize Web',
-      icon: <Globe className="h-4 w-4 text-emerald-500" />,
-      badge: 'SearXNG + Crawl4AI',
-      prompt: 'Search the web for the latest advancements in AI multi-agent orchestration and summarize the key paradigms.'
-    },
-    {
-      title: 'Interactive Code Sandbox',
-      icon: <Terminal className="h-4 w-4 text-blue-500" />,
-      badge: 'JS / TS / Python',
-      prompt: 'Write and run a TypeScript benchmark comparing Array.reduce vs for...of loop performance with 1,000,000 items.'
-    },
-    {
-      title: 'Autonomous Browser Agent',
-      icon: <Compass className="h-4 w-4 text-purple-500" />,
-      badge: 'Playwright Stealth',
-      prompt: 'Navigate to Hacker News (news.ycombinator.com), extract the top 5 trending stories with their points and URLs.',
-      action: onOpenBrowserModal
-    },
-    {
-      title: 'Architecture & System Design',
-      icon: <Database className="h-4 w-4 text-amber-500" />,
-      badge: 'Deep Reasoning',
-      prompt: 'Design a high-concurrency event-driven architecture for a real-time collaborative whiteboard with WebSocket synchronization.'
-    }
-  ];
-
-  const capabilities: Array<{
-    label: string;
-    desc: string;
-    onClick?: () => void;
-  }> = [
-    { label: 'Real-time Web Search', desc: 'SearXNG & Wikipedia' },
-    { label: 'Crawl4AI Engine', desc: 'Markdown extraction' },
-    { label: 'Playwright Agent', desc: 'Browser automation', onClick: onOpenBrowserModal },
-    { label: 'Execution Sandbox', desc: 'JS/TS & Python runner' },
-    { label: 'Task Scheduler', desc: 'Cron & interval automation', onClick: onOpenSchedules },
-    { label: 'Multi-tier Thinking', desc: 'Structured chain-of-thought' }
-  ];
-
+const HeroStudio: React.FC = () => {
   return (
-    <div className="mx-auto max-w-2xl flex flex-col items-center justify-center py-6 px-4 text-center animate-fade-in select-none">
-      {/* Brand Aura Logo */}
-      <div className="relative mb-3 flex items-center justify-center">
-        <div className="absolute -inset-3 rounded-full bg-primary/20 blur-xl animate-pulse pointer-events-none" />
-        <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-card to-muted border border-border/80 shadow-md">
-          <Sparkles className="h-6 w-6 text-primary" />
-        </div>
+    <div className="flex flex-col items-center justify-center text-center select-none animate-fade-in my-auto py-16">
+      {/* Brand Icon: Speech bubble with sparkle */}
+      <div className="mb-4 text-muted-foreground">
+        <ChatSparkleHeroIcon className="w-14 h-14 text-foreground/80" />
       </div>
 
       {/* Greeting Headline */}
-      <h1 className="font-sans text-xl sm:text-2xl font-bold tracking-tight text-foreground">
-        {greeting}, Explorer
+      <h1 className="text-xl sm:text-2xl font-semibold text-foreground tracking-tight">
+        Start a conversation
       </h1>
-      <p className="mt-1 text-xs text-muted-foreground max-w-sm">
-        Your high-performance AI workstation for deep research, coding sandboxes, and browser automation.
+      <p className="mt-2 text-sm text-muted-foreground max-w-sm">
+        Ask anything. Your agent is ready.
       </p>
-
-      {/* Model & Command Palette Hint */}
-      <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/60 border border-border text-[10px]">
-          <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-          <span className="font-semibold text-foreground uppercase tracking-wider">{settings?.provider || 'AI'}</span>
-          <span className="text-muted-foreground/60">/</span>
-          <span className="font-mono text-muted-foreground">{settings?.model?.split('/').pop() || 'Default'}</span>
-        </div>
-        <div className="hidden sm:flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/40 px-2 py-1 rounded-md border border-border/60">
-          <span>Press</span>
-          <kbd className="px-1 py-0.2 rounded bg-card border border-border font-mono font-bold text-foreground">Ctrl+K</kbd>
-          <span>for commands</span>
-        </div>
-      </div>
-
-      {/* Prompt Starter Cards Grid */}
-      <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full text-left">
-        {starterCards.map((card, idx) => {
-          const handleCardClick = () => {
-            if (card.action) {
-              card.action();
-            } else {
-              onSendMessage(card.prompt);
-            }
-          };
-
-          return (
-            <div
-              key={idx}
-              onClick={handleCardClick}
-              className="group relative flex flex-col justify-between p-3 rounded-xl border border-border bg-card hover:bg-accent/40 hover:border-primary/40 shadow-2xs hover:shadow-xs transition-all duration-200 cursor-pointer active:scale-[0.99]"
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  handleCardClick();
-                }
-              }}
-            >
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="p-1 rounded-lg bg-muted/80 border border-border/60 shrink-0">
-                      {card.icon}
-                    </div>
-                    <span className="text-xs font-semibold text-foreground truncate group-hover:text-primary transition-colors">
-                      {card.title}
-                    </span>
-                  </div>
-                  <span className="text-[9px] font-mono font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0 border border-border/60">
-                    {card.badge}
-                  </span>
-                </div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                  {card.prompt}
-                </p>
-              </div>
-              <div className="mt-2.5 flex items-center justify-end text-[10px] font-semibold text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                <span>{card.action ? 'Launch tool \u2192' : 'Run prompt \u2192'}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Capabilities Footer Strip */}
-      <div className="mt-6 w-full pt-4 border-t border-border/50">
-        <div className="text-[9px] font-bold text-muted-foreground/80 uppercase tracking-wider mb-2 select-none">
-          Workstation Core Capabilities
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-          {capabilities.map((cap, idx) => {
-            const isClickable = Boolean(cap.onClick);
-            return (
-              <div
-                key={idx}
-                onClick={cap.onClick}
-                role={isClickable ? 'button' : undefined}
-                tabIndex={isClickable ? 0 : undefined}
-                onKeyDown={
-                  isClickable
-                    ? (e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          cap.onClick?.();
-                        }
-                      }
-                    : undefined
-                }
-                className={`flex flex-col items-start px-2.5 py-1.5 rounded-lg border text-left transition-colors ${
-                  isClickable
-                    ? 'bg-muted/25 border-border/50 hover:bg-accent/50 hover:border-primary/30 cursor-pointer active:scale-[0.98]'
-                    : 'bg-muted/25 border-border/50'
-                }`}
-              >
-                <span className="text-[10px] font-semibold text-foreground flex items-center gap-1">
-                  {cap.label}
-                  {isClickable && <ExternalLink className="h-2 w-2 opacity-50" />}
-                </span>
-                <span className="text-[8px] text-muted-foreground truncate w-full">{cap.desc}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
     </div>
   );
 };
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
   chat,
+  chats,
+  onSelectChat,
+  onNewChat,
   onSendMessage,
   isGenerating,
   queuedMessageIds,
@@ -904,7 +764,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onToggleSidebar,
   onSwitchBranch,
   onOpenBrowserModal,
-  settings,
   isWorkspaceOpen,
   workspaceTab,
   onToggleWorkspaceTab,
@@ -918,6 +777,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+  const [titleDropdownOpen, setTitleDropdownOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState<ImagePreviewItem | null>(null);
 
   useEffect(() => {
@@ -1050,32 +910,77 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     <div className="flex h-full flex-1 flex-col overflow-hidden bg-background text-foreground relative">
       
       {/* Header Bar */}
-      <header className="flex h-14 shrink-0 items-center justify-between px-4 md:px-6 bg-card text-card-foreground select-none border-b border-border gap-2">
-        <div className="flex items-center gap-2.5 min-w-0">
+      <header className="flex h-14 shrink-0 items-center justify-between px-4 md:px-6 bg-background text-foreground select-none border-b border-border gap-2">
+        <div className="flex items-center gap-3 min-w-0">
           {isSidebarCollapsed && (
             <button
               onClick={onToggleSidebar}
-              className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition active:scale-95 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition active:scale-95 cursor-pointer shrink-0 focus-visible:outline-none"
               title="Expand sidebar (Ctrl+B)"
               aria-label="Expand sidebar"
             >
-              <PanelLeftOpen className="h-4 w-4 text-primary" />
+              <Menu className="h-5 w-5" />
             </button>
           )}
-          <div className="flex items-center gap-2 min-w-0">
-            <h2 className="font-sans text-xs font-semibold text-foreground truncate max-w-[200px] sm:max-w-xs md:max-w-md lg:max-w-xl">
-              {chat ? chat.title : 'New Conversation'}
-            </h2>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setTitleDropdownOpen(!titleDropdownOpen)}
+              className="flex items-center gap-1.5 min-w-0 cursor-pointer group rounded-lg py-1 px-2 hover:bg-accent/60 transition text-left focus-visible:outline-none"
+              aria-label="Select conversation"
+              aria-expanded={titleDropdownOpen}
+              aria-haspopup="menu"
+            >
+              <span className="font-sans text-sm font-medium text-foreground truncate max-w-[180px] sm:max-w-xs md:max-w-md lg:max-w-xl">
+                {chat ? chat.title : 'New Chat'}
+              </span>
+              <ChevronDown className={`h-4 w-4 text-muted-foreground group-hover:text-foreground transition-transform shrink-0 ${titleDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-            {/* Active Model Badge */}
-            {settings?.model && (
-              <div
-                className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-mono font-medium shrink-0"
-                title={`Active AI Provider: ${settings.provider} (${settings.model})`}
-              >
-                <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                <span className="truncate max-w-[120px]">{settings.model.split('/').pop()}</span>
-              </div>
+            {titleDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setTitleDropdownOpen(false)} />
+                <div role="menu" className="absolute left-0 top-full mt-1 w-64 rounded-xl border border-border bg-popover py-1 shadow-xl z-50 animate-fade-in text-popover-foreground">
+                  <div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border flex items-center justify-between">
+                    <span>Conversations</span>
+                    {onNewChat && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTitleDropdownOpen(false);
+                          onNewChat();
+                        }}
+                        className="text-[10px] font-semibold text-primary hover:underline cursor-pointer"
+                      >
+                        + New
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-56 overflow-y-auto py-1 scrollbar-thin">
+                    {chats && chats.length > 0 ? (
+                      chats.map((c) => (
+                        <button
+                          key={c.id}
+                          role="menuitem"
+                          type="button"
+                          onClick={() => {
+                            setTitleDropdownOpen(false);
+                            onSelectChat?.(c.id);
+                          }}
+                          className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between gap-2 hover:bg-accent hover:text-accent-foreground cursor-pointer transition ${
+                            chat?.id === c.id ? 'bg-accent/70 font-semibold text-accent-foreground' : 'text-muted-foreground'
+                          }`}
+                        >
+                          <span className="truncate">{c.title}</span>
+                          {chat?.id === c.id && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 text-xs text-muted-foreground">No conversations yet</div>
+                    )}
+                  </div>
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -1087,7 +992,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             <button
               onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
               disabled={!chat || displayMessages.length === 0}
-              className="rounded-md p-1.5 border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground transition active:scale-95 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="rounded-lg p-1.5 border border-border bg-transparent hover:bg-accent text-muted-foreground hover:text-foreground transition active:scale-95 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none"
               title="Export conversation"
               aria-label="Export conversation"
               aria-expanded={exportDropdownOpen}
@@ -1098,7 +1003,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             {exportDropdownOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setExportDropdownOpen(false)} />
-                <div className="absolute right-0 top-full mt-1 w-36 rounded-md border border-border bg-popover py-1 shadow-lg z-50 animate-fade-in text-popover-foreground">
+                <div className="absolute right-0 top-full mt-1 w-36 rounded-xl border border-border bg-popover py-1 shadow-xl z-50 animate-fade-in text-popover-foreground">
                   <button
                     onClick={() => exportConversation('md')}
                     className="w-full px-3 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground flex items-center gap-2 cursor-pointer"
@@ -1130,10 +1035,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 <button
                   key={id}
                   onClick={() => onToggleWorkspaceTab(id)}
-                  className={`rounded-md p-1.5 border transition active:scale-95 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+                  className={`rounded-lg p-1.5 border transition active:scale-95 cursor-pointer shrink-0 focus-visible:outline-none ${
                     isActive
-                      ? 'bg-primary/20 border-primary/40 text-primary'
-                      : 'border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground'
+                      ? 'bg-accent border-accent text-accent-foreground'
+                      : 'border-border bg-transparent hover:bg-accent text-muted-foreground hover:text-foreground'
                   }`}
                   title={label}
                   aria-label={label}
@@ -1148,7 +1053,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           {onOpenSettings && (
             <button
               onClick={onOpenSettings}
-              className="rounded-md p-1.5 border border-input bg-background hover:bg-accent text-muted-foreground hover:text-accent-foreground transition active:scale-95 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="rounded-lg p-1.5 border border-border bg-transparent hover:bg-accent text-muted-foreground hover:text-foreground transition active:scale-95 cursor-pointer shrink-0 focus-visible:outline-none"
               title="Open Settings"
               aria-label="Open Settings"
             >
@@ -1162,15 +1067,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 space-y-6 scrollbar-thin select-text"
+        className={`flex-1 overflow-y-auto px-4 sm:px-6 py-6 scrollbar-thin select-text ${
+          !chat || displayMessages.length === 0 ? 'flex flex-col justify-center items-center' : 'space-y-6'
+        }`}
       >
         {!chat || displayMessages.length === 0 ? (
-          <HeroStudio
-            settings={settings}
-            onSendMessage={onSendMessage}
-            onOpenBrowserModal={onOpenBrowserModal}
-            onOpenSchedules={onToggleWorkspaceTab ? () => onToggleWorkspaceTab('schedules') : undefined}
-          />
+          <HeroStudio />
         ) : (
           
           /* Borderless Message Feed */

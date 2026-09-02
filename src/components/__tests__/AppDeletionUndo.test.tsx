@@ -41,6 +41,8 @@ describe('Chat Deletion and Undo Flow in App', () => {
     expect(await screen.findAllByText('Second Chat')).not.toHaveLength(0);
 
     // Click delete on First Chat
+    const optionsBtn = screen.getByLabelText('Options for First Chat');
+    fireEvent.click(optionsBtn);
     const deleteBtn = screen.getByLabelText('Delete chat First Chat');
     fireEvent.click(deleteBtn);
 
@@ -60,9 +62,13 @@ describe('Chat Deletion and Undo Flow in App', () => {
     render(<App />);
 
     await screen.findAllByText('First Chat');
+    const optionsBtn1 = screen.getByLabelText('Options for First Chat');
+    fireEvent.click(optionsBtn1);
     const deleteBtn1 = screen.getByLabelText('Delete chat First Chat');
     fireEvent.click(deleteBtn1);
 
+    const optionsBtn2 = screen.getByLabelText('Options for Second Chat');
+    fireEvent.click(optionsBtn2);
     const deleteBtn2 = screen.getByLabelText('Delete chat Second Chat');
     fireEvent.click(deleteBtn2);
 
@@ -97,7 +103,7 @@ describe('Chat Deletion and Undo Flow in App', () => {
 
     expect(await screen.findByText('Hi 1')).toBeDefined();
 
-    const input = screen.getByPlaceholderText('Ask anything...');
+    const input = screen.getByPlaceholderText('Ask your agent anything...');
 
     // Send 1st message (starts generating)
     fireEvent.change(input, { target: { value: 'First query' } });
@@ -155,7 +161,7 @@ describe('Chat Deletion and Undo Flow in App', () => {
 
     expect(await screen.findByText('Hi 1')).toBeDefined();
 
-    const input = screen.getByPlaceholderText('Ask anything...');
+    const input = screen.getByPlaceholderText('Ask your agent anything...');
 
     // Send 1st message
     fireEvent.change(input, { target: { value: 'In flight prompt' } });

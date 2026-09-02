@@ -119,6 +119,9 @@ describe('Sidebar Component', () => {
       />
     );
 
+    const optionsBtn = screen.getByLabelText('Options for First Conversation');
+    fireEvent.click(optionsBtn);
+
     const deleteBtn = screen.getByLabelText('Delete chat First Conversation');
     fireEvent.click(deleteBtn);
 

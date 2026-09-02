@@ -296,28 +296,28 @@ describe('ChatArea Component', () => {
     expect(within(modal).getByAltText('Quarterly Growth')).toBeDefined();
   });
 
-  it('triggers onOpenBrowserModal and onToggleWorkspaceTab when HeroStudio triggers are clicked', () => {
-    const handleOpenBrowser = vi.fn();
-    const handleToggleWorkspace = vi.fn();
+  it('opens conversation dropdown and switches chat when an item is clicked', () => {
+    const handleSelectChat = vi.fn();
+    const handleNewChat = vi.fn();
+    const otherChat = { ...mockChat, id: 'chat-2', title: 'Research Agent' };
 
     render(
       <ChatArea
         {...defaultProps}
-        chat={null}
-        onOpenBrowserModal={handleOpenBrowser}
-        onToggleWorkspaceTab={handleToggleWorkspace}
+        chats={[mockChat, otherChat]}
+        onSelectChat={handleSelectChat}
+        onNewChat={handleNewChat}
       />
     );
 
-    // Starter card for Autonomous Browser Agent
-    const browserStarterCard = screen.getByText('Autonomous Browser Agent');
-    fireEvent.click(browserStarterCard);
-    expect(handleOpenBrowser).toHaveBeenCalledTimes(1);
+    const titleBtn = screen.getByLabelText('Select conversation');
+    fireEvent.click(titleBtn);
 
-    // Capability chip for Task Scheduler
-    const schedulerCapability = screen.getByText('Task Scheduler');
-    fireEvent.click(schedulerCapability);
-    expect(handleToggleWorkspace).toHaveBeenCalledWith('schedules');
+    expect(screen.getByText('Conversations')).toBeDefined();
+    const targetChat = screen.getByText('Research Agent');
+    fireEvent.click(targetChat);
+
+    expect(handleSelectChat).toHaveBeenCalledWith('chat-2');
   });
 });
 

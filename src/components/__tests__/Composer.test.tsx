@@ -33,7 +33,7 @@ describe('Composer Component', () => {
       />
     );
 
-    expect(screen.getByPlaceholderText('Ask anything...')).toBeDefined();
+    expect(screen.getByPlaceholderText('Ask your agent anything...')).toBeDefined();
   });
 
   it('calls onChangeInput when typing in textarea', () => {
@@ -54,7 +54,7 @@ describe('Composer Component', () => {
       />
     );
 
-    const textarea = screen.getByPlaceholderText('Ask anything...');
+    const textarea = screen.getByPlaceholderText('Ask your agent anything...');
     fireEvent.change(textarea, { target: { value: 'Hello Assistant' } });
 
     expect(handleChangeInput).toHaveBeenCalledWith('Hello Assistant');
@@ -78,7 +78,7 @@ describe('Composer Component', () => {
       />
     );
 
-    const textarea = screen.getByPlaceholderText('Ask anything...');
+    const textarea = screen.getByPlaceholderText('Ask your agent anything...');
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
 
     expect(handleSend).toHaveBeenCalledTimes(1);
@@ -126,7 +126,7 @@ describe('Composer Component', () => {
       />
     );
 
-    const textarea = screen.getByPlaceholderText('Ask anything...');
+    const textarea = screen.getByPlaceholderText('Ask your agent anything...');
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
 
     expect(handleSend).toHaveBeenCalledTimes(1);

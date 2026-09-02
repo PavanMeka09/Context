@@ -230,18 +230,48 @@ function App() {
     showToast(`Restored "${restoredChat.title}".`, 'success');
   };
 
+const STARTER_AGENTS = [
+  { title: 'New Chat' },
+  { title: 'Research Agent' },
+  { title: 'Code Agent' },
+  { title: 'Data Agent' },
+  { title: 'Web Agent' },
+];
+
+const createStarterChats = (): Chat[] => {
+  const now = new Date().toISOString();
+  return STARTER_AGENTS.map((agent, i) => ({
+    id: `chat-${Date.now()}-${i + 1}`,
+    title: agent.title,
+    createdAt: now,
+    updatedAt: now,
+    messages: []
+  }));
+};
+
   // Load chats asynchronously on mount
   useEffect(() => {
     const initChats = async () => {
       const savedChats = await Storage.getChats();
-      setChats(savedChats);
-      
-      const savedActiveChatId = Storage.getActiveChatId();
-      if (savedActiveChatId && savedChats.some(c => c.id === savedActiveChatId)) {
-        setActiveChatId(savedActiveChatId);
-      } else if (savedChats.length > 0) {
-        setActiveChatId(savedChats[0].id);
-        Storage.saveActiveChatId(savedChats[0].id);
+      const hasInitialized = localStorage.getItem('context_starter_chats_initialized') === 'true';
+
+      if (savedChats.length === 0 && !hasInitialized) {
+        const defaultStarterChats = createStarterChats();
+        localStorage.setItem('context_starter_chats_initialized', 'true');
+        await Storage.saveChatsImmediately(defaultStarterChats);
+        setChats(defaultStarterChats);
+        setActiveChatId(defaultStarterChats[0].id);
+        Storage.saveActiveChatId(defaultStarterChats[0].id);
+      } else {
+        localStorage.setItem('context_starter_chats_initialized', 'true');
+        setChats(savedChats);
+        const savedActiveChatId = Storage.getActiveChatId();
+        if (savedActiveChatId && savedChats.some(c => c.id === savedActiveChatId)) {
+          setActiveChatId(savedActiveChatId);
+        } else if (savedChats.length > 0) {
+          setActiveChatId(savedChats[0].id);
+          Storage.saveActiveChatId(savedChats[0].id);
+        }
       }
       setIsChatsLoaded(true);
     };
@@ -1391,6 +1421,9 @@ function App() {
       <ErrorBoundary fallbackTitle="Chat View Failed to Render">
         <ChatArea
           chat={activeChat}
+          chats={chats}
+          onSelectChat={handleSelectChat}
+          onNewChat={handleNewChat}
           onSendMessage={handleSendMessage}
           isGenerating={isGenerating}
           queuedMessageIds={new Set(messageQueue.map(item => item.userMessageId))}
