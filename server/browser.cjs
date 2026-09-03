@@ -86,6 +86,9 @@ const SESSION_IDLE_TIMEOUT = 10 * 60 * 1000; // 10 minutes
 setInterval(async () => {
   const now = Date.now();
   for (const [sid, session] of sessions.entries()) {
+    if (activeBrowserAgents.has(sid)) {
+      continue; // Do not reap sessions that have an active browser agent executing
+    }
     if (now - session.lastAccessed > SESSION_IDLE_TIMEOUT) {
       console.log(`[Browser Server] Cleaning up idle session: ${sid}`);
       try {

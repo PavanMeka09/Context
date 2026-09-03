@@ -111,7 +111,7 @@ describe('useVoiceRecording Hook', () => {
   });
 
   it('automatically falls back to AI Voice recording when Web Speech encounters a network error in auto mode', async () => {
-    let capturedOnError: ((event: any) => void) | null = null;
+    let capturedOnError: ((event: { error: string }) => void) | null = null;
     class MockSpeechRecognition {
       continuous = true;
       interimResults = true;
@@ -129,7 +129,7 @@ describe('useVoiceRecording Hook', () => {
       }
     }
 
-    (window as any).SpeechRecognition = MockSpeechRecognition;
+    (window as unknown as { SpeechRecognition: unknown }).SpeechRecognition = MockSpeechRecognition;
 
     const mockStartAi = vi.fn().mockResolvedValue(undefined);
     vi.spyOn(audioModule, 'isMediaRecorderSupported').mockReturnValue(true);
@@ -167,6 +167,6 @@ describe('useVoiceRecording Hook', () => {
     );
     expect(mockStartAi).toHaveBeenCalledTimes(1);
 
-    delete (window as any).SpeechRecognition;
+    delete (window as unknown as Record<string, unknown>).SpeechRecognition;
   });
 });

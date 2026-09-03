@@ -424,7 +424,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   useEffect(() => {
     if (!isOpen || activeTab !== 'provider' || settings.provider !== 'ollama') return;
-    loadRunningOllamaModels();
+    let active = true;
+    Promise.resolve().then(() => {
+      if (active) {
+        loadRunningOllamaModels();
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, [isOpen, activeTab, settings.provider, settings.localUrl, loadRunningOllamaModels]);
 
   const handleTestOllamaConnection = async () => {

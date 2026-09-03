@@ -324,6 +324,24 @@ function getChatDb(): Promise<IDBDatabase> {
 }
 
 
+// Centralized message-node projection helpers to prevent shotgun surgery
+export function messageNodeToMessage(node: MessageNode): Message {
+  const { parentId: _p, children: _c, ...msg } = node;
+  return msg;
+}
+
+export function createMessageNode(
+  message: Message,
+  parentId: string | null = null,
+  children: string[] = []
+): MessageNode {
+  return {
+    ...message,
+    parentId,
+    children
+  };
+}
+
 // Helper: Reconstruct linear path from tree and active leaf
 export function reconstructActivePath(
   tree: Record<string, MessageNode> | undefined,
@@ -342,14 +360,7 @@ export function reconstructActivePath(
     visited.add(currentId);
     
     const node: MessageNode = tree[currentId];
-    path.push({
-      id: node.id,
-      role: node.role,
-      content: node.content,
-      timestamp: node.timestamp,
-      attachments: node.attachments,
-      browserSession: node.browserSession
-    });
+    path.push(messageNodeToMessage(node));
     currentId = node.parentId;
   }
   
@@ -369,17 +380,7 @@ export function upgradeChatToTree(chat: Chat): Chat {
     const msg = messages[i];
     const parentId = i > 0 ? messages[i - 1].id : null;
     const nextMsgId = i < messages.length - 1 ? messages[i + 1].id : null;
-    
-    tree[msg.id] = {
-      id: msg.id,
-      role: msg.role,
-      content: msg.content,
-      timestamp: msg.timestamp,
-      parentId: parentId,
-      children: nextMsgId ? [nextMsgId] : [],
-      attachments: msg.attachments,
-      browserSession: msg.browserSession
-    };
+    tree[msg.id] = createMessageNode(msg, parentId, nextMsgId ? [nextMsgId] : []);
   }
 
   const activeLeafId = messages.length > 0 ? messages[messages.length - 1].id : null;

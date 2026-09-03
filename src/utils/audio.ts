@@ -113,11 +113,11 @@ export function createAudioRecorder(): AudioRecorder {
       } catch (err: unknown) {
         const errorName = (err as { name?: string })?.name;
         if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
-          throw new Error('Microphone permission was denied. Please allow microphone access in your browser settings.');
+          throw new Error('Microphone permission was denied. Please allow microphone access in your browser settings.', { cause: err });
         } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
-          throw new Error('No microphone device found. Please connect a microphone and try again.');
+          throw new Error('No microphone device found. Please connect a microphone and try again.', { cause: err });
         }
-        throw new Error(`Failed to access microphone: ${(err as Error)?.message || 'Unknown error'}`);
+        throw new Error(`Failed to access microphone: ${(err as Error)?.message || 'Unknown error'}`, { cause: err });
       }
 
       audioChunks = [];

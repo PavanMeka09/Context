@@ -453,7 +453,7 @@ export function formatShutdownCountdown(expiresAt?: string, now = Date.now()): F
     };
   }
 
-  let countdownText = '';
+  let countdownText: string;
   if (diffSec < 60) {
     countdownText = `${diffSec}s`;
   } else if (diffSec < 3600) {

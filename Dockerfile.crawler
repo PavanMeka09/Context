@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
 COPY server/crawler_service/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+COPY server/crawler_common.py ./server/crawler_common.py
 COPY server/crawler_service/ ./server/crawler_service/
 
 EXPOSE 8083

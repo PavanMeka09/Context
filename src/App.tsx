@@ -3,7 +3,7 @@ import { Sidebar } from './components/Sidebar';
 import { ChatArea } from './components/ChatArea';
 import { Composer } from './components/Composer';
 import { BrowserLiveView } from './components/BrowserLiveView';
-import { PRESET_PROMPTS, Storage, reconstructActivePath, upgradeChatToTree, getChatBrowserSession, isChatBrowserSessionActive } from './utils/storage';
+import { PRESET_PROMPTS, Storage, reconstructActivePath, upgradeChatToTree, createMessageNode, getChatBrowserSession, isChatBrowserSessionActive } from './utils/storage';
 import type { Chat, Message, MessageNode, Settings, SystemPrompt, Attachment, BrowserSessionData } from './utils/storage';
 import { streamChatCompletion } from './utils/api';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -49,17 +49,7 @@ function addMessageToTree(chat: Chat, message: Message, parentId: string | null)
   const upgradedChat = upgradeChatToTree(chat);
   const tree = { ...upgradedChat.messageTree };
   
-  const newNode: MessageNode = {
-    id: message.id,
-    role: message.role,
-    content: message.content,
-    timestamp: message.timestamp,
-    parentId: parentId,
-    children: [],
-    attachments: message.attachments,
-    browserSession: message.browserSession
-  };
-  
+  const newNode = createMessageNode(message, parentId);
   tree[newNode.id] = newNode;
   
   if (parentId && tree[parentId]) {
@@ -143,6 +133,25 @@ function initMessageBrowserSession(
     return c;
   });
 }
+
+const STARTER_AGENTS = [
+  { title: 'New Chat' },
+  { title: 'Research Agent' },
+  { title: 'Code Agent' },
+  { title: 'Data Agent' },
+  { title: 'Web Agent' },
+];
+
+const createStarterChats = (): Chat[] => {
+  const now = new Date().toISOString();
+  return STARTER_AGENTS.map((agent, i) => ({
+    id: `chat-${Date.now()}-${i + 1}`,
+    title: agent.title,
+    createdAt: now,
+    updatedAt: now,
+    messages: []
+  }));
+};
 
 function App() {
   const [chats, setChats] = useState<Chat[]>([]);
@@ -229,25 +238,6 @@ function App() {
     deletedChatsMapRef.current.delete(id);
     showToast(`Restored "${restoredChat.title}".`, 'success');
   };
-
-const STARTER_AGENTS = [
-  { title: 'New Chat' },
-  { title: 'Research Agent' },
-  { title: 'Code Agent' },
-  { title: 'Data Agent' },
-  { title: 'Web Agent' },
-];
-
-const createStarterChats = (): Chat[] => {
-  const now = new Date().toISOString();
-  return STARTER_AGENTS.map((agent, i) => ({
-    id: `chat-${Date.now()}-${i + 1}`,
-    title: agent.title,
-    createdAt: now,
-    updatedAt: now,
-    messages: []
-  }));
-};
 
   // Load chats asynchronously on mount
   useEffect(() => {

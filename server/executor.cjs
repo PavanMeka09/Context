@@ -93,7 +93,10 @@ const dangerousPatterns = [
   /shutil\.rmtree/i,
   /os\.system\s*\(\s*['"]\s*(rm|del|rd|format)/i,
   /subprocess\.(call|Popen|run)\s*\([^)]*shell\s*=\s*True/i,
-  /base64\s+-d\s*\|\s*(sh|bash)/i
+  /base64\s+-d\s*\|\s*(sh|bash)/i,
+  /fs(\.promises)?\.(rm|rmSync|rmdir|rmdirSync|unlink|unlinkSync)/i,
+  /os\.(remove|unlink)\s*\(/i,
+  /pathlib\.Path\([^)]*\)\.(unlink|rmdir)\s*\(/i
 ];
 
 function sanitizeEnv() {

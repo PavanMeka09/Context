@@ -64,16 +64,26 @@ const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split('
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
-// Lightweight in-memory rate limiting middleware
+// Lightweight in-memory rate limiting middleware with automatic TTL cleanup
 const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, record] of rateLimitMap.entries()) {
+    if (now - record.startTime > RATE_LIMIT_WINDOW_MS) {
+      rateLimitMap.delete(ip);
+    }
+  }
+}, 5 * 60 * 1000).unref();
+
 function createRateLimiter(maxRequestsPerMin = 300) {
   return (req, res, next) => {
     const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
     const now = Date.now();
-    const windowMs = 60 * 1000;
     
     let record = rateLimitMap.get(ip);
-    if (!record || (now - record.startTime > windowMs)) {
+    if (!record || (now - record.startTime > RATE_LIMIT_WINDOW_MS)) {
       record = { startTime: now, count: 1 };
     } else {
       record.count += 1;
@@ -808,7 +818,7 @@ app.post('/api/browser/tabs/close', async (req, res) => {
     const remainingPages = await session.context.pages();
     if (remainingPages.length === 0) {
       const pageInstance = await session.context.newPage();
-      await pageInstance.setViewport({ width: 1280, height: 800 });
+      await pageInstance.setViewportSize({ width: 1280, height: 800 });
       setupPageListeners(sid, pageInstance, session);
       session.page = pageInstance;
     } else if (session.page === targetPage || session.page.isClosed()) {
@@ -829,7 +839,7 @@ app.post('/api/browser/tabs/create', async (req, res) => {
   try {
     const session = await ensureSession(sid);
     const pageInstance = await session.context.newPage();
-    await pageInstance.setViewport({ width: 1280, height: 800 });
+    await pageInstance.setViewportSize({ width: 1280, height: 800 });
     setupPageListeners(sid, pageInstance, session);
     session.page = pageInstance;
     
@@ -838,7 +848,7 @@ app.post('/api/browser/tabs/create', async (req, res) => {
       if (!/^https?:\/\//i.test(targetUrl)) {
         targetUrl = 'https://' + targetUrl;
       }
-      await pageInstance.goto(targetUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+      await pageInstance.goto(targetUrl, { waitUntil: 'networkidle', timeout: 30000 });
     }
     
     await updateScreenshotForSession(sid);
@@ -978,16 +988,15 @@ app.post('/api/scrape', async (req, res) => {
     await ensureBrowser();
     const browserInstance = getBrowser();
     pageInstance = await browserInstance.newPage();
-    await pageInstance.setViewport({ width: 1280, height: 800 });
+    await pageInstance.setViewportSize({ width: 1280, height: 800 });
 
-    // Enable request interception to block images/css/fonts/media
-    await pageInstance.setRequestInterception(true);
-    pageInstance.on('request', (request) => {
-      const type = request.resourceType();
+    // Enable route interception to block images/css/fonts/media
+    await pageInstance.route('**/*', (route) => {
+      const type = route.request().resourceType();
       if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
-        request.abort();
+        route.abort();
       } else {
-        request.continue();
+        route.continue();
       }
     });
 

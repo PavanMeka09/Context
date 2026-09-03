@@ -8,6 +8,7 @@ export async function extractAndSaveMemories(
   assistantResponse: string
 ): Promise<void> {
   if (!settings.isMemoryEnabled) return;
+  if (!settings.apiKey && settings.provider !== 'ollama') return;
 
   const currentMemories = Storage.getMemories();
 
@@ -55,45 +56,49 @@ Return ONLY raw JSON. Do not include markdown code block wrappers (like \`\`\`js
     );
     if (!rawResult) return;
 
-    // Clean up potential markdown wrappers
-    let cleanResult = rawResult.trim();
-    if (cleanResult.startsWith('```json')) {
-      cleanResult = cleanResult.slice(7);
-    } else if (cleanResult.startsWith('```')) {
-      cleanResult = cleanResult.slice(3);
+    // Robustly extract JSON object using regex matching between `{` and `}` per spec
+    let jsonCandidate = rawResult.trim();
+    const markdownFenceMatch = rawResult.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (markdownFenceMatch) {
+      jsonCandidate = markdownFenceMatch[1].trim();
     }
-    if (cleanResult.endsWith('```')) {
-      cleanResult = cleanResult.slice(0, -3);
-    }
-    cleanResult = cleanResult.trim();
+    const jsonObjectMatch = jsonCandidate.match(/\{[\s\S]*\}/);
+    if (!jsonObjectMatch) return;
 
-    const parsed = JSON.parse(cleanResult);
+    let parsed: { new_memories?: Array<{ content?: string; category?: string }>; deleted_memory_ids?: string[] } | null = null;
+    try {
+      parsed = JSON.parse(jsonObjectMatch[0]);
+    } catch {
+      return;
+    }
     if (!parsed) return;
 
     let updatedMemories: MemoryItem[] = [...currentMemories];
 
     // Remove deleted memories
-    if (Array.isArray(parsed.deleted_memory_ids) && parsed.deleted_memory_ids.length > 0) {
-      updatedMemories = updatedMemories.filter(m => !parsed.deleted_memory_ids.includes(m.id));
+    const deletedIds = parsed.deleted_memory_ids;
+    if (Array.isArray(deletedIds) && deletedIds.length > 0) {
+      updatedMemories = updatedMemories.filter(m => !deletedIds.includes(m.id));
     }
 
     // Add new memories
     if (Array.isArray(parsed.new_memories)) {
       for (const newMem of parsed.new_memories) {
         if (newMem && typeof newMem.content === 'string' && newMem.content.trim()) {
-          const category = ['preference', 'project', 'conversation', 'other'].includes(newMem.category)
+          const content = newMem.content.trim();
+          const category = newMem.category && ['preference', 'project', 'conversation', 'other'].includes(newMem.category)
             ? newMem.category
             : 'other';
 
           // Prevent exact duplicate content additions
           const exists = updatedMemories.some(
-            m => m.content.toLowerCase().trim() === newMem.content.toLowerCase().trim()
+            m => m.content.toLowerCase().trim() === content.toLowerCase()
           );
 
           if (!exists) {
             updatedMemories.push({
               id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-              content: newMem.content.trim(),
+              content,
               category: category as MemoryItem['category'],
               createdAt: new Date().toISOString()
             });

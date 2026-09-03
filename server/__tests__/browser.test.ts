@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   sessions,
   browserAgentStates,
-  activeBrowserAgents,
   pauseBrowserAgent,
   resumeBrowserAgent,
   stepBrowserAgent,

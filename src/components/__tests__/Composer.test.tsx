@@ -190,7 +190,7 @@ describe('Composer Component', () => {
     // Mock MediaRecorder support so the button is enabled, but WebSpeech is absent
     const origMediaRecorder = window.MediaRecorder;
     const origMediaDevices = navigator.mediaDevices;
-    (window as any).MediaRecorder = vi.fn();
+    (window as unknown as Record<string, unknown>).MediaRecorder = vi.fn();
     Object.defineProperty(navigator, 'mediaDevices', {
       value: { getUserMedia: vi.fn() },
       configurable: true,
@@ -221,7 +221,7 @@ describe('Composer Component', () => {
         expect.stringContaining('Browser speech recognition is not supported')
       );
     } finally {
-      (window as any).MediaRecorder = origMediaRecorder;
+      (window as unknown as Record<string, unknown>).MediaRecorder = origMediaRecorder;
       Object.defineProperty(navigator, 'mediaDevices', {
         value: origMediaDevices,
         configurable: true,

@@ -53,7 +53,10 @@ function initSchema() {
     CREATE TABLE IF NOT EXISTS runs (
       id TEXT PRIMARY KEY,
       scheduleId TEXT,
+      scheduleTitle TEXT,
       timestamp TEXT NOT NULL,
+      startTime TEXT,
+      endTime TEXT,
       status TEXT NOT NULL,
       duration REAL DEFAULT 0,
       output TEXT,
@@ -61,7 +64,10 @@ function initSchema() {
       model TEXT,
       error TEXT,
       steps TEXT,
+      log TEXT,
       summary TEXT,
+      browserSession TEXT,
+      data TEXT,
       FOREIGN KEY (scheduleId) REFERENCES schedules(id) ON DELETE CASCADE
     );
 
@@ -106,6 +112,81 @@ function initSchema() {
 
     CREATE INDEX IF NOT EXISTS idx_messages_chatId ON messages(chatId);
   `);
+
+  // Ensure new columns exist on existing databases
+  try { db.exec('ALTER TABLE runs ADD COLUMN scheduleTitle TEXT;'); } catch (_) {}
+  try { db.exec('ALTER TABLE runs ADD COLUMN startTime TEXT;'); } catch (_) {}
+  try { db.exec('ALTER TABLE runs ADD COLUMN endTime TEXT;'); } catch (_) {}
+  try { db.exec('ALTER TABLE runs ADD COLUMN log TEXT;'); } catch (_) {}
+  try { db.exec('ALTER TABLE runs ADD COLUMN browserSession TEXT;'); } catch (_) {}
+  try { db.exec('ALTER TABLE runs ADD COLUMN data TEXT;'); } catch (_) {}
+}
+
+// Data Normalization & Serialization Helpers
+function safeJsonParse(val, fallback) {
+  if (!val) return fallback;
+  try {
+    return JSON.parse(val);
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function normalizeSchedule(s) {
+  const name = s.title || s.name || 'Untitled Schedule';
+  const isEnabled = s.isActive !== undefined ? (s.isActive ? 1 : 0) : (s.enabled ? 1 : 0);
+  const cron = s.cronExpression || s.cron || '';
+  return { name, isEnabled, cron };
+}
+
+function serializeRun(r) {
+  const timestamp = r.timestamp || r.startTime || new Date().toISOString();
+  return [
+    r.id,
+    r.scheduleId || null,
+    r.scheduleTitle || r.scheduleName || '',
+    timestamp,
+    r.startTime || timestamp,
+    r.endTime || null,
+    r.status || 'completed',
+    r.duration || 0,
+    r.output || '',
+    r.tokens || 0,
+    r.model || '',
+    r.error || null,
+    r.steps ? JSON.stringify(r.steps) : null,
+    r.log ? JSON.stringify(r.log) : null,
+    r.summary || '',
+    r.browserSession ? JSON.stringify(r.browserSession) : null,
+    JSON.stringify(r)
+  ];
+}
+
+function deserializeRun(r) {
+  const fullRun = safeJsonParse(r.data, {});
+  const steps = safeJsonParse(r.steps, []);
+  const log = safeJsonParse(r.log, []);
+  const browserSession = safeJsonParse(r.browserSession, null);
+
+  return {
+    ...fullRun,
+    id: r.id,
+    scheduleId: r.scheduleId,
+    scheduleTitle: r.scheduleTitle || fullRun.scheduleTitle || 'Scheduled Task',
+    timestamp: r.timestamp,
+    startTime: r.startTime || r.timestamp,
+    endTime: r.endTime || fullRun.endTime || undefined,
+    status: r.status,
+    duration: r.duration,
+    output: r.output,
+    tokens: r.tokens,
+    model: r.model,
+    error: r.error,
+    steps: fullRun.steps || steps,
+    log: fullRun.log || log,
+    browserSession: fullRun.browserSession || browserSession || undefined,
+    summary: r.summary
+  };
 }
 
 // Automatic JSON-to-SQLite Migration on First Boot
@@ -129,13 +210,14 @@ function migrateFromLegacyJSON() {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         for (const s of schedules) {
+          const { name, isEnabled, cron } = normalizeSchedule(s);
           stmt.run(
             s.id,
-            s.name || 'Untitled Schedule',
-            s.cron || '',
+            name,
+            cron,
             s.targetUrl || '',
             s.prompt || '',
-            s.enabled ? 1 : 0,
+            isEnabled,
             s.lastRun || null,
             s.lastStatus || null,
             s.nextRun || null,
@@ -157,23 +239,11 @@ function migrateFromLegacyJSON() {
       const runs = JSON.parse(fs.readFileSync(runsPath, 'utf8'));
       if (Array.isArray(runs) && runs.length > 0) {
         const stmt = db.prepare(`
-          INSERT OR REPLACE INTO runs (id, scheduleId, timestamp, status, duration, output, tokens, model, error, steps, summary)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT OR REPLACE INTO runs (id, scheduleId, scheduleTitle, timestamp, startTime, endTime, status, duration, output, tokens, model, error, steps, log, summary, browserSession, data)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
         for (const r of runs) {
-          stmt.run(
-            r.id,
-            r.scheduleId || null,
-            r.timestamp || new Date().toISOString(),
-            r.status || 'completed',
-            r.duration || 0,
-            r.output || '',
-            r.tokens || 0,
-            r.model || '',
-            r.error || null,
-            r.steps ? JSON.stringify(r.steps) : null,
-            r.summary || ''
-          );
+          stmt.run(...serializeRun(r));
         }
         console.log(`[DB Migration] Migrated ${runs.length} runs from JSON to SQLite.`);
       }
@@ -195,16 +265,18 @@ const scheduleDao = {
     if (!db) return [];
     const rows = db.prepare('SELECT * FROM schedules ORDER BY createdAt DESC').all();
     return rows.map(r => {
-      let config = {};
-      try { config = JSON.parse(r.config || '{}'); } catch (_) {}
+      const config = safeJsonParse(r.config, {});
       return {
         ...config,
         id: r.id,
         name: r.name,
+        title: config.title || r.name,
         cron: r.cron,
+        cronExpression: config.cronExpression || r.cron,
         targetUrl: r.targetUrl,
         prompt: r.prompt,
         enabled: Boolean(r.enabled),
+        isActive: config.isActive !== undefined ? Boolean(config.isActive) : Boolean(r.enabled),
         lastRun: r.lastRun,
         lastStatus: r.lastStatus,
         nextRun: r.nextRun,
@@ -218,16 +290,18 @@ const scheduleDao = {
     if (!db) return null;
     const r = db.prepare('SELECT * FROM schedules WHERE id = ?').get(id);
     if (!r) return null;
-    let config = {};
-    try { config = JSON.parse(r.config || '{}'); } catch (_) {}
+    const config = safeJsonParse(r.config, {});
     return {
       ...config,
       id: r.id,
       name: r.name,
+      title: config.title || r.name,
       cron: r.cron,
+      cronExpression: config.cronExpression || r.cron,
       targetUrl: r.targetUrl,
       prompt: r.prompt,
       enabled: Boolean(r.enabled),
+      isActive: config.isActive !== undefined ? Boolean(config.isActive) : Boolean(r.enabled),
       lastRun: r.lastRun,
       lastStatus: r.lastStatus,
       nextRun: r.nextRun,
@@ -241,6 +315,7 @@ const scheduleDao = {
     const existing = this.getById(schedule.id);
     const now = new Date().toISOString();
     const configStr = JSON.stringify(schedule);
+    const { name, isEnabled, cron } = normalizeSchedule(schedule);
 
     const stmt = db.prepare(`
       INSERT OR REPLACE INTO schedules (id, name, cron, targetUrl, prompt, enabled, lastRun, lastStatus, nextRun, createdAt, updatedAt, config)
@@ -249,11 +324,11 @@ const scheduleDao = {
 
     stmt.run(
       schedule.id,
-      schedule.name || 'Untitled Schedule',
-      schedule.cron || '',
+      name,
+      cron,
       schedule.targetUrl || '',
       schedule.prompt || '',
-      schedule.enabled ? 1 : 0,
+      isEnabled,
       schedule.lastRun || null,
       schedule.lastStatus || null,
       schedule.nextRun || null,
@@ -284,13 +359,14 @@ const scheduleDao = {
       for (const s of schedules) {
         if (!s || !s.id) continue;
         const configStr = JSON.stringify(s);
+        const { name, isEnabled, cron } = normalizeSchedule(s);
         stmt.run(
           s.id,
-          s.name || 'Untitled Schedule',
-          s.cron || '',
+          name,
+          cron,
           s.targetUrl || '',
           s.prompt || '',
-          s.enabled ? 1 : 0,
+          isEnabled,
           s.lastRun || null,
           s.lastStatus || null,
           s.nextRun || null,
@@ -318,71 +394,31 @@ const runDao = {
   getAll(limit = 1000) {
     if (!db) return [];
     const rows = db.prepare('SELECT * FROM runs ORDER BY timestamp DESC LIMIT ?').all(limit);
-    return rows.map(r => {
-      let steps = [];
-      try { steps = JSON.parse(r.steps || '[]'); } catch (_) {}
-      return {
-        id: r.id,
-        scheduleId: r.scheduleId,
-        timestamp: r.timestamp,
-        status: r.status,
-        duration: r.duration,
-        output: r.output,
-        tokens: r.tokens,
-        model: r.model,
-        error: r.error,
-        steps,
-        summary: r.summary
-      };
-    });
+    return rows.map(deserializeRun);
   },
 
   save(run) {
     if (!db) return run;
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO runs (id, scheduleId, timestamp, status, duration, output, tokens, model, error, steps, summary)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO runs (id, scheduleId, scheduleTitle, timestamp, startTime, endTime, status, duration, output, tokens, model, error, steps, log, summary, browserSession, data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(
-      run.id,
-      run.scheduleId || null,
-      run.timestamp || new Date().toISOString(),
-      run.status || 'completed',
-      run.duration || 0,
-      run.output || '',
-      run.tokens || 0,
-      run.model || '',
-      run.error || null,
-      run.steps ? JSON.stringify(run.steps) : null,
-      run.summary || ''
-    );
+    stmt.run(...serializeRun(run));
     return run;
   },
 
   saveAll(runs) {
     if (!db || !Array.isArray(runs)) return runs;
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO runs (id, scheduleId, timestamp, status, duration, output, tokens, model, error, steps, summary)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO runs (id, scheduleId, scheduleTitle, timestamp, startTime, endTime, status, duration, output, tokens, model, error, steps, log, summary, browserSession, data)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     try {
       db.exec('BEGIN TRANSACTION;');
       for (const r of runs) {
         if (!r || !r.id) continue;
-        stmt.run(
-          r.id,
-          r.scheduleId || null,
-          r.timestamp || new Date().toISOString(),
-          r.status || 'completed',
-          r.duration || 0,
-          r.output || '',
-          r.tokens || 0,
-          r.model || '',
-          r.error || null,
-          r.steps ? JSON.stringify(r.steps) : null,
-          r.summary || ''
-        );
+        stmt.run(...serializeRun(r));
       }
       db.exec('COMMIT;');
     } catch (e) {
